@@ -43,3 +43,6 @@ test-results
 *.njsproj
 *.sln
 *.sw?
+
+# Local Claude Code config (machine-specific; pre-approves local MCP servers)
+.claude/settings.local.json
