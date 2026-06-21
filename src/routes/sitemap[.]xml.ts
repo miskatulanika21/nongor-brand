@@ -1,12 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type {} from "@tanstack/react-start";
-import { PRODUCTS } from "@/lib/products";
 import { absUrl } from "@/lib/site-config";
 
 export const Route = createFileRoute("/sitemap.xml")({
   server: {
     handlers: {
       GET: async () => {
+        // Server-only repository: RLS returns active products only.
+        const { fetchProductCards } = await import("@/lib/server/catalog.server");
+        const products = await fetchProductCards();
         const paths = [
           "/",
           "/shop",
@@ -23,7 +25,7 @@ export const Route = createFileRoute("/sitemap.xml")({
           "/authenticity-policy",
           "/payment-policy",
           "/cookie-policy",
-          ...PRODUCTS.map((p) => `/product/${p.slug}`),
+          ...products.map((p) => `/product/${p.slug}`),
         ];
         // Private / utility routes (cart, checkout, login, account, admin,
         // orders, track, order-success, wishlist) are intentionally excluded

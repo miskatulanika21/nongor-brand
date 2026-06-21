@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { PageHero } from "@/components/PageHero";
-import { PRODUCTS } from "@/lib/products";
+import { listProductCards } from "@/lib/catalog.api";
 import { ProductGrid } from "@/components/ProductGrid";
 import { Button } from "@/components/ui/button";
 import { BRAND } from "@/lib/brand";
@@ -9,6 +9,8 @@ import { ArrowRight } from "lucide-react";
 const TITLE = "Eid 2026 Fashion Guide: Eid Clothes & Dresses for Women";
 const DESC =
   "Your Eid 2026 lookbook — handcrafted kurtis, jamdani sarees and custom-fit dresses. Shop premium Eid clothes and dresses for women, made in Bangladesh by Nongorr.";
+// Stable public OG image (head() runs outside React, so no catalog hook here).
+const OG_IMAGE = "/assets/products/kurti.jpg";
 
 export const Route = createFileRoute("/_site/eid-style-guide")({
   head: () => ({
@@ -19,11 +21,11 @@ export const Route = createFileRoute("/_site/eid-style-guide")({
       { property: "og:description", content: DESC },
       { property: "og:url", content: "/eid-style-guide" },
       { property: "og:type", content: "article" },
-      { property: "og:image", content: PRODUCTS[0].image },
+      { property: "og:image", content: OG_IMAGE },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: TITLE },
       { name: "twitter:description", content: DESC },
-      { name: "twitter:image", content: PRODUCTS[0].image },
+      { name: "twitter:image", content: OG_IMAGE },
     ],
     links: [{ rel: "canonical", href: "/eid-style-guide" }],
     scripts: [
@@ -34,7 +36,7 @@ export const Route = createFileRoute("/_site/eid-style-guide")({
           "@type": "Article",
           headline: TITLE,
           description: DESC,
-          image: PRODUCTS[0].image,
+          image: OG_IMAGE,
           author: { "@type": "Organization", name: BRAND.name },
           publisher: { "@type": "Organization", name: BRAND.name },
         }),
@@ -52,6 +54,7 @@ export const Route = createFileRoute("/_site/eid-style-guide")({
       },
     ],
   }),
+  loader: () => listProductCards(),
   component: EidGuide,
 });
 
@@ -75,10 +78,10 @@ const SECTIONS = [
 ];
 
 function EidGuide() {
-  const eidPicks = PRODUCTS.filter((p) => ["kurti", "saree", "three-piece"].includes(p.type)).slice(
-    0,
-    8,
-  );
+  const products = Route.useLoaderData();
+  const eidPicks = products
+    .filter((p) => ["kurti", "saree", "three-piece"].includes(p.type))
+    .slice(0, 8);
 
   return (
     <div>

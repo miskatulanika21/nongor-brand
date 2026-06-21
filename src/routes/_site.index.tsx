@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { PRODUCTS } from "@/lib/products";
+import { listProductCards } from "@/lib/catalog.api";
 import { ProductGrid } from "@/components/ProductGrid";
 import { SectionHeading } from "@/components/SectionHeading";
 import { HeroSection } from "@/components/site/HeroSection";
@@ -60,6 +60,7 @@ export const Route = createFileRoute("/_site/")({
       },
     ],
   }),
+  loader: () => listProductCards(),
   component: Home,
 });
 
@@ -110,18 +111,18 @@ function ViewAll({
 }
 
 function Home() {
-  const newArrivals = PRODUCTS.filter((p) => p.isNew).slice(0, 4);
-  const bestSellers = PRODUCTS.filter((p) => p.isBestSeller).slice(0, 4);
-  const customFitFavourites = PRODUCTS.filter(
-    (product) => product.type === "kurti" && product.isHandmade,
-  ).slice(0, 4);
-  const beauty = PRODUCTS.filter((p) => ["cosmetics", "makeup", "serum"].includes(p.type)).slice(
-    0,
-    4,
-  );
+  const products = Route.useLoaderData();
+  const newArrivals = products.filter((p) => p.isNew).slice(0, 4);
+  const bestSellers = products.filter((p) => p.isBestSeller).slice(0, 4);
+  const customFitFavourites = products
+    .filter((product) => product.type === "kurti" && product.isHandmade)
+    .slice(0, 4);
+  const beauty = products
+    .filter((p) => ["cosmetics", "makeup", "serum"].includes(p.type))
+    .slice(0, 4);
 
   // Curated social showcase (not a live Instagram feed).
-  const social = PRODUCTS.slice(0, 6);
+  const social = products.slice(0, 6);
 
   return (
     <div>

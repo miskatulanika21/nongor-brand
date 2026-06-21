@@ -1,5 +1,4 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { PRODUCTS, type Product } from "@/lib/products";
 import {
   type DeliveryZone,
   normalizeZone,
@@ -47,7 +46,6 @@ interface StoreState {
   isWishlisted: (productId: string) => boolean;
   cartCount: number;
   cartSubtotal: number;
-  wishlistProducts: Product[];
 
   // Checkout UI state
   deliveryZone: DeliveryZone;
@@ -151,7 +149,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const cartCount = cart.reduce((s, c) => s + c.qty, 0);
   const cartSubtotal = cart.reduce((s, c) => s + (c.price + (c.customCharge ?? 0)) * c.qty, 0);
-  const wishlistProducts = PRODUCTS.filter((p) => wishlist.includes(p.id));
 
   const appliedCoupon = findCoupon(checkoutUI.couponCode);
   const discount = couponDiscount(appliedCoupon, cartSubtotal);
@@ -221,7 +218,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         isWishlisted,
         cartCount,
         cartSubtotal,
-        wishlistProducts,
         deliveryZone: checkoutUI.deliveryZone,
         setDeliveryZone,
         couponCode: checkoutUI.couponCode,

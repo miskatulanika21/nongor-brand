@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { PRODUCTS, COLORS, FABRICS, OCCASIONS } from "@/lib/products";
+import { COLORS, FABRICS, OCCASIONS } from "@/lib/products";
+import { listProductCards } from "@/lib/catalog.api";
 import {
   CATEGORY_FILTERS,
   matchesCategory,
@@ -89,6 +90,7 @@ export const Route = createFileRoute("/_site/shop")({
       },
     ],
   }),
+  loader: () => listProductCards(),
   component: Shop,
 });
 
@@ -97,6 +99,7 @@ function toggle<T>(arr: T[], v: T): T[] {
 }
 
 function Shop() {
+  const products = Route.useLoaderData();
   const search = Route.useSearch();
   const category = search.category ?? "";
   const q = search.q ?? "";
@@ -148,7 +151,7 @@ function Shop() {
   }, [searchInput, q]);
 
   const filtered = useMemo(() => {
-    let list = PRODUCTS.filter((p) => {
+    let list = products.filter((p) => {
       if (term && !`${p.name} ${p.category}`.toLowerCase().includes(term)) return false;
       if (cats.length && !cats.some((c) => matchesCategory(p, c))) return false;
       if (filter && !matchesFilter(p, filter)) return false;
@@ -184,6 +187,7 @@ function Shop() {
     newOnly,
     customOnly,
     sort,
+    products,
   ]);
 
   const showCosmetic = cats.includes("cosmetics");
@@ -203,7 +207,7 @@ function Shop() {
     (searchActive ? 1 : 0);
 
   // Honest cosmetic metadata, derived from the full customer-facing rollup.
-  const cosmeticProducts = PRODUCTS.filter((p) => matchesCategory(p, "cosmetics"));
+  const cosmeticProducts = products.filter((p) => matchesCategory(p, "cosmetics"));
   const shades = [...new Set(cosmeticProducts.map((p) => p.shade).filter(Boolean))] as string[];
   const skinTypes = [
     ...new Set(cosmeticProducts.map((p) => p.skinType).filter(Boolean)),
@@ -213,14 +217,14 @@ function Shop() {
   // No-results recommendations: dedupe by id, best sellers first then rating, max 4.
   const recommendations = useMemo(() => {
     const seen = new Set<string>();
-    return [...PRODUCTS]
+    return [...products]
       .sort(
         (a, b) =>
           Number(b.isBestSeller ?? false) - Number(a.isBestSeller ?? false) || b.rating - a.rating,
       )
       .filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)))
       .slice(0, 4);
-  }, []);
+  }, [products]);
 
   const whatsappUrl = `https://wa.me/${BRAND.whatsapp}?text=${encodeURIComponent("Hi Nongorr, I need help finding a product.")}`;
 
@@ -475,7 +479,7 @@ function Shop() {
           <div className="mb-4 flex items-center justify-between gap-3">
             <p className="text-sm text-muted-foreground">
               Showing <span className="font-medium text-foreground">{filtered.length}</span> of{" "}
-              {PRODUCTS.length} products
+              {products.length} products
             </p>
             <div className="flex items-center gap-2">
               <div className="hidden items-center rounded-md border border-border p-0.5 sm:flex">
