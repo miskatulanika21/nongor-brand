@@ -1,0 +1,20 @@
+# Normalize line endings: store LF in the repo and check out LF on every
+# platform, so Windows autocrlf can't introduce CRLF (which breaks Prettier/
+# ESLint and would churn against the Linux/CI side).
+* text=auto eol=lf
+
+# Binary assets — never normalize or diff as text.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.avif  binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+*.eot   binary
+*.pdf   binary
+*.zip   binary
