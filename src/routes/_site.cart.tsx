@@ -2,7 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore, type CartItem } from "@/lib/store";
 import { formatBDT } from "@/lib/brand";
-import { PRODUCTS, PRODUCT_TYPE_LABEL, relatedProducts } from "@/lib/products";
+import { PRODUCT_TYPE_LABEL, type Product } from "@/lib/products";
+import { listProductCards } from "@/lib/catalog.api";
 import { ProductCard } from "@/components/ProductCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,6 +66,7 @@ export const Route = createFileRoute("/_site/cart")({
     ],
     links: [{ rel: "canonical", href: "/cart" }],
   }),
+  loader: () => listProductCards(),
   component: Cart,
 });
 
@@ -75,6 +77,7 @@ function sizeTypeLabel(item: CartItem) {
 }
 
 function Cart() {
+  const allProducts = Route.useLoaderData();
   const {
     cart,
     updateQty,
@@ -110,14 +113,15 @@ function Cart() {
 
   const completeTheLook = useMemo(() => {
     if (!cart.length) return [];
-    const first = PRODUCTS.find((p) => p.id === cart[0].productId);
+    const first = allProducts.find((p) => p.id === cart[0].productId);
     if (!first) return [];
     const inCart = new Set(cart.map((c) => c.productId));
     const seen = new Set<string>();
-    return relatedProducts(first)
+    return allProducts
+      .filter((p) => p.type === first.type && p.id !== first.id)
       .filter((p) => !inCart.has(p.id) && !seen.has(p.id) && seen.add(p.id))
       .slice(0, 4);
-  }, [cart]);
+  }, [cart, allProducts]);
 
   function handleApplyCoupon() {
     const res = applyCoupon(couponInput);
@@ -141,7 +145,7 @@ function Cart() {
   const pendingItem = cart.find((c) => c.id === pendingRemoveId) ?? null;
 
   if (!cart.length && !savedForLater.length) {
-    const suggestions = PRODUCTS.slice(0, 4);
+    const suggestions = allProducts.slice(0, 4);
     return (
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
         <div className="flex flex-col items-center text-center">
@@ -197,7 +201,7 @@ function Cart() {
           )}
 
           {cart.map((item) => {
-            const product = PRODUCTS.find((p) => p.id === item.productId);
+            const product = allProducts.find((p) => p.id === item.productId);
             const category = product ? PRODUCT_TYPE_LABEL[product.type] : null;
             return (
               <div key={item.id} className="flex gap-4 rounded-xl border border-border bg-card p-4">
@@ -514,7 +518,7 @@ function Cart() {
   );
 }
 
-function CompleteTheLook({ items }: { items: ReturnType<typeof PRODUCTS.filter> }) {
+function CompleteTheLook({ items }: { items: Product[] }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [overflow, setOverflow] = useState(false);
   const [atStart, setAtStart] = useState(true);

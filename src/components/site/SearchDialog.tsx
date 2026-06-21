@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Search } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { PRODUCTS, PRODUCT_TYPE_LABEL } from "@/lib/products";
+import { PRODUCT_TYPE_LABEL, type Product } from "@/lib/products";
+import { listProductCards } from "@/lib/catalog.api";
 import { PRODUCT_CATEGORIES } from "@/lib/categories";
 import { formatBDT, discountPct } from "@/lib/brand";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,7 @@ interface Props {
 export function SearchDialog({ open, onOpenChange }: Props) {
   const [q, setQ] = useState("");
   const [active, setActive] = useState(-1); // -1 = no product highlighted
+  const [products, setProducts] = useState<Product[]>([]);
   const navigate = useNavigate();
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -31,16 +33,40 @@ export function SearchDialog({ open, onOpenChange }: Props) {
     }
   }, [open]);
 
+  // Lazily load the catalog the first time the dialog is opened.
+  useEffect(() => {
+    if (!open || products.length > 0) return;
+    let cancelled = false;
+    listProductCards()
+      .then((data) => {
+        if (!cancelled) setProducts(data);
+      })
+      .catch(() => {
+        // Search degrades gracefully to "no matches" if the catalog can't load.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, products.length]);
+
   const results = useMemo(() => {
     const term = q.trim().toLowerCase();
     if (!term) return [];
-    return PRODUCTS.filter((p) => {
-      const hay = [p.name, p.category, PRODUCT_TYPE_LABEL[p.type], p.fabric ?? "", p.occasion ?? ""]
-        .join(" ")
-        .toLowerCase();
-      return hay.includes(term);
-    }).slice(0, 8);
-  }, [q]);
+    return products
+      .filter((p) => {
+        const hay = [
+          p.name,
+          p.category,
+          PRODUCT_TYPE_LABEL[p.type],
+          p.fabric ?? "",
+          p.occasion ?? "",
+        ]
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(term);
+      })
+      .slice(0, 8);
+  }, [q, products]);
 
   // Highlight resets whenever the query changes.
   useEffect(() => {

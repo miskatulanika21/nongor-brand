@@ -1,0 +1,81 @@
+/**
+ * Catalog repository — SERVER ONLY (`.server.ts` keeps it out of the client
+ * bundle). Reads the public catalog through a per-request ANON Supabase client,
+ * so every query is constrained by RLS (only active products / active
+ * categories / approved reviews are ever returned).
+ *
+ * No fallback to the legacy mock array: failures surface as typed errors so the
+ * route can render the approved error UI rather than silently serving stale or
+ * fake data.
+ */
+import { createServerSupabaseClient } from "./supabase.server";
+import { toCard, toProduct, type ProductCardRow, type ProductDetailRow } from "@/lib/catalog-map";
+import type { Product } from "@/lib/products";
+
+export class CatalogQueryError extends Error {
+  constructor(
+    message: string,
+    public readonly cause?: string,
+  ) {
+    super(message);
+    this.name = "CatalogQueryError";
+  }
+}
+
+const CARD_SELECT = `
+  code, slug, name, price, sale_price, stock, rating, review_count,
+  is_new, is_handmade, is_best_seller, has_video, custom_size, custom_size_charge,
+  color, colors, fabric, occasion, shade, volume, skin_type,
+  category:product_categories!inner ( slug, name ),
+  media:product_media ( url, alt, is_primary, sort_order ),
+  sizes:product_size_stock ( size, quantity, sort_order )
+`;
+
+const DETAIL_SELECT = `
+  code, slug, name, price, sale_price, stock, rating, review_count,
+  is_new, is_handmade, is_best_seller, has_video, custom_size, custom_size_charge,
+  color, colors, fabric, occasion,
+  description, care, blouse_piece, length, work_type, stitched, pieces_included,
+  shade, volume, skin_type, expiry, batch, ingredients, how_to_use, safety,
+  category:product_categories!inner ( slug, name ),
+  media:product_media ( url, alt, is_primary, sort_order ),
+  sizes:product_size_stock ( size, quantity, sort_order ),
+  reviews:product_reviews ( id, author_name, rating, body, created_at )
+`;
+
+/** Bounded card projection for grids / filters / search, ordered for display. */
+export async function fetchProductCards(): Promise<Product[]> {
+  const sb = createServerSupabaseClient();
+  const { data, error } = await sb
+    .from("products")
+    .select(CARD_SELECT)
+    .order("sort_order", { ascending: true });
+  if (error) throw new CatalogQueryError("Failed to load products", error.message);
+  return ((data ?? []) as unknown as ProductCardRow[]).map(toCard);
+}
+
+/** Cards for a specific set of legacy codes (wishlist resolution). */
+export async function fetchProductCardsByCodes(codes: string[]): Promise<Product[]> {
+  if (!codes.length) return [];
+  const sb = createServerSupabaseClient();
+  const { data, error } = await sb
+    .from("products")
+    .select(CARD_SELECT)
+    .in("code", codes)
+    .order("sort_order", { ascending: true });
+  if (error) throw new CatalogQueryError("Failed to load wishlist products", error.message);
+  return ((data ?? []) as unknown as ProductCardRow[]).map(toCard);
+}
+
+/** Full product detail by slug. Returns null when not found / not public. */
+export async function fetchProductDetail(slug: string): Promise<Product | null> {
+  const sb = createServerSupabaseClient();
+  const { data, error } = await sb
+    .from("products")
+    .select(DETAIL_SELECT)
+    .eq("slug", slug)
+    .maybeSingle();
+  if (error) throw new CatalogQueryError("Failed to load product", error.message);
+  if (!data) return null;
+  return toProduct(data as unknown as ProductDetailRow);
+}

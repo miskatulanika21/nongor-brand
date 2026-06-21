@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
-import { PRODUCTS, requiresSelection, type Product } from "@/lib/products";
+import { requiresSelection, type Product } from "@/lib/products";
+import { listProductCards } from "@/lib/catalog.api";
 import { formatBDT } from "@/lib/brand";
 import { EmptyState } from "@/components/states";
 import { ProductGrid } from "@/components/ProductGrid";
@@ -28,6 +29,7 @@ import { Heart, ShoppingBag, X, Share2, BellOff } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_site/wishlist")({
+  loader: () => listProductCards(),
   head: () => ({
     meta: [
       { title: "Wishlist · Nongorr" },
@@ -50,29 +52,32 @@ function priceOf(p: Product): number {
 }
 
 function Wishlist() {
+  const allProducts = Route.useLoaderData();
   const { wishlist, toggleWishlist, addToCart } = useStore();
   const [sort, setSort] = useState<SortKey>("recent");
 
   // Recently added: use the Store ID order, reversed, mapped back to products.
   const items = useMemo(() => {
+    const byId = new Map(allProducts.map((p) => [p.id, p]));
     const recent = [...wishlist]
       .reverse()
-      .map((id) => PRODUCTS.find((p) => p.id === id))
+      .map((id) => byId.get(id))
       .filter((p): p is Product => Boolean(p));
     if (sort === "price-asc") return [...recent].sort((a, b) => priceOf(a) - priceOf(b));
     if (sort === "price-desc") return [...recent].sort((a, b) => priceOf(b) - priceOf(a));
     return recent;
-  }, [wishlist, sort]);
+  }, [wishlist, sort, allProducts]);
 
   const recommendations = useMemo(() => {
     const wished = new Set(wishlist);
-    return PRODUCTS.filter((p) => !wished.has(p.id))
+    return allProducts
+      .filter((p) => !wished.has(p.id))
       .sort(
         (a, b) =>
           Number(Boolean(b.isBestSeller)) - Number(Boolean(a.isBestSeller)) || b.rating - a.rating,
       )
       .slice(0, 4);
-  }, [wishlist]);
+  }, [wishlist, allProducts]);
 
   const moveAllAvailable = () => {
     let moved = 0;

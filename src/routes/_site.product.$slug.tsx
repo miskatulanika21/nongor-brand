@@ -2,14 +2,8 @@ import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import sizeChart from "@/assets/size-chart.webp";
 import { NotFoundPage } from "@/components/NotFoundPage";
-import {
-  getProduct,
-  relatedProducts,
-  PRODUCTS,
-  READY_SIZES,
-  GIRLS_SIZES,
-  type Product,
-} from "@/lib/products";
+import { READY_SIZES, GIRLS_SIZES, type Product } from "@/lib/products";
+import { getProductDetail, listProductCards } from "@/lib/catalog.api";
 import { formatBDT, discountPct, BRAND } from "@/lib/brand";
 import { useStore } from "@/lib/store";
 import { ProductGrid } from "@/components/ProductGrid";
@@ -65,10 +59,12 @@ interface ReviewItem {
 }
 
 export const Route = createFileRoute("/_site/product/$slug")({
-  loader: ({ params }) => {
-    const product = getProduct(params.slug);
+  loader: async ({ params }) => {
+    const product = await getProductDetail({ data: { slug: params.slug } });
     if (!product) throw notFound();
-    return { product };
+    // Lean cards power related products + recently-viewed resolution.
+    const cards = await listProductCards();
+    return { product, cards };
   },
   head: ({ loaderData, params }) => ({
     meta: loaderData
@@ -167,7 +163,7 @@ function isValidMeasure(v: string | undefined): boolean {
 }
 
 function ProductPage() {
-  const { product } = Route.useLoaderData();
+  const { product, cards } = Route.useLoaderData();
   const { addToCart, toggleWishlist, isWishlisted } = useStore();
   const [activeImg, setActiveImg] = useState(0);
   const [lightbox, setLightbox] = useState(false);
@@ -264,9 +260,12 @@ function ProductPage() {
   const distTotal = displayedReviews.length;
 
   const recentProducts = recentIds
-    .map((id) => PRODUCTS.find((p) => p.id === id))
+    .map((id) => cards.find((p) => p.id === id))
     .filter((p): p is Product => Boolean(p) && p!.id !== product.id)
     .slice(0, 4);
+
+  // Related: other products of the same type (from lean cards).
+  const related = cards.filter((p) => p.type === product.type && p.id !== product.id).slice(0, 4);
 
   const shareUrl =
     typeof window !== "undefined" ? window.location.href : `/product/${product.slug}`;
@@ -704,7 +703,7 @@ function ProductPage() {
       {/* Related */}
       <div className="mt-16">
         <SectionHeading eyebrow="You may also like" title="Related Products" />
-        <ProductGrid products={relatedProducts(product)} />
+        <ProductGrid products={related} />
       </div>
 
       {/* Recently viewed (session only) */}
