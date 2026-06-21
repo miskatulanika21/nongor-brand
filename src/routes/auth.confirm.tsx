@@ -19,8 +19,10 @@
  *
  * HOW IT WORKS:
  *   1. beforeLoad runs on the server before any component renders.
- *   2. It calls confirmEmailServer() which validates the token, calls
- *      verifyOtp(), and writes session cookies via the SSR client.
+ *   2. It calls confirmAuthToken() (in @/lib/auth.api) which validates the
+ *      token, calls verifyOtp(), and writes session cookies via the SSR
+ *      client. That transaction reuses ONE authenticated client end-to-end so
+ *      destination resolution sees the just-established session.
  *   3. On success, it throws a TanStack redirect (HTTP 302).
  *   4. On failure, it passes the error to the component via routeContext.
  *   5. The component only renders in the error case — no useEffect needed.
@@ -31,71 +33,11 @@
  * beforeLoad won't re-execute on the destination page.
  */
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
-import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { confirmAuthToken } from "@/lib/auth.api";
 import { type ConfirmType } from "@/lib/validation";
 import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
 import { XCircle } from "lucide-react";
-
-// ---- Server function --------------------------------------------------------
-
-const confirmEmailServer = createServerFn({ method: "POST" })
-  .validator(
-    z.object({
-      token_hash: z.string().min(1).max(2048),
-      type: z.enum(["email", "recovery", "magiclink"]),
-      next: z.string().max(2048).optional(),
-    }),
-  )
-  .handler(async ({ data }) => {
-    const { createServerSupabaseClient } = await import("@/lib/server/supabase.server");
-    const { safeServerLog } = await import("@/lib/server/security.server");
-    const { getAuthenticatedIdentity } = await import("@/lib/server/identity.server");
-    const { resolvePostLoginDestination } = await import("@/lib/server/login-destination.server");
-    const { setResponseHeaders } = await import("@tanstack/react-start/server");
-
-    try {
-      setResponseHeaders({
-        "Cache-Control": "private, no-store",
-        Pragma: "no-cache",
-        Expires: "0",
-      } as unknown as Headers);
-    } catch {
-      // Ignore context errors in tests
-    }
-
-    const supabase = createServerSupabaseClient();
-
-    const { error } = await supabase.auth.verifyOtp({
-      token_hash: data.token_hash,
-      type: data.type,
-    });
-
-    if (error) {
-      safeServerLog("warn", "Email confirmation failed", { type: data.type });
-      return { success: false as const, type: data.type, destination: null };
-    }
-
-    // Recovery always routes to the password-update screen.
-    if (data.type === "recovery") {
-      return { success: true as const, type: data.type, destination: "/account/update-password" };
-    }
-
-    // Email confirmation / magic link: a verified user now has a session.
-    // Resolve the destination via the SAME resolver (confirmed customers land
-    // on /account; a linked privileged account would land on /admin).
-    const identity = await getAuthenticatedIdentity({ strict: true });
-    if (!identity.ok) {
-      // Verified but session not established — send to login to sign in.
-      return { success: true as const, type: data.type, destination: "/login" };
-    }
-    const { destination } = resolvePostLoginDestination({
-      identity: identity.identity,
-      requestedNext: data.next,
-    });
-    return { success: true as const, type: data.type, destination };
-  });
 
 // ---- Route ------------------------------------------------------------------
 
@@ -117,7 +59,7 @@ export const Route = createFileRoute("/auth/confirm")({
       return { confirmError: "Invalid confirmation link." };
     }
 
-    const result = await confirmEmailServer({
+    const result = await confirmAuthToken({
       data: { token_hash, type: type as ConfirmType, next: next || undefined },
     });
 

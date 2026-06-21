@@ -59,96 +59,109 @@ async function setNoCacheHeaders(): Promise<void> {
  * inactive/lookup-failure (deny + sign out + fail closed) → resolve
  * destination → audit privileged success. The browser never picks a role.
  */
-export const loginWithEmail = createServerFn({ method: "POST" })
-  .validator(loginSchema)
-  .handler(async ({ data }) => {
-    await setNoCacheHeaders();
-    const { createServerSupabaseClient } = await import("@/lib/server/supabase.server");
-    const { getPublicSupabaseEnv } = await import("@/lib/server/env.server");
-    const { checkCsrfOrigin, getClientIp, safeServerLog } =
-      await import("@/lib/server/security.server");
-    const { getAuthenticatedIdentity, invalidateSession } =
-      await import("@/lib/server/identity.server");
-    const { resolvePostLoginDestination } = await import("@/lib/server/login-destination.server");
-    const { checkRateLimit, rateLimitMessage } = await import("@/lib/server/rate-limit.server");
-    const { writeAudit } = await import("@/lib/server/audit.server");
+/**
+ * Core password-login transaction (extracted so it is unit-testable; the
+ * createServerFn wrapper cannot be invoked directly outside the server runtime).
+ *
+ * Same-request correctness: the SAME client that runs signInWithPassword is
+ * threaded into identity resolution and the denial sign-out, because the
+ * freshly-issued session is not yet in the incoming request cookies a fresh
+ * client would read.
+ */
+export async function performEmailLogin(data: z.infer<typeof loginSchema>) {
+  await setNoCacheHeaders();
+  const { createServerSupabaseClient } = await import("@/lib/server/supabase.server");
+  const { getPublicSupabaseEnv } = await import("@/lib/server/env.server");
+  const { checkCsrfOrigin, getClientIp, safeServerLog } =
+    await import("@/lib/server/security.server");
+  const { getAuthenticatedIdentity, invalidateSession } =
+    await import("@/lib/server/identity.server");
+  const { resolvePostLoginDestination } = await import("@/lib/server/login-destination.server");
+  const { checkRateLimit, rateLimitMessage } = await import("@/lib/server/rate-limit.server");
+  const { writeAudit } = await import("@/lib/server/audit.server");
 
-    const env = getPublicSupabaseEnv();
-    if (!checkCsrfOrigin(env.siteUrl)) {
-      return { success: false as const, error: "Invalid request origin." };
-    }
+  const env = getPublicSupabaseEnv();
+  if (!checkCsrfOrigin(env.siteUrl)) {
+    return { success: false as const, error: "Invalid request origin." };
+  }
 
-    // Rate limit by IP + normalized email before touching credentials.
-    const rl = await checkRateLimit("login", [getClientIp(), data.email]);
-    if (!rl.allowed) {
-      return { success: false as const, error: rateLimitMessage() };
-    }
+  // Rate limit by IP + normalized email before touching credentials.
+  const rl = await checkRateLimit("login", [getClientIp(), data.email]);
+  if (!rl.allowed) {
+    return { success: false as const, error: rateLimitMessage() };
+  }
 
-    const supabase = createServerSupabaseClient();
+  const supabase = createServerSupabaseClient();
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email: data.email,
-      password: data.password,
-    });
+  const { error: authError } = await supabase.auth.signInWithPassword({
+    email: data.email,
+    password: data.password,
+  });
 
-    if (authError) {
-      safeServerLog("warn", "Login failed", { email: data.email });
-      return { success: false as const, error: "Incorrect email or password." };
-    }
+  if (authError) {
+    safeServerLog("warn", "Login failed", { email: data.email });
+    return { success: false as const, error: "Incorrect email or password." };
+  }
 
-    // Verify identity with getUser() (strict) since this is the trust anchor.
-    const result = await getAuthenticatedIdentity({ strict: true });
+  // Verify identity with getUser() (strict) since this is the trust anchor.
+  // Reuse the just-authenticated client so resolution sees this session.
+  const result = await getAuthenticatedIdentity({ strict: true, client: supabase });
 
-    if (!result.ok) {
-      // Deny: never leave a partial privileged session around.
-      await invalidateSession();
-      if (result.reason === "inactive_staff") {
-        await writeAudit({
-          action: "auth.login.denied",
-          actorId: null,
-          metadata: { reason: "inactive_staff", email: data.email },
-        });
-        return {
-          success: false as const,
-          error: "This staff account is inactive. Contact the account owner.",
-        };
-      }
-      // lookup_failed / unauthenticated → fail closed with a safe message.
+  if (!result.ok) {
+    // Deny: never leave a partial privileged session around. Clear the session
+    // we just created via the SAME client.
+    await invalidateSession(supabase);
+    if (result.reason === "inactive_staff") {
       await writeAudit({
         action: "auth.login.denied",
         actorId: null,
-        metadata: { reason: result.reason, email: data.email },
+        metadata: { reason: "inactive_staff", email: data.email },
       });
       return {
         success: false as const,
-        error: "We could not verify your account access. Please try again.",
+        error: "This staff account is inactive. Contact the account owner.",
       };
     }
-
-    const identity = result.identity;
-    const { destination, adminDenied } = resolvePostLoginDestination({
-      identity,
-      requestedNext: data.next,
+    // lookup_failed / unauthenticated → fail closed with a safe message.
+    await writeAudit({
+      action: "auth.login.denied",
+      actorId: null,
+      metadata: { reason: result.reason, email: data.email },
     });
-
-    if (identity.kind === "staff") {
-      await writeAudit({
-        action: "auth.login.success",
-        actorId: identity.userId,
-        metadata: { role: identity.role },
-      });
-    }
-
     return {
-      success: true as const,
-      destination,
-      adminDenied,
-      user: {
-        designation: identity.kind === "staff" ? identity.role : ("customer" as Designation),
-        hasAdminAccess: identity.kind === "staff",
-      },
+      success: false as const,
+      error: "We could not verify your account access. Please try again.",
     };
+  }
+
+  const identity = result.identity;
+  const { destination, adminDenied } = resolvePostLoginDestination({
+    identity,
+    requestedNext: data.next,
   });
+
+  if (identity.kind === "staff") {
+    await writeAudit({
+      action: "auth.login.success",
+      actorId: identity.userId,
+      metadata: { role: identity.role },
+    });
+  }
+
+  return {
+    success: true as const,
+    destination,
+    adminDenied,
+    user: {
+      designation: identity.kind === "staff" ? identity.role : ("customer" as Designation),
+      hasAdminAccess: identity.kind === "staff",
+    },
+  };
+}
+
+export const loginWithEmail = createServerFn({ method: "POST" })
+  .validator(loginSchema)
+  .handler(async ({ data }) => performEmailLogin(data));
 
 // ---- Register (always creates a customer) -----------------------------------
 
@@ -338,6 +351,133 @@ export const confirmEmail = createServerFn({ method: "POST" })
 
     return { success: true as const };
   });
+
+// ---- OAuth callback (PKCE code exchange) ------------------------------------
+
+const oauthCallbackSchema = z.object({
+  code: z.string().min(1),
+  next: z.string().max(2048).optional(),
+});
+
+/**
+ * Core OAuth callback transaction (extracted for unit-testability).
+ *
+ * Exchanges the PKCE code for a session, then resolves the destination through
+ * the SAME centralized identity + destination resolvers as password login —
+ * reusing the code-exchange client so resolution and the denial sign-out see
+ * the just-issued session. OAuth never grants a role; role comes only from a
+ * staff_profiles row matched by the authenticated user id.
+ */
+export async function performOAuthCallback(data: z.infer<typeof oauthCallbackSchema>) {
+  await setNoCacheHeaders();
+  const { createServerSupabaseClient } = await import("@/lib/server/supabase.server");
+  const { safeServerLog } = await import("@/lib/server/security.server");
+  const { getAuthenticatedIdentity, invalidateSession } =
+    await import("@/lib/server/identity.server");
+  const { resolvePostLoginDestination } = await import("@/lib/server/login-destination.server");
+  const { writeAudit } = await import("@/lib/server/audit.server");
+
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase.auth.exchangeCodeForSession(data.code);
+  if (error) {
+    safeServerLog("warn", "PKCE code exchange failed");
+    return { success: false as const, redirect: null, error: "Sign-in failed. Please try again." };
+  }
+
+  // Same identity resolution as password login — fail closed, same client.
+  const result = await getAuthenticatedIdentity({ strict: true, client: supabase });
+  if (!result.ok) {
+    await invalidateSession(supabase);
+    if (result.reason === "inactive_staff") {
+      await writeAudit({
+        action: "auth.login.denied",
+        actorId: null,
+        metadata: { reason: "inactive_staff", via: "oauth" },
+      });
+      return { success: true as const, redirect: "/login?notice=inactive", error: null };
+    }
+    return { success: true as const, redirect: "/login?notice=verify", error: null };
+  }
+
+  const { destination } = resolvePostLoginDestination({
+    identity: result.identity,
+    requestedNext: data.next,
+  });
+
+  if (result.identity.kind === "staff") {
+    await writeAudit({
+      action: "auth.login.success",
+      actorId: result.identity.userId,
+      metadata: { role: result.identity.role, via: "oauth" },
+    });
+  }
+
+  return { success: true as const, redirect: destination, error: null };
+}
+
+export const completeOAuthCallback = createServerFn({ method: "POST" })
+  .validator(oauthCallbackSchema)
+  .handler(async ({ data }) => performOAuthCallback(data));
+
+// ---- Token confirmation with destination resolution (OTP / magic link) ------
+
+const authTokenConfirmSchema = z.object({
+  token_hash: z.string().min(1).max(2048),
+  type: z.enum(["email", "recovery", "magiclink"]),
+  next: z.string().max(2048).optional(),
+});
+
+/**
+ * Core email/magic-link/recovery confirmation transaction (extracted for
+ * unit-testability).
+ *
+ * Verifies the OTP token_hash, then for email/magic-link resolves the
+ * destination via the SAME resolver — reusing the verification client so the
+ * just-established session is visible. Recovery returns the password-update
+ * destination without resolving identity (the role-aware redirect there is a
+ * later phase's concern).
+ */
+export async function performEmailConfirm(data: z.infer<typeof authTokenConfirmSchema>) {
+  await setNoCacheHeaders();
+  const { createServerSupabaseClient } = await import("@/lib/server/supabase.server");
+  const { safeServerLog } = await import("@/lib/server/security.server");
+  const { getAuthenticatedIdentity } = await import("@/lib/server/identity.server");
+  const { resolvePostLoginDestination } = await import("@/lib/server/login-destination.server");
+
+  const supabase = createServerSupabaseClient();
+
+  const { error } = await supabase.auth.verifyOtp({
+    token_hash: data.token_hash,
+    type: data.type,
+  });
+
+  if (error) {
+    safeServerLog("warn", "Email confirmation failed", { type: data.type });
+    return { success: false as const, type: data.type, destination: null };
+  }
+
+  // Recovery always routes to the password-update screen.
+  if (data.type === "recovery") {
+    return { success: true as const, type: data.type, destination: "/account/update-password" };
+  }
+
+  // Email confirmation / magic link: a verified user now has a session. Resolve
+  // the destination via the SAME resolver, reusing the verification client.
+  const identity = await getAuthenticatedIdentity({ strict: true, client: supabase });
+  if (!identity.ok) {
+    // Verified but session not established — send to login to sign in.
+    return { success: true as const, type: data.type, destination: "/login" };
+  }
+  const { destination } = resolvePostLoginDestination({
+    identity: identity.identity,
+    requestedNext: data.next,
+  });
+  return { success: true as const, type: data.type, destination };
+}
+
+export const confirmAuthToken = createServerFn({ method: "POST" })
+  .validator(authTokenConfirmSchema)
+  .handler(async ({ data }) => performEmailConfirm(data));
 
 // ---- OAuth start (Google / Facebook) ----------------------------------------
 
