@@ -2,7 +2,7 @@
 // Account UI — FRONTEND-ONLY local prototype state.
 // Data is stored only in this browser (localStorage). There is NO authentication,
 // NO server, NO database and NO cross-device sync.
-// TODO(backend): replace with Lovable Cloud profile/addresses/measurements + auth.
+// TODO(backend): replace with Supabase-backed profile/addresses/measurements + auth.
 // ============================================================================
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";

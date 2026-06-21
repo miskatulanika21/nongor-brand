@@ -57,8 +57,8 @@ function isPlaceholderNumber(value: string | null | undefined): boolean {
 
 function isPlaceholderUrl(value: string | null | undefined): boolean {
   if (!value) return true;
-  // The seeded preview domain is acceptable but flagged as "not a final domain".
-  return /lovable\.app/.test(value) || /example\.(com|org)/.test(value);
+  // Seeded/example domains are acceptable but flagged as "not a final domain".
+  return /example\.(com|org)/.test(value);
 }
 
 export const contactConfigured = !isPlaceholderNumber(BRAND.phone);

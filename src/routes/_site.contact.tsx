@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// TODO(backend): wire this form to a contact API / Lovable Cloud table.
+// TODO(backend): wire this form to a contact API / Supabase table.
 // Currently the submit handler is a client-only placeholder.
 
 export const Route = createFileRoute("/_site/contact")({
