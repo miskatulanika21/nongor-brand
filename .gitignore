@@ -30,6 +30,9 @@ test-results
 .wrangler/
 .dev.vars
 
+# Local MCP server config (pins a project ref; do not commit by accident)
+.mcp.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
