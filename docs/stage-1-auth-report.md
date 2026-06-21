@@ -10,18 +10,18 @@ Supabase project, not the real one.
 
 ## 1. Authentication issues found (and fixed)
 
-| # | Issue | Fix |
-|---|-------|-----|
-| 1 | `getLoginIdentity()` caught any staff-lookup error and returned **customer** (fail-open). | New `getAuthenticatedIdentity()` distinguishes "no row" (customer) from "query error" (`lookup_failed` → **fail closed**). |
-| 2 | Inactive staff were silently downgraded to **customer**. | Inactive profile now → `inactive_staff` denial: session invalidated, safe message, no customer access. |
-| 3 | Staff/admin/owner could sit on `/account` with only an extra "Admin Dashboard" button. | Customer guard now **redirects active staff to `/admin`**; the button anti-pattern is removed. |
-| 4 | Login UI advertised "Phone number or email" + client phone validation; server only did email. | Field is now **"Email address"**, `type=email`, shared `loginSchema`; fake phone login removed. |
-| 5 | Registration showed "Email (optional)" but server required it. | Label is **"Email address"** (required); client uses the shared `registerSchema`. |
-| 6 | OAuth callback defaulted **every** user to `/account` and bypassed role resolution. | Callback now runs the **same** identity + destination resolver; inactive/fail-closed handled. |
-| 7 | Two divergent redirect-safety validators (`isSafeRedirect` vs `isValidLoginDestination`). | One canonical `src/lib/safe-redirect.ts`; both call sites delegate to it. |
-| 8 | "Remember me" checkbox was decorative. | Removed (with documented reason — SSR single-cookie lifetime); layout kept clean. |
-| 9 | No per-role admin nav or per-page permission enforcement. | Central permission registry + per-path server checks. |
-| 10 | `provision_staff` recorded the **target** as the audit actor. | New signature takes `p_actor_id`; correct attribution; system actions flagged. |
+| #   | Issue                                                                                         | Fix                                                                                                                        |
+| --- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `getLoginIdentity()` caught any staff-lookup error and returned **customer** (fail-open).     | New `getAuthenticatedIdentity()` distinguishes "no row" (customer) from "query error" (`lookup_failed` → **fail closed**). |
+| 2   | Inactive staff were silently downgraded to **customer**.                                      | Inactive profile now → `inactive_staff` denial: session invalidated, safe message, no customer access.                     |
+| 3   | Staff/admin/owner could sit on `/account` with only an extra "Admin Dashboard" button.        | Customer guard now **redirects active staff to `/admin`**; the button anti-pattern is removed.                             |
+| 4   | Login UI advertised "Phone number or email" + client phone validation; server only did email. | Field is now **"Email address"**, `type=email`, shared `loginSchema`; fake phone login removed.                            |
+| 5   | Registration showed "Email (optional)" but server required it.                                | Label is **"Email address"** (required); client uses the shared `registerSchema`.                                          |
+| 6   | OAuth callback defaulted **every** user to `/account` and bypassed role resolution.           | Callback now runs the **same** identity + destination resolver; inactive/fail-closed handled.                              |
+| 7   | Two divergent redirect-safety validators (`isSafeRedirect` vs `isValidLoginDestination`).     | One canonical `src/lib/safe-redirect.ts`; both call sites delegate to it.                                                  |
+| 8   | "Remember me" checkbox was decorative.                                                        | Removed (with documented reason — SSR single-cookie lifetime); layout kept clean.                                          |
+| 9   | No per-role admin nav or per-page permission enforcement.                                     | Central permission registry + per-path server checks.                                                                      |
+| 10  | `provision_staff` recorded the **target** as the audit actor.                                 | New signature takes `p_actor_id`; correct attribution; system actions flagged.                                             |
 
 ## 2. Security issues found (and fixed)
 
@@ -94,17 +94,17 @@ Existing migrations (1–7) were already sound (private schema, hardened SECURIT
 
 ## 8. Final redirect matrix
 
-| Identity | next | Result |
-|---|---|---|
-| Customer | — | `/account` |
-| Staff/Admin/Owner | — | `/admin` |
-| Customer | `/checkout`, `/account/*`, `/shop`, `/product/*` | honored |
-| Customer | `/admin*` | `/account` (+ "no access") |
-| Customer | non-approved path | `/account` |
-| Privileged | `/account`, `/checkout`, any non-admin | `/admin` |
-| Privileged | `/admin/<page>` with permission | honored |
-| Privileged | `/admin/<page>` without permission | `/admin` |
-| Any | external/`//`/`\\`/encoded/`javascript:`/`data:`/loop | rejected → default |
+| Identity          | next                                                  | Result                     |
+| ----------------- | ----------------------------------------------------- | -------------------------- |
+| Customer          | —                                                     | `/account`                 |
+| Staff/Admin/Owner | —                                                     | `/admin`                   |
+| Customer          | `/checkout`, `/account/*`, `/shop`, `/product/*`      | honored                    |
+| Customer          | `/admin*`                                             | `/account` (+ "no access") |
+| Customer          | non-approved path                                     | `/account`                 |
+| Privileged        | `/account`, `/checkout`, any non-admin                | `/admin`                   |
+| Privileged        | `/admin/<page>` with permission                       | honored                    |
+| Privileged        | `/admin/<page>` without permission                    | `/admin`                   |
+| Any               | external/`//`/`\\`/encoded/`javascript:`/`data:`/loop | rejected → default         |
 
 ## 9. Final role hierarchy
 
@@ -113,6 +113,7 @@ Existing migrations (1–7) were already sound (private schema, hardened SECURIT
 ## 10. Final permission matrix
 
 Authoritative source: `src/lib/permissions.ts` (also rendered read-only in `/admin/staff`).
+
 - **Staff:** dashboard, orders view/manage, customers view, courier view/manage, products view, inventory view/manage.
 - **Admin:** all staff + customers manage, products/categories/inventory manage, payments view/verify, coupons, reviews, content/media/policies/sizes, reports, settings, staff view/manage. **No** audit/security/integrations/owner assignment.
 - **Owner:** all permissions.
@@ -166,6 +167,7 @@ Added (server): `ENFORCE_ADMIN_MFA`, `ADDITIONAL_ALLOWED_ORIGINS`, `UPSTASH_REDI
 ## 22. Credentials requiring MANUAL rotation (treat as compromised)
 
 The repository's `.env` contained live secrets. **Rotate all of these now** (values intentionally omitted):
+
 - Supabase **service-role** key
 - Supabase anon/publishable key (lower risk, still rotate)
 - Steadfast API key + secret
