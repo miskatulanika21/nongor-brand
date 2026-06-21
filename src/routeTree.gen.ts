@@ -15,6 +15,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as SiteRouteImport } from './routes/_site'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as SiteIndexRouteImport } from './routes/_site.index'
+import { Route as AuthUpdatePasswordRouteImport } from './routes/auth.update-password'
 import { Route as AuthConfirmRouteImport } from './routes/auth.confirm'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as AdminStaffRouteImport } from './routes/admin.staff'
@@ -62,7 +63,6 @@ import { Route as SiteSplatRouteImport } from './routes/_site.$'
 import { Route as SiteAccountIndexRouteImport } from './routes/_site.account.index'
 import { Route as SiteProductSlugRouteImport } from './routes/_site.product.$slug'
 import { Route as SiteOrdersIdRouteImport } from './routes/_site.orders.$id'
-import { Route as SiteAccountUpdatePasswordRouteImport } from './routes/_site.account.update-password'
 import { Route as SiteAccountSecurityRouteImport } from './routes/_site.account.security'
 import { Route as SiteAccountProfileRouteImport } from './routes/_site.account.profile'
 import { Route as SiteAccountMeasurementsRouteImport } from './routes/_site.account.measurements'
@@ -96,6 +96,11 @@ const SiteIndexRoute = SiteIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => SiteRoute,
+} as any)
+const AuthUpdatePasswordRoute = AuthUpdatePasswordRouteImport.update({
+  id: '/auth/update-password',
+  path: '/auth/update-password',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthConfirmRoute = AuthConfirmRouteImport.update({
   id: '/auth/confirm',
@@ -332,12 +337,6 @@ const SiteOrdersIdRoute = SiteOrdersIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => SiteOrdersRoute,
 } as any)
-const SiteAccountUpdatePasswordRoute =
-  SiteAccountUpdatePasswordRouteImport.update({
-    id: '/update-password',
-    path: '/update-password',
-    getParentRoute: () => SiteAccountRoute,
-  } as any)
 const SiteAccountSecurityRoute = SiteAccountSecurityRouteImport.update({
   id: '/security',
   path: '/security',
@@ -408,12 +407,12 @@ export interface FileRoutesByFullPath {
   '/admin/staff': typeof AdminStaffRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/confirm': typeof AuthConfirmRoute
+  '/auth/update-password': typeof AuthUpdatePasswordRoute
   '/admin/': typeof AdminIndexRoute
   '/account/addresses': typeof SiteAccountAddressesRoute
   '/account/measurements': typeof SiteAccountMeasurementsRoute
   '/account/profile': typeof SiteAccountProfileRoute
   '/account/security': typeof SiteAccountSecurityRoute
-  '/account/update-password': typeof SiteAccountUpdatePasswordRoute
   '/orders/$id': typeof SiteOrdersIdRoute
   '/product/$slug': typeof SiteProductSlugRoute
   '/account/': typeof SiteAccountIndexRoute
@@ -464,13 +463,13 @@ export interface FileRoutesByTo {
   '/admin/staff': typeof AdminStaffRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/confirm': typeof AuthConfirmRoute
+  '/auth/update-password': typeof AuthUpdatePasswordRoute
   '/': typeof SiteIndexRoute
   '/admin': typeof AdminIndexRoute
   '/account/addresses': typeof SiteAccountAddressesRoute
   '/account/measurements': typeof SiteAccountMeasurementsRoute
   '/account/profile': typeof SiteAccountProfileRoute
   '/account/security': typeof SiteAccountSecurityRoute
-  '/account/update-password': typeof SiteAccountUpdatePasswordRoute
   '/orders/$id': typeof SiteOrdersIdRoute
   '/product/$slug': typeof SiteProductSlugRoute
   '/account': typeof SiteAccountIndexRoute
@@ -525,13 +524,13 @@ export interface FileRoutesById {
   '/admin/staff': typeof AdminStaffRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/confirm': typeof AuthConfirmRoute
+  '/auth/update-password': typeof AuthUpdatePasswordRoute
   '/_site/': typeof SiteIndexRoute
   '/admin/': typeof AdminIndexRoute
   '/_site/account/addresses': typeof SiteAccountAddressesRoute
   '/_site/account/measurements': typeof SiteAccountMeasurementsRoute
   '/_site/account/profile': typeof SiteAccountProfileRoute
   '/_site/account/security': typeof SiteAccountSecurityRoute
-  '/_site/account/update-password': typeof SiteAccountUpdatePasswordRoute
   '/_site/orders/$id': typeof SiteOrdersIdRoute
   '/_site/product/$slug': typeof SiteProductSlugRoute
   '/_site/account/': typeof SiteAccountIndexRoute
@@ -587,12 +586,12 @@ export interface FileRouteTypes {
     | '/admin/staff'
     | '/auth/callback'
     | '/auth/confirm'
+    | '/auth/update-password'
     | '/admin/'
     | '/account/addresses'
     | '/account/measurements'
     | '/account/profile'
     | '/account/security'
-    | '/account/update-password'
     | '/orders/$id'
     | '/product/$slug'
     | '/account/'
@@ -643,13 +642,13 @@ export interface FileRouteTypes {
     | '/admin/staff'
     | '/auth/callback'
     | '/auth/confirm'
+    | '/auth/update-password'
     | '/'
     | '/admin'
     | '/account/addresses'
     | '/account/measurements'
     | '/account/profile'
     | '/account/security'
-    | '/account/update-password'
     | '/orders/$id'
     | '/product/$slug'
     | '/account'
@@ -703,13 +702,13 @@ export interface FileRouteTypes {
     | '/admin/staff'
     | '/auth/callback'
     | '/auth/confirm'
+    | '/auth/update-password'
     | '/_site/'
     | '/admin/'
     | '/_site/account/addresses'
     | '/_site/account/measurements'
     | '/_site/account/profile'
     | '/_site/account/security'
-    | '/_site/account/update-password'
     | '/_site/orders/$id'
     | '/_site/product/$slug'
     | '/_site/account/'
@@ -722,6 +721,7 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   AuthConfirmRoute: typeof AuthConfirmRoute
+  AuthUpdatePasswordRoute: typeof AuthUpdatePasswordRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -767,6 +767,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof SiteIndexRouteImport
       parentRoute: typeof SiteRoute
+    }
+    '/auth/update-password': {
+      id: '/auth/update-password'
+      path: '/auth/update-password'
+      fullPath: '/auth/update-password'
+      preLoaderRoute: typeof AuthUpdatePasswordRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/auth/confirm': {
       id: '/auth/confirm'
@@ -1097,13 +1104,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SiteOrdersIdRouteImport
       parentRoute: typeof SiteOrdersRoute
     }
-    '/_site/account/update-password': {
-      id: '/_site/account/update-password'
-      path: '/update-password'
-      fullPath: '/account/update-password'
-      preLoaderRoute: typeof SiteAccountUpdatePasswordRouteImport
-      parentRoute: typeof SiteAccountRoute
-    }
     '/_site/account/security': {
       id: '/_site/account/security'
       path: '/security'
@@ -1140,7 +1140,6 @@ interface SiteAccountRouteChildren {
   SiteAccountMeasurementsRoute: typeof SiteAccountMeasurementsRoute
   SiteAccountProfileRoute: typeof SiteAccountProfileRoute
   SiteAccountSecurityRoute: typeof SiteAccountSecurityRoute
-  SiteAccountUpdatePasswordRoute: typeof SiteAccountUpdatePasswordRoute
   SiteAccountIndexRoute: typeof SiteAccountIndexRoute
 }
 
@@ -1149,7 +1148,6 @@ const SiteAccountRouteChildren: SiteAccountRouteChildren = {
   SiteAccountMeasurementsRoute: SiteAccountMeasurementsRoute,
   SiteAccountProfileRoute: SiteAccountProfileRoute,
   SiteAccountSecurityRoute: SiteAccountSecurityRoute,
-  SiteAccountUpdatePasswordRoute: SiteAccountUpdatePasswordRoute,
   SiteAccountIndexRoute: SiteAccountIndexRoute,
 }
 
@@ -1282,6 +1280,7 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   AuthConfirmRoute: AuthConfirmRoute,
+  AuthUpdatePasswordRoute: AuthUpdatePasswordRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
