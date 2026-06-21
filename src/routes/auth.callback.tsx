@@ -12,76 +12,14 @@
  * logged.
  */
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
-import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { completeOAuthCallback } from "@/lib/auth.api";
 import { Logo } from "@/components/Logo";
 import { XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-// ---- Server function --------------------------------------------------------
-
-const completeOAuthCallback = createServerFn({ method: "POST" })
-  .validator(z.object({ code: z.string().min(1), next: z.string().max(2048).optional() }))
-  .handler(async ({ data }) => {
-    const { createServerSupabaseClient } = await import("@/lib/server/supabase.server");
-    const { safeServerLog } = await import("@/lib/server/security.server");
-    const { getAuthenticatedIdentity, invalidateSession } =
-      await import("@/lib/server/identity.server");
-    const { resolvePostLoginDestination } = await import("@/lib/server/login-destination.server");
-    const { writeAudit } = await import("@/lib/server/audit.server");
-    const { setResponseHeaders } = await import("@tanstack/react-start/server");
-
-    try {
-      setResponseHeaders({
-        "Cache-Control": "private, no-store",
-        Pragma: "no-cache",
-        Expires: "0",
-      } as unknown as Headers);
-    } catch {
-      // Ignore context errors in tests
-    }
-
-    const supabase = createServerSupabaseClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(data.code);
-    if (error) {
-      safeServerLog("warn", "PKCE code exchange failed");
-      return {
-        success: false as const,
-        redirect: null,
-        error: "Sign-in failed. Please try again.",
-      };
-    }
-
-    // Same identity resolution as password login — fail closed.
-    const result = await getAuthenticatedIdentity({ strict: true });
-    if (!result.ok) {
-      await invalidateSession();
-      if (result.reason === "inactive_staff") {
-        await writeAudit({
-          action: "auth.login.denied",
-          actorId: null,
-          metadata: { reason: "inactive_staff", via: "oauth" },
-        });
-        return { success: true as const, redirect: "/login?notice=inactive", error: null };
-      }
-      return { success: true as const, redirect: "/login?notice=verify", error: null };
-    }
-
-    const { destination } = resolvePostLoginDestination({
-      identity: result.identity,
-      requestedNext: data.next,
-    });
-
-    if (result.identity.kind === "staff") {
-      await writeAudit({
-        action: "auth.login.success",
-        actorId: result.identity.userId,
-        metadata: { role: result.identity.role, via: "oauth" },
-      });
-    }
-
-    return { success: true as const, redirect: destination, error: null };
-  });
+// The OAuth code-exchange transaction lives in @/lib/auth.api
+// (completeOAuthCallback) so it reuses one authenticated client end-to-end and
+// stays unit-testable. This route only orchestrates the redirect/error UI.
 
 // ---- Route ------------------------------------------------------------------
 

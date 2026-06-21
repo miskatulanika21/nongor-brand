@@ -58,6 +58,71 @@ export function isPrivileged(identity: AuthenticatedIdentity): identity is Staff
   return identity.kind === "staff";
 }
 
+// ---- Minimal client surface -------------------------------------------------
+
+/**
+ * The minimal structural surface of the Supabase client that identity
+ * resolution actually uses.
+ *
+ * Why this exists:
+ *   - The real per-request client returned by createServerSupabaseClient() is
+ *     assignable to it, so callers in the SAME request as an auth mutation can
+ *     pass their already-authenticated client through (see `client` below).
+ *   - Tests can satisfy it with a tiny object literal — they do NOT have to
+ *     implement the entire SupabaseClient, and we never need `any` or a broad
+ *     unsafe cast to make a mock compile.
+ *
+ * Return types are intentionally loose (`unknown` / `PromiseLike`) so the real
+ * client's richer types remain assignable without casts. Members use method
+ * shorthand so parameter checking is bivariant.
+ */
+export interface IdentityClient {
+  auth: {
+    getUser(): Promise<{ data: { user: IdentityUser | null }; error: unknown }>;
+    getClaims(): Promise<{ data: { claims: IdentityClaims } | null; error: unknown }>;
+    signOut(options?: { scope?: "global" | "local" | "others" }): Promise<{ error: unknown }>;
+  };
+  from(relation: string): {
+    select(columns: string): {
+      eq(
+        column: string,
+        value: string,
+      ): {
+        maybeSingle(): PromiseLike<{ data: StaffProfileRow | null; error: unknown }>;
+      };
+    };
+  };
+}
+
+interface IdentityUser {
+  id: string;
+  email?: string | null;
+  user_metadata?: Record<string, unknown>;
+}
+
+interface IdentityClaims {
+  sub?: string;
+  email?: unknown;
+  user_metadata?: unknown;
+}
+
+interface StaffProfileRow {
+  id: number;
+  role: unknown;
+  is_active: unknown;
+  display_name: unknown;
+}
+
+/**
+ * The concrete per-request client type. Accepting `ServerClient | IdentityClient`
+ * (rather than annotating the real client AS IdentityClient) keeps both the
+ * production call sites and the internal client cheap to type-check: the real
+ * client matches ServerClient exactly, and test mocks match IdentityClient —
+ * neither direction forces the (deeply recursive) Postgrest generics to be
+ * structurally compared, which would otherwise hit TS "instantiation too deep".
+ */
+type ServerClient = ReturnType<typeof createServerSupabaseClient>;
+
 // ---- Core resolver ----------------------------------------------------------
 
 interface ResolveOptions {
@@ -67,6 +132,18 @@ interface ResolveOptions {
    * high-risk operations (mutations, privileged actions, post-login).
    */
   strict?: boolean;
+  /**
+   * Reuse an already-authenticated client for the WHOLE transaction.
+   *
+   * Pass this when identity resolution runs in the SAME request as the auth
+   * mutation (password login, OAuth code exchange, OTP/magic-link verify): the
+   * freshly-issued session lives on that client and on the OUTGOING response
+   * cookies, but NOT yet in the incoming request cookies a fresh client would
+   * read. Reusing the authenticated client makes both the session check and the
+   * staff_profiles lookup run under that session. Omit it on later requests
+   * (route guards, header summary), where the session is already in cookies.
+   */
+  client?: ServerClient | IdentityClient;
 }
 
 /**
@@ -79,13 +156,17 @@ interface ResolveOptions {
 export async function getAuthenticatedIdentity(
   options: ResolveOptions = {},
 ): Promise<IdentityResult> {
+  // ONE client for the whole transaction. When the caller passes an
+  // already-authenticated client (same request as the auth mutation), both the
+  // session check and the staff lookup run under that session; otherwise we
+  // create a per-request client that reads the incoming request cookies.
+  const supabase = options.client ?? createServerSupabaseClient();
+
   let userId: string;
   let email: string | null;
   let metadataName: string | null;
 
   try {
-    const supabase = createServerSupabaseClient();
-
     if (options.strict) {
       const {
         data: { user },
@@ -104,11 +185,8 @@ export async function getAuthenticatedIdentity(
         return { ok: false, reason: "unauthenticated" };
       }
       userId = sub;
-      email = (data.claims.email as string | undefined) ?? null;
-      metadataName = extractName(
-        data.claims.user_metadata as Record<string, unknown> | undefined,
-        email,
-      );
+      email = typeof data.claims.email === "string" ? data.claims.email : null;
+      metadataName = extractName(data.claims.user_metadata, email);
     }
   } catch (err) {
     // A failure here means we could not even establish identity. Treat as
@@ -120,12 +198,18 @@ export async function getAuthenticatedIdentity(
     return { ok: false, reason: "unauthenticated" };
   }
 
-  // Staff-profile lookup. Distinguish three outcomes precisely:
+  // Staff-profile lookup. Distinguish outcomes precisely:
   //   error            → fail closed (lookup_failed)
   //   no row           → customer
   //   row, is_active   → staff/admin/owner   (false → inactive_staff)
+  //
+  // NOTE: PostgreSQL RLS may silently FILTER a row and return data:null with
+  // error:null. We can only distinguish an explicit query error (lookup_failed)
+  // from a no-row result (customer) — an RLS-filtered staff row is
+  // indistinguishable from a genuine customer here. Correct staff resolution in
+  // production therefore depends on the authenticated self-read policy on
+  // staff_profiles (user_id = auth.uid()), verified server-side by Antigravity.
   try {
-    const supabase = createServerSupabaseClient();
     const { data: profile, error } = await supabase
       .from("staff_profiles")
       .select("id, role, is_active, display_name")
@@ -151,11 +235,12 @@ export async function getAuthenticatedIdentity(
       return { ok: false, reason: "inactive_staff" };
     }
 
-    if (!isStaffRole(profile.role)) {
+    const role = profile.role;
+    if (!isStaffRole(role)) {
       // A row with an unrecognized role is a data-integrity problem; do not
       // grant privileged access on a value we cannot reason about.
       safeServerLog("error", "Identity: unrecognized staff role", {
-        role: String(profile.role),
+        role: String(role),
       });
       return { ok: false, reason: "lookup_failed" };
     }
@@ -166,9 +251,9 @@ export async function getAuthenticatedIdentity(
         kind: "staff",
         userId,
         email,
-        name: (profile.display_name as string | null) ?? metadataName,
-        role: profile.role,
-        staffProfileId: profile.id as number,
+        name: typeof profile.display_name === "string" ? profile.display_name : metadataName,
+        role,
+        staffProfileId: profile.id,
         isActive: true,
       },
     };
@@ -239,13 +324,20 @@ export async function requireStaff(options: ResolveOptions = {}): Promise<StaffG
 }
 
 /**
- * Best-effort sign-out used when denying inactive staff. Never throws —
+ * Best-effort sign-out used when denying a just-authenticated request (e.g.
+ * inactive staff or a lookup failure during login/OAuth). Never throws —
  * a failed sign-out must not turn a denial into an allow.
+ *
+ * Pass the SAME authenticated client used by the transaction so the session
+ * established in this request is the one cleared. Uses `scope: "local"` so we
+ * only clear the current session — a global sign-out would revoke the user's
+ * sessions on other devices, which is not this function's responsibility.
+ * (Hard cross-device revocation of deactivated staff is a Phase 7 concern.)
  */
-export async function invalidateSession(): Promise<void> {
+export async function invalidateSession(client?: ServerClient | IdentityClient): Promise<void> {
   try {
-    const supabase = createServerSupabaseClient();
-    await supabase.auth.signOut();
+    const supabase = client ?? createServerSupabaseClient();
+    await supabase.auth.signOut({ scope: "local" });
   } catch (err) {
     safeServerLog("warn", "Identity: sign-out during denial failed", {
       error: err instanceof Error ? err.message : "unknown",
@@ -255,12 +347,12 @@ export async function invalidateSession(): Promise<void> {
 
 // ---- Helpers ----------------------------------------------------------------
 
-function extractName(
-  metadata: Record<string, unknown> | undefined,
-  email: string | null,
-): string | null {
-  const fromMeta =
-    (metadata?.full_name as string | undefined) ?? (metadata?.name as string | undefined);
+function extractName(metadata: unknown, email: string | null): string | null {
+  const meta =
+    metadata && typeof metadata === "object" ? (metadata as Record<string, unknown>) : undefined;
+  const full = meta?.full_name;
+  const name = meta?.name;
+  const fromMeta = typeof full === "string" ? full : typeof name === "string" ? name : undefined;
   if (fromMeta && fromMeta.trim()) return fromMeta.trim();
   if (email) return email.split("@")[0];
   return null;
