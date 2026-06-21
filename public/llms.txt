@@ -1,0 +1,21 @@
+# Nongorr
+
+> Nongorr is a premium Bangladeshi women's fashion and beauty boutique offering handcrafted kurti, saree, three-piece suits, girls' dresses, cosmetics, and skincare. Every piece is designed for the modern woman who values elegance, quality, and a touch of heritage.
+
+## Pages
+
+- [Home](/): Discover the latest arrivals and curated collections from Nongorr.
+- [Shop](/shop): Browse the full catalog of kurti, saree, three-piece, cosmetics, and more.
+- [Product](/product/nongorr-premium-kurti): View product details, sizing, and customization options.
+- [About](/about): Learn about Nongorr's story, craftsmanship, and brand values.
+- [Contact](/contact): Get in touch for inquiries, custom orders, or support.
+- [FAQ](/faq): Answers to common questions about ordering, sizing, shipping, and returns.
+- [Size Guide](/size-guide): Detailed measurement charts and how to measure yourself accurately.
+- [Custom Size Policy](/custom-size-policy): How to order perfectly tailored garments with your own measurements.
+- [Delivery Policy](/delivery-policy): Shipping timelines, coverage areas, and delivery charges.
+- [Return Policy](/return-policy): Conditions and process for returns and exchanges.
+- [Privacy Policy](/privacy-policy): How customer data is collected, used, and protected.
+- [Terms](/terms): Terms of service for shopping on Nongorr.
+- [Authenticity Policy](/authenticity-policy): How we verify product authenticity.
+- [Payment Policy](/payment-policy): Accepted payment methods and verification process.
+- [Cookie Policy](/cookie-policy): How cookies are used on this site.

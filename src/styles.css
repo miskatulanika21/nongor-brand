@@ -1,0 +1,852 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Nongorr design system — premium Bangladeshi women's boutique.
+ * Palette: deep maroon, ivory/cream, antique gold, soft beige.
+ * Type: Cormorant Garamond (display) + Jost (body).
+ */
+
+@theme inline {
+  --font-display: "Cormorant Garamond", Georgia, serif;
+  --font-body: "Jost", ui-sans-serif, system-ui, sans-serif;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-gold: var(--gold);
+  --color-gold-foreground: var(--gold-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+  --radius: 0.5rem;
+
+  /* Live header height (announcement bar + bar). Measured at runtime by
+   * SiteHeader via ResizeObserver; this is a safe fallback. */
+  --site-header-offset: 4rem;
+
+  /* Ivory / cream canvas */
+  --background: oklch(0.972 0.012 83);
+  --foreground: oklch(0.27 0.05 22);
+
+  --card: oklch(0.986 0.008 86);
+  --card-foreground: oklch(0.27 0.05 22);
+  --popover: oklch(0.986 0.008 86);
+  --popover-foreground: oklch(0.27 0.05 22);
+
+  /* Deep maroon */
+  --primary: oklch(0.36 0.115 18);
+  --primary-foreground: oklch(0.97 0.012 83);
+
+  /* Soft beige */
+  --secondary: oklch(0.93 0.018 78);
+  --secondary-foreground: oklch(0.32 0.07 20);
+
+  --muted: oklch(0.94 0.014 80);
+  --muted-foreground: oklch(0.5 0.035 35);
+
+  --accent: oklch(0.91 0.03 75);
+  --accent-foreground: oklch(0.34 0.09 20);
+
+  /* Antique gold */
+  --gold: oklch(0.7 0.1 80);
+  --gold-foreground: oklch(0.27 0.05 22);
+
+  --destructive: oklch(0.55 0.2 27);
+  --destructive-foreground: oklch(0.98 0.01 83);
+  --success: oklch(0.55 0.11 150);
+  --success-foreground: oklch(0.98 0.01 83);
+
+  --border: oklch(0.88 0.022 76);
+  --input: oklch(0.88 0.022 76);
+  --ring: oklch(0.7 0.1 80);
+
+  --chart-1: oklch(0.36 0.115 18);
+  --chart-2: oklch(0.7 0.1 80);
+  --chart-3: oklch(0.55 0.09 40);
+  --chart-4: oklch(0.6 0.08 150);
+  --chart-5: oklch(0.5 0.06 260);
+
+  /* Admin sidebar — deep maroon shell */
+  --sidebar: oklch(0.27 0.075 20);
+  --sidebar-foreground: oklch(0.92 0.015 80);
+  --sidebar-primary: oklch(0.7 0.1 80);
+  --sidebar-primary-foreground: oklch(0.25 0.06 20);
+  --sidebar-accent: oklch(0.33 0.08 20);
+  --sidebar-accent-foreground: oklch(0.95 0.012 82);
+  --sidebar-border: oklch(0.38 0.07 20);
+  --sidebar-ring: oklch(0.7 0.1 80);
+
+  --gradient-hero: linear-gradient(135deg, oklch(0.34 0.11 18) 0%, oklch(0.27 0.08 20) 100%);
+  --gradient-gold: linear-gradient(135deg, oklch(0.78 0.1 85) 0%, oklch(0.64 0.1 70) 100%);
+  --shadow-soft: 0 4px 24px -8px oklch(0.36 0.115 18 / 0.18);
+  --shadow-card: 0 10px 40px -16px oklch(0.36 0.115 18 / 0.22);
+}
+
+.dark {
+  --background: oklch(0.2 0.04 22);
+  --foreground: oklch(0.95 0.012 82);
+  --card: oklch(0.24 0.05 22);
+  --card-foreground: oklch(0.95 0.012 82);
+  --popover: oklch(0.24 0.05 22);
+  --popover-foreground: oklch(0.95 0.012 82);
+  --primary: oklch(0.7 0.1 80);
+  --primary-foreground: oklch(0.22 0.05 22);
+  --secondary: oklch(0.3 0.05 22);
+  --secondary-foreground: oklch(0.95 0.012 82);
+  --muted: oklch(0.3 0.05 22);
+  --muted-foreground: oklch(0.72 0.03 60);
+  --accent: oklch(0.34 0.06 22);
+  --accent-foreground: oklch(0.95 0.012 82);
+  --gold: oklch(0.72 0.1 82);
+  --gold-foreground: oklch(0.22 0.05 22);
+  --destructive: oklch(0.6 0.2 27);
+  --destructive-foreground: oklch(0.98 0.01 83);
+  --success: oklch(0.6 0.11 150);
+  --success-foreground: oklch(0.98 0.01 83);
+  --border: oklch(0.38 0.05 22);
+  --input: oklch(0.38 0.05 22);
+  --ring: oklch(0.72 0.1 82);
+  --sidebar: oklch(0.22 0.06 20);
+  --sidebar-foreground: oklch(0.92 0.015 80);
+  --sidebar-primary: oklch(0.7 0.1 80);
+  --sidebar-primary-foreground: oklch(0.22 0.05 22);
+  --sidebar-accent: oklch(0.3 0.07 20);
+  --sidebar-accent-foreground: oklch(0.95 0.012 82);
+  --sidebar-border: oklch(0.34 0.06 20);
+  --sidebar-ring: oklch(0.7 0.1 80);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  .font-display {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+}
+
+@layer components {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .eyebrow {
+    font-family: var(--font-body);
+    text-transform: uppercase;
+    letter-spacing: 0.28em;
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--color-gold);
+  }
+  .ornament-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    color: var(--color-gold);
+  }
+  .ornament-divider::before,
+  .ornament-divider::after {
+    content: "";
+    height: 1px;
+    width: 3rem;
+    background: linear-gradient(90deg, transparent, var(--color-gold));
+  }
+  .ornament-divider::after {
+    background: linear-gradient(90deg, var(--color-gold), transparent);
+  }
+}
+
+@utility bg-gradient-hero {
+  background-image: var(--gradient-hero);
+}
+@utility bg-gradient-gold {
+  background-image: var(--gradient-gold);
+}
+@utility shadow-soft {
+  box-shadow: var(--shadow-soft);
+}
+@utility shadow-card {
+  box-shadow: var(--shadow-card);
+}
+
+@keyframes nongorr-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+@utility animate-marquee {
+  animation: nongorr-marquee 28s linear infinite;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes success-pop {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.success-pop {
+  animation: success-pop 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.success-pop .check-circle {
+  stroke-dasharray: 160;
+  stroke-dashoffset: 160;
+  animation: success-draw 0.6s ease-out 0.2s forwards;
+}
+.success-pop .check-mark {
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  animation: success-draw 0.4s ease-out 0.6s forwards;
+}
+@keyframes success-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes admin-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-8px);
+  }
+  40%,
+  80% {
+    transform: translateX(8px);
+  }
+}
+.animate-shake {
+  animation: admin-shake 0.45s ease-in-out;
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 1 — Global animation utilities (premium, restrained)
+ * Defines the previously-undefined animate-fade-in / animate-scale-in plus a
+ * small set of supporting motions. Keep usage intentional; do not over-animate.
+ * ------------------------------------------------------------------------- */
+@keyframes nongorr-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes nongorr-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes nongorr-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes nongorr-glow-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 oklch(0.7 0.1 80 / 0);
+  }
+  50% {
+    box-shadow: 0 0 0 6px oklch(0.7 0.1 80 / 0.18);
+  }
+}
+@keyframes nongorr-timeline-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.82);
+  }
+}
+@keyframes nongorr-shimmer {
+  from {
+    background-position: -150% 0;
+  }
+  to {
+    background-position: 250% 0;
+  }
+}
+
+/* Elegant ease-out for entrances; soft cubic-bezier, no bounce. */
+@utility animate-fade-in {
+  animation: nongorr-fade-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@utility animate-scale-in {
+  animation: nongorr-scale-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@utility animate-slide-up {
+  animation: nongorr-slide-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@utility animate-glow-pulse {
+  animation: nongorr-glow-pulse 2.4s ease-in-out infinite;
+}
+@utility animate-timeline-pulse {
+  animation: nongorr-timeline-pulse 1.8s ease-in-out infinite;
+}
+
+/* Shimmer sweep for premium skeletons. */
+@utility shimmer {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    oklch(1 0 0 / 0.18) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: nongorr-shimmer 1.6s ease-in-out infinite;
+}
+
+/* Staggered children entrance — apply to a parent; direct children fade in. */
+.stagger-children > * {
+  animation: nongorr-fade-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.stagger-children > *:nth-child(1) {
+  animation-delay: 0.04s;
+}
+.stagger-children > *:nth-child(2) {
+  animation-delay: 0.1s;
+}
+.stagger-children > *:nth-child(3) {
+  animation-delay: 0.16s;
+}
+.stagger-children > *:nth-child(4) {
+  animation-delay: 0.22s;
+}
+.stagger-children > *:nth-child(5) {
+  animation-delay: 0.28s;
+}
+.stagger-children > *:nth-child(6) {
+  animation-delay: 0.34s;
+}
+.stagger-children > *:nth-child(7) {
+  animation-delay: 0.4s;
+}
+.stagger-children > *:nth-child(8) {
+  animation-delay: 0.46s;
+}
+
+/* ---------------------------------------------------------------------------
+ * 404 Not Found — gentle hanger sway. Reduced-motion users get a static
+ * illustration; no layout shift, no JS animation library.
+ * ------------------------------------------------------------------------- */
+@keyframes nongorr-notfound-sway {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+.nongorr-notfound-sway {
+  animation: nongorr-notfound-sway 6.5s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes nongorr-notfound-drift {
+  0% {
+    transform: translate(0, 0) rotate(-2deg);
+  }
+  50% {
+    transform: translate(4px, -5px) rotate(2deg);
+  }
+  100% {
+    transform: translate(0, 0) rotate(-2deg);
+  }
+}
+.nongorr-notfound-drift {
+  animation: nongorr-notfound-drift 7s ease-in-out infinite;
+  transform-origin: center top;
+  will-change: transform;
+}
+@keyframes nongorr-notfound-shimmer {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+.nongorr-notfound-shimmer {
+  animation: nongorr-notfound-shimmer 5.5s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nongorr-notfound-sway {
+    animation: none;
+  }
+  .nongorr-notfound-drift,
+  .nongorr-notfound-shimmer {
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 3 — Homepage presentation helpers (restrained, reduced-motion safe)
+ * ------------------------------------------------------------------------- */
+
+/* Subtle perspective depth for the hero image card — desktop only, gentle. */
+.hero-perspective {
+  perspective: 1400px;
+}
+.hero-tilt {
+  transform: rotateY(-1.4deg) rotateX(1.2deg);
+  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+.hero-tilt:hover {
+  transform: rotateY(0deg) rotateX(0deg);
+}
+@media (max-width: 1023px) {
+  .hero-tilt {
+    transform: none;
+  }
+}
+
+/* Soft premium gold sweep on desktop hover (low brightness). */
+.gold-sweep {
+  position: relative;
+  overflow: hidden;
+}
+@media (min-width: 1024px) {
+  .gold-sweep::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      115deg,
+      transparent 35%,
+      oklch(0.82 0.12 85 / 0.22) 50%,
+      transparent 65%
+    );
+    transform: translateX(-130%);
+    transition: transform 0.8s ease;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .gold-sweep:hover::after {
+    transform: translateX(130%);
+  }
+}
+
+/* Pause the trust marquee on hover for readability. */
+.marquee-track:hover {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-tilt {
+    transform: none !important;
+  }
+  .gold-sweep::after {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 4 — Shop presentation helpers
+ * ------------------------------------------------------------------------- */
+
+/* Disabled (Coming soon) filter groups must not respond to interaction. */
+.shop-filter-disabled,
+.shop-filter-disabled * {
+  pointer-events: none;
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------------------
+ * Accessibility — honour reduced-motion preferences.
+ * ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Product detail (PDP) — gallery rail, video tile, mobile purchase bar.
+ * ------------------------------------------------------------------------- */
+.pdp-thumb-rail {
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pdp-mobile-purchase-bar {
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+/* Keep the sticky purchase bar out of the way while any dialog (lightbox,
+ * size guide, share menu) is open so it never overlaps modal content. */
+body:has([role="dialog"][data-state="open"]) .pdp-mobile-purchase-bar {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(100%);
+}
+
+/* Checkout stepper dots */
+.pdp-step-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 9999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-background);
+  color: var(--color-muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.pdp-step-dot.is-active {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+}
+.pdp-step-dot.is-done {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* Horizontal snap row for recommendation carousels */
+.pdp-snap-row {
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+.pdp-snap-row > * {
+  scroll-snap-align: start;
+}
+
+/* Account: hide horizontal scrollbar on the mobile tab strip */
+.account-mobile-tabs {
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.account-mobile-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* Account: distinct active treatment for nav links */
+.account-nav-link-active {
+  font-weight: 600;
+}
+
+/* Size Guide: mobile help CTA that clears the global WhatsApp bubble */
+.size-guide-mobile-cta {
+  left: 1rem;
+  right: 5.5rem;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+/* Hide it while a dialog/lightbox is open so it never overlaps modals */
+body:has([role="dialog"]) .size-guide-mobile-cta {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(100%);
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body:has([role="dialog"]) .size-guide-mobile-cta {
+    transition: none;
+  }
+}
+
+/* Admin (Phase 10): sticky bulk-action bar */
+.admin-bulk-bar {
+  position: sticky;
+  bottom: max(0.5rem, env(safe-area-inset-bottom));
+  z-index: 20;
+}
+
+/* Admin: responsive media grid */
+.admin-media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.75rem;
+}
+
+/* Admin: reorder handle affordance */
+.admin-reorder-handle {
+  cursor: default;
+}
+
+/* Admin: skeleton shimmer for loading previews */
+.admin-preview-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.admin-preview-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklch, var(--color-foreground) 6%, transparent),
+    transparent
+  );
+  animation: admin-shimmer 1.4s infinite;
+}
+@keyframes admin-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin-preview-shimmer::after {
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 12: shared header-offset utilities for sticky elements.
+ * --site-header-offset is measured at runtime in SiteHeader.tsx so sticky
+ * content always clears the real header height (announcement bar included).
+ * ------------------------------------------------------------------------- */
+.site-sticky-under-header {
+  top: var(--site-header-offset);
+}
+.site-sticky-with-gap {
+  top: calc(var(--site-header-offset) + 1.5rem);
+}
+.site-sticky-max-height {
+  max-height: calc(100vh - var(--site-header-offset) - 2rem);
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 12: global WhatsApp floating action button.
+ * Sits below modal/sheet overlays and hides while a Radix dialog is open.
+ * ------------------------------------------------------------------------- */
+.site-whatsapp-fab {
+  z-index: 30;
+  bottom: max(1.25rem, calc(env(safe-area-inset-bottom) + 0.5rem));
+}
+body:has([role="dialog"][data-state="open"]) .site-whatsapp-fab {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(0.5rem);
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  body:has([role="dialog"][data-state="open"]) .site-whatsapp-fab {
+    transition: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 12A — Footer visual refinement.
+ * ------------------------------------------------------------------------- */
+
+/* Footer — one continuous premium maroon surface with a darker base toward the
+ * bottom and a single faint corner curve. Replaces the old raster watermarks. */
+.site-footer-bg {
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(180deg, oklch(0.26 0.07 20) 0%, oklch(0.21 0.05 20) 100%);
+}
+.site-footer-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.04;
+  background:
+    radial-gradient(55% 70% at -8% 12%, transparent 46%, var(--color-gold) 47%, transparent 49%),
+    radial-gradient(45% 60% at -6% 28%, transparent 52%, var(--color-gold) 53%, transparent 55%);
+}
+
+/* Newsletter band sits on the same surface; add a soft radial highlight only. */
+.site-footer-newsletter {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(60% 70% at 50% 0%, oklch(0.78 0.1 85 / 0.05) 0%, transparent 60%),
+    linear-gradient(180deg, oklch(0.3 0.09 19) 0%, oklch(0.26 0.07 20) 100%);
+}
+
+/* -------------------------------------------------------------------------
+ * Login page — single illustrated background system
+ * One cohesive Nongorr illustration (lower-left heritage scene of women
+ * doing nakshi-kantha, surrounded by small motifs; cream form-safe area on
+ * the right). Applied as a CSS background so it sits behind the form
+ * without entering the accessibility tree.
+ * ------------------------------------------------------------------------- */
+
+.nongorr-login-illustrated-page {
+  position: relative;
+  min-height: calc(100svh - var(--auth-header-height, 4.25rem));
+  overflow-x: hidden;
+  background-color: #faf6ef;
+  background-image: url("./assets/nongorr-login-illustrated-bg.webp");
+  background-repeat: no-repeat;
+  background-position: left bottom;
+  background-size: contain;
+  background-attachment: scroll;
+}
+
+/* Soft cream gradient veil that fades the illustrated left into the
+ * clean form-safe area on the right. Sits above the background image
+ * but below all interactive content. */
+.nongorr-login-illustrated-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    rgba(250, 246, 239, 0) 0%,
+    rgba(250, 246, 239, 0) 30%,
+    rgba(250, 246, 239, 0.75) 42%,
+    #faf6ef 52%
+  );
+}
+.nongorr-login-illustrated-page > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Tablet (768–1023px): reduce intensity so artwork does not crowd the form.
+ * The page is single-column at this size; keep the illustration as a faint
+ * tonal wash anchored at the bottom-left. */
+@media (max-width: 1023.98px) and (min-width: 768px) {
+  .nongorr-login-illustrated-page {
+    background-size: 1100px auto;
+    background-position: left bottom;
+    background-color: #faf6ef;
+  }
+  .nongorr-login-illustrated-page::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(
+      180deg,
+      rgba(250, 246, 239, 0.6) 0%,
+      rgba(250, 246, 239, 0.85) 60%,
+      #faf6ef 100%
+    );
+  }
+}
+
+/* Mobile (<768px): prioritise the form. Drop the illustration entirely. */
+@media (max-width: 767.98px) {
+  .nongorr-login-illustrated-page {
+    background-image: none;
+    background-color: #faf6ef;
+  }
+}
+
+/* Mid-desktop (1024–1439px): keep the full illustration but pin to the
+ * left so the form-safe cream area stays on the right. */
+@media (min-width: 1024px) and (max-width: 1439.98px) {
+  .nongorr-login-illustrated-page {
+    background-size: cover;
+    background-position: 35% bottom;
+  }
+}
