@@ -12,6 +12,7 @@ export const AUTH_NOTICES: Record<string, string> = {
   verify: "We could not verify your account access. Please try again.",
   denied: "You do not have access to that area.",
   permission: "You do not have permission to view that page.",
+  recovery: "Your password reset link is invalid or has expired. Please request a new one.",
 };
 
 /**

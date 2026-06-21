@@ -25,7 +25,8 @@ import {
   loginSchema,
   registerSchema,
   resetRequestSchema,
-  passwordUpdateSchema,
+  passwordSchema,
+  privilegedPasswordSchema,
   authConfirmSchema,
 } from "@/lib/validation";
 import type { Designation } from "@/lib/server/login-destination.server";
@@ -270,64 +271,98 @@ export const requestPasswordReset = createServerFn({ method: "POST" })
 
 // ---- Password Update (user is authenticated) --------------------------------
 
-export const updatePassword = createServerFn({ method: "POST" })
-  .validator(passwordUpdateSchema)
-  .handler(async ({ data }) => {
-    await setNoCacheHeaders();
-    const { createServerSupabaseClient } = await import("@/lib/server/supabase.server");
-    const { getPublicSupabaseEnv } = await import("@/lib/server/env.server");
-    const { checkCsrfOrigin, getClientIp, safeServerLog } =
-      await import("@/lib/server/security.server");
-    const { getAuthenticatedIdentity } = await import("@/lib/server/identity.server");
-    const { checkRateLimit, rateLimitMessage } = await import("@/lib/server/rate-limit.server");
-    const { writeAudit } = await import("@/lib/server/audit.server");
-    const { passwordSchema, privilegedPasswordSchema } = await import("@/lib/validation");
+/**
+ * Password-update payload. `next` is an OPTIONAL requested post-update route; it
+ * is run through the role-aware safe-redirect resolver, so a customer can never
+ * use it to reach /admin and a storefront `next` can never override a privileged
+ * account's admin destination.
+ */
+const passwordUpdateWithNextSchema = z
+  .object({
+    password: passwordSchema,
+    confirm: z.string(),
+    next: z.string().max(2048).optional(),
+  })
+  .refine((d) => d.password === d.confirm, {
+    message: "Passwords do not match.",
+    path: ["confirm"],
+  });
 
-    const env = getPublicSupabaseEnv();
-    if (!checkCsrfOrigin(env.siteUrl)) {
-      return { success: false as const, error: "Invalid request origin." };
-    }
+/**
+ * Core password-update transaction (extracted for unit-testability).
+ *
+ * Verifies identity (getUser, reusing one client), enforces the role-appropriate
+ * password policy, updates the password, audits privileged completions, and
+ * returns a ROLE-AWARE destination: customer → /account, staff/admin/owner →
+ * /admin (or an authorized admin sub-page), via resolvePostLoginDestination. A
+ * denied/expired session fails closed. This is what makes recovery work for
+ * staff (who can never reach the customer-only /account layout).
+ */
+export async function performPasswordUpdate(data: z.infer<typeof passwordUpdateWithNextSchema>) {
+  await setNoCacheHeaders();
+  const { createServerSupabaseClient } = await import("@/lib/server/supabase.server");
+  const { getPublicSupabaseEnv } = await import("@/lib/server/env.server");
+  const { checkCsrfOrigin, getClientIp, safeServerLog } =
+    await import("@/lib/server/security.server");
+  const { getAuthenticatedIdentity } = await import("@/lib/server/identity.server");
+  const { resolvePostLoginDestination } = await import("@/lib/server/login-destination.server");
+  const { checkRateLimit, rateLimitMessage } = await import("@/lib/server/rate-limit.server");
+  const { writeAudit } = await import("@/lib/server/audit.server");
 
-    // High-risk: resolve verified identity (getUser) and fail closed on denial.
-    const result = await getAuthenticatedIdentity({ strict: true });
-    if (!result.ok) {
-      return { success: false as const, error: "Please sign in again." };
-    }
-    const identity = result.identity;
+  const env = getPublicSupabaseEnv();
+  if (!checkCsrfOrigin(env.siteUrl)) {
+    return { success: false as const, error: "Invalid request origin." };
+  }
 
-    const rl = await checkRateLimit("passwordUpdate", [getClientIp(), identity.userId]);
-    if (!rl.allowed) {
-      return { success: false as const, error: rateLimitMessage() };
-    }
+  const supabase = createServerSupabaseClient();
 
-    // Privileged accounts must meet the stronger password policy.
-    const schema = identity.kind === "staff" ? privilegedPasswordSchema : passwordSchema;
-    const check = schema.safeParse(data.password);
+  // High-risk: resolve verified identity (getUser) and fail closed on denial.
+  // Reuse the same client (consistent with the other auth transactions).
+  const result = await getAuthenticatedIdentity({ strict: true, client: supabase });
+  if (!result.ok) {
+    return { success: false as const, error: "Please sign in again." };
+  }
+  const identity = result.identity;
+
+  const rl = await checkRateLimit("passwordUpdate", [getClientIp(), identity.userId]);
+  if (!rl.allowed) {
+    return { success: false as const, error: rateLimitMessage() };
+  }
+
+  // Privileged accounts must meet the stronger password policy. (The validator
+  // already enforced the customer base policy + confirm match.)
+  if (identity.kind === "staff") {
+    const check = privilegedPasswordSchema.safeParse(data.password);
     if (!check.success) {
       return {
         success: false as const,
         error: check.error.issues[0]?.message ?? "Password does not meet requirements.",
       };
     }
+  }
 
-    const supabase = createServerSupabaseClient();
-    const { error } = await supabase.auth.updateUser({ password: data.password });
+  const { error } = await supabase.auth.updateUser({ password: data.password });
 
-    if (error) {
-      safeServerLog("warn", "Password update failed", { userId: identity.userId });
-      return { success: false as const, error: "Failed to update password. Please try again." };
-    }
+  if (error) {
+    safeServerLog("warn", "Password update failed", { userId: identity.userId });
+    return { success: false as const, error: "Failed to update password. Please try again." };
+  }
 
-    if (identity.kind === "staff") {
-      await writeAudit({
-        action: "auth.password_reset.completed",
-        actorId: identity.userId,
-        metadata: { role: identity.role },
-      });
-    }
+  if (identity.kind === "staff") {
+    await writeAudit({
+      action: "auth.password_reset.completed",
+      actorId: identity.userId,
+      metadata: { role: identity.role },
+    });
+  }
 
-    return { success: true as const, message: "Password updated successfully." };
-  });
+  const { destination } = resolvePostLoginDestination({ identity, requestedNext: data.next });
+  return { success: true as const, message: "Password updated successfully.", destination };
+}
+
+export const updatePassword = createServerFn({ method: "POST" })
+  .validator(passwordUpdateWithNextSchema)
+  .handler(async ({ data }) => performPasswordUpdate(data));
 
 // ---- Email / token confirmation (OTP / token_hash) --------------------------
 
@@ -456,9 +491,16 @@ export async function performEmailConfirm(data: z.infer<typeof authTokenConfirmS
     return { success: false as const, type: data.type, destination: null };
   }
 
-  // Recovery always routes to the password-update screen.
+  // Recovery routes to the STANDALONE password-update screen (outside the
+  // customer-only /account layout) so staff/admin/owner can complete recovery
+  // too. A safe `next` is preserved for the role-aware post-update redirect.
   if (data.type === "recovery") {
-    return { success: true as const, type: data.type, destination: "/account/update-password" };
+    const { isSafeRedirect } = await import("@/lib/safe-redirect");
+    const safeNext = data.next && isSafeRedirect(data.next) ? data.next : undefined;
+    const destination = safeNext
+      ? `/auth/update-password?next=${encodeURIComponent(safeNext)}`
+      : "/auth/update-password";
+    return { success: true as const, type: data.type, destination };
   }
 
   // Email confirmation / magic link: a verified user now has a session. Resolve

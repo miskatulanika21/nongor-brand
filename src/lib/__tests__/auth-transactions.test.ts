@@ -201,7 +201,7 @@ describe("performEmailConfirm", () => {
     expect(getIdentityMock).toHaveBeenCalledWith({ strict: true, client });
   });
 
-  it("recovery routes to the update-password screen without resolving identity", async () => {
+  it("recovery routes to the STANDALONE update-password screen without resolving identity", async () => {
     const client = fakeClient();
     createClientMock.mockReturnValue(client);
 
@@ -210,7 +210,7 @@ describe("performEmailConfirm", () => {
     expect(result).toMatchObject({
       success: true,
       type: "recovery",
-      destination: "/account/update-password",
+      destination: "/auth/update-password",
     });
     expect(getIdentityMock).not.toHaveBeenCalled();
   });
