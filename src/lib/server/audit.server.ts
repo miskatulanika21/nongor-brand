@@ -1,0 +1,99 @@
+/**
+ * Audit logging — records security-relevant events to public.audit_logs.
+ *
+ * audit_logs grants INSERT only to service_role, so writes go through the
+ * admin client. Callers must pass the REAL actor id (the authenticated user
+ * performing the action) — never the target. For system-run tasks use the
+ * documented SYSTEM_ACTOR sentinel (null actor + system flag in metadata).
+ *
+ * Never store secrets: passwords, tokens, OAuth codes, full API keys. Metadata
+ * is redacted defensively before insert.
+ *
+ * Writes are best-effort: a failed audit insert is logged but never blocks or
+ * reverses the primary action. The .server.ts suffix keeps this off the client.
+ */
+import { createAdminSupabaseClient } from "./supabase-admin.server";
+import { safeServerLog, redactPII } from "./security.server";
+
+/** Canonical audit action names. Extend as new sensitive events appear. */
+export type AuditAction =
+  | "auth.login.success" // privileged login succeeded
+  | "auth.login.denied" // privileged login attempt denied (inactive/lookup)
+  | "auth.login.failed" // bad credentials on a known privileged email
+  | "auth.logout"
+  | "auth.password_reset.completed"
+  | "mfa.enrolled"
+  | "mfa.removed"
+  | "mfa.challenge.success"
+  | "mfa.challenge.failed"
+  | "staff.invited"
+  | "staff.provisioned"
+  | "staff.activated"
+  | "staff.deactivated"
+  | "staff.role_changed"
+  | "authz.denied" // permission denial for a sensitive action
+  | "settings.changed"
+  | "integration.changed"
+  | "owner.action";
+
+export interface AuditEntry {
+  action: AuditAction;
+  /** The authenticated actor performing the action. null = system task. */
+  actorId: string | null;
+  targetType?: string | null;
+  targetId?: string | null;
+  /** Safe, non-secret context. Redacted again defensively before insert. */
+  metadata?: Record<string, unknown>;
+}
+
+const SECRET_KEY_PATTERN = /(password|token|secret|code|key|authorization|cookie)/i;
+
+/** Strip obviously-secret keys and redact PII from audit metadata. */
+function sanitizeMetadata(metadata: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!metadata) return {};
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(metadata)) {
+    if (SECRET_KEY_PATTERN.test(k)) {
+      out[k] = "[REDACTED]";
+      continue;
+    }
+    if (typeof v === "string") {
+      out[k] = redactPII(v);
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
+/**
+ * Write an audit record. Best-effort: never throws to the caller.
+ */
+export async function writeAudit(entry: AuditEntry): Promise<void> {
+  try {
+    const admin = createAdminSupabaseClient();
+    const metadata = sanitizeMetadata(entry.metadata);
+    if (entry.actorId === null) metadata.system = true;
+
+    const { error } = await admin.from("audit_logs").insert({
+      actor_id: entry.actorId,
+      action: entry.action,
+      target_type: entry.targetType ?? null,
+      target_id: entry.targetId ?? null,
+      metadata,
+    });
+
+    if (error) {
+      safeServerLog("error", "Audit write failed", {
+        action: entry.action,
+        code: (error as { code?: string }).code ?? "unknown",
+      });
+    }
+  } catch (err) {
+    // Audit must never break the primary operation.
+    safeServerLog("error", "Audit write threw", {
+      action: entry.action,
+      error: err instanceof Error ? err.message : "unknown",
+    });
+  }
+}
