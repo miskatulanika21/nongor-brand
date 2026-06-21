@@ -18,7 +18,7 @@ Current verified baseline:
 - Tailwind CSS v4
 - Vite 7
 - TanStack Router and React Query
-- Nitro-based server build; the current Lovable Vite wrapper defaults to a Cloudflare-compatible target
+- Plain TanStack Start Vite config (`vite.config.ts`); no deploy target is wired yet (choose one in Phase 2)
 - Bun lockfile and Bun-based scripts
 - About 30,000 lines of TypeScript/TSX
 - 53 route files: 32 public/site routes and 20 admin routes, plus root routing
@@ -29,8 +29,8 @@ Current verified baseline:
 Important project rules already present in the repository:
 
 - Do not manually edit `src/routeTree.gen.ts`; it is generated.
-- Do not duplicate plugins already provided by `@lovable.dev/vite-tanstack-config`.
-- Do not rewrite published Git history, force-push, rebase, amend, or squash pushed commits connected to Lovable.
+- The Vite config is a plain TanStack Start setup in `vite.config.ts`; add or change plugins there.
+- Do not rewrite published Git history, force-push, rebase, amend, or squash already-pushed commits.
 - Preserve the root `<Outlet />` and TanStack Start routing conventions.
 - Prefer server-only modules and TanStack Start server functions/routes for server logic; never expose secrets in client code or `VITE_*` variables.
 
@@ -127,7 +127,7 @@ The preferred direction, because it fits the current app and existing TODO comme
 
 Before implementing provider-specific code, confirm:
 
-1. Production hosting target: current Cloudflare-compatible Lovable/Nitro deployment, a Node server, Vercel, or another platform?
+1. Production hosting target: a Cloudflare-compatible Nitro build, a Node server, Vercel, or another platform?
 2. Database/auth/storage provider: Supabase confirmed, or another PostgreSQL provider?
 3. Is there an existing Supabase project, and can the required public/server credentials be supplied securely?
 4. Customer authentication for the first production release: email/password, phone OTP, both, or another method? Phone OTP requires a confirmed SMS provider and cost plan.
