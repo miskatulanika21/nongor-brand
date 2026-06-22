@@ -3,11 +3,32 @@
 Authoritative record of verified project state. Code and live-environment
 behavior are the source of truth; this file is updated after every stage.
 
-_Last updated: 2026-06-22 (Stage 1.5 code complete — four bugs + items A–E; two
-migrations pending apply; credential rotation / MFA rollout pending owner)._
+_Last updated: 2026-06-23 (Stage 1.5 CODE CLOSURE complete — four bugs + items
+A–E + follow-up hardening patch; OPERATIONAL CLOSURE pending: 2 migrations to
+apply, schema exposure, credential rotation, MFA rollout, concurrency/rollback/
+header proofs)._
 
 State legend: **(1) code complete · (2) migration applied · (3) deployed
 verification complete · (4) operator action pending.**
+
+> **Stage 2 is NOT yet safe to begin.** Stage 1.5 code closure is complete, but
+> operational closure (live migrations, deployed verification, credential
+> rotation, MFA rollout) and review/acceptance of this follow-up patch remain.
+
+## Follow-up security hardening patch (2026-06-23)
+
+Code-complete (1); covered by tests; no new migration (all code/CI/docs):
+
+| #   | Fix                                                                                                                                                                              | Tests                                     |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| 1   | Env-validation latch records success only AFTER validation (no bypass on prior throw); moved to `env.server.ensureEnvValidated()`                                                | `env-validation.test.ts`                  |
+| 2   | `updateStaffRole`/`setStaffActive` authorize baseline admin BEFORE the privileged target lookup (no existence oracle); owner elevation via already-resolved role                 | `staff-authz.test.ts`                     |
+| 3   | MFA enrollment: rate-limited, AAL2 required to add a factor when one is verified, stale unverified factors cleaned up, initiation/denial/failure audited (no secret/QR in audit) | `mfa-enroll.test.ts`                      |
+| 4   | `authz.denied` (and identity/rbac denials) carry the verified actor id; `null` only when unauthenticated                                                                         | `identity.test.ts`, `staff-authz.test.ts` |
+| 5   | CI: `SUPABASE_DB_PASSWORD` added to linked-lint credential gate; new `migrations-local` job applies all migrations to a fresh local DB                                           | CI (runs on push/PR)                      |
+| 6   | Pinned Bun (`1.3.14`) and Supabase CLI (`2.33.9`) — no `latest`                                                                                                                  | —                                         |
+| 7   | Operator scripts (`provision-admin.ts`, `e2e-auth-test.ts`) use `admin.schema("api").rpc(...)`; redundant direct `staff_profiles` write removed                                  | —                                         |
+| 8   | Header-failure comment no longer claims an absolute "never unprotected" guarantee                                                                                                | `headers.test.ts`                         |
 
 ## Reproducible command output (this commit)
 
@@ -16,22 +37,22 @@ verification complete · (4) operator action pending.**
 | `tsc --noEmit`     | clean                                                                       |
 | `eslint .`         | 0 errors, 31 warnings (pre-existing `react-refresh/only-export-components`) |
 | `prettier --check` | clean                                                                       |
-| `vitest run`       | 193 passed / 15 files                                                       |
+| `vitest run`       | 211 passed / 18 files                                                       |
 | `vite build`       | success                                                                     |
 
 ## Stage status
 
-| Stage       | Scope                                                                    | Status                                                                  |
-| ----------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
-| 1           | Auth, RBAC, CSRF, headers, rate limit, MFA scaffold, audit, owner-safety | Implemented                                                             |
-| 1.5         | Security closure (4 bugs + items A–E)                                    | **Code complete (1); 2 migrations pending apply (4); rotation pending** |
-| 2 (Pass 1)  | DB-backed **public catalog read** path                                   | Implemented + applied to live project                                   |
-| 2 (Pass 2+) | Admin catalog/inventory/media/settings **writes**                        | Not started                                                             |
-| 3           | Server-authoritative checkout, orders, payments                          | Not started                                                             |
-| 4           | Customer accounts / addresses / measurements                             | Not started (localStorage)                                              |
-| 5           | Courier adapters, shipments, webhooks, outbox                            | Not started                                                             |
-| 6           | Reviews, banners, CMS, contact, newsletter, reports, settings            | Not started (mock)                                                      |
-| 7           | Hardening, perf/a11y, CI/CD, backups                                     | Not started                                                             |
+| Stage       | Scope                                                                    | Status                                                         |
+| ----------- | ------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| 1           | Auth, RBAC, CSRF, headers, rate limit, MFA scaffold, audit, owner-safety | Implemented                                                    |
+| 1.5         | Security closure (4 bugs + A–E + follow-up hardening)                    | **Code closure complete (1); operational closure pending (4)** |
+| 2 (Pass 1)  | DB-backed **public catalog read** path                                   | Implemented + applied to live project                          |
+| 2 (Pass 2+) | Admin catalog/inventory/media/settings **writes**                        | Not started                                                    |
+| 3           | Server-authoritative checkout, orders, payments                          | Not started                                                    |
+| 4           | Customer accounts / addresses / measurements                             | Not started (localStorage)                                     |
+| 5           | Courier adapters, shipments, webhooks, outbox                            | Not started                                                    |
+| 6           | Reviews, banners, CMS, contact, newsletter, reports, settings            | Not started (mock)                                             |
+| 7           | Hardening, perf/a11y, CI/CD, backups                                     | Not started                                                    |
 
 ## Stage 1.5 — items
 

@@ -106,7 +106,7 @@ describe("getAuthenticatedIdentity — injected client (strict)", () => {
     });
   });
 
-  it("inactive staff row → inactive_staff (never customer)", async () => {
+  it("inactive staff row → inactive_staff (never customer), with actor id for audit", async () => {
     const { client } = makeClient({
       user: { id: "u3" },
       staffRow: { id: 1, role: "admin", is_active: false, display_name: null },
@@ -114,10 +114,11 @@ describe("getAuthenticatedIdentity — injected client (strict)", () => {
     expect(await getAuthenticatedIdentity({ strict: true, client })).toEqual({
       ok: false,
       reason: "inactive_staff",
+      actorId: "u3",
     });
   });
 
-  it("explicit staff lookup error (RLS denial / DB error) → lookup_failed (never customer)", async () => {
+  it("explicit staff lookup error (RLS denial / DB error) → lookup_failed, with actor id", async () => {
     const { client } = makeClient({
       user: { id: "u4" },
       staffRow: null,
@@ -126,10 +127,11 @@ describe("getAuthenticatedIdentity — injected client (strict)", () => {
     expect(await getAuthenticatedIdentity({ strict: true, client })).toEqual({
       ok: false,
       reason: "lookup_failed",
+      actorId: "u4",
     });
   });
 
-  it("unrecognized role value → lookup_failed", async () => {
+  it("unrecognized role value → lookup_failed, with actor id", async () => {
     const { client } = makeClient({
       user: { id: "u5" },
       staffRow: { id: 2, role: "wizard", is_active: true, display_name: "X" },
@@ -137,6 +139,7 @@ describe("getAuthenticatedIdentity — injected client (strict)", () => {
     expect(await getAuthenticatedIdentity({ strict: true, client })).toEqual({
       ok: false,
       reason: "lookup_failed",
+      actorId: "u5",
     });
   });
 
@@ -145,6 +148,7 @@ describe("getAuthenticatedIdentity — injected client (strict)", () => {
     expect(await getAuthenticatedIdentity({ strict: true, client })).toEqual({
       ok: false,
       reason: "unauthenticated",
+      actorId: null,
     });
     // Short-circuits before the staff lookup.
     expect(from).not.toHaveBeenCalled();
@@ -176,6 +180,7 @@ describe("getAuthenticatedIdentity — injected client (non-strict)", () => {
     expect(await getAuthenticatedIdentity({ client })).toEqual({
       ok: false,
       reason: "unauthenticated",
+      actorId: null,
     });
   });
 
@@ -184,6 +189,7 @@ describe("getAuthenticatedIdentity — injected client (non-strict)", () => {
     expect(await getAuthenticatedIdentity({ client })).toEqual({
       ok: false,
       reason: "unauthenticated",
+      actorId: null,
     });
   });
 });
@@ -225,6 +231,7 @@ describe("getAuthenticatedIdentity — non-injected (per-request client)", () =>
     expect(await getAuthenticatedIdentity({ strict: true })).toEqual({
       ok: false,
       reason: "lookup_failed",
+      actorId: "u1",
     });
   });
 });
@@ -239,6 +246,7 @@ describe("requireCustomer / requireStaff", () => {
     expect(await requireStaff({ strict: true, client: customer() })).toEqual({
       ok: false,
       reason: "is_customer",
+      actorId: "u1",
     });
   });
 
@@ -248,6 +256,7 @@ describe("requireCustomer / requireStaff", () => {
     expect(await requireCustomer({ strict: true, client: staff() })).toEqual({
       ok: false,
       reason: "is_staff",
+      actorId: "u1",
     });
   });
 
@@ -259,6 +268,7 @@ describe("requireCustomer / requireStaff", () => {
     expect(await requireStaff({ strict: true, client })).toEqual({
       ok: false,
       reason: "inactive_staff",
+      actorId: "u1",
     });
   });
 });

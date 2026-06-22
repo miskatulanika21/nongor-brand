@@ -175,7 +175,7 @@ describe("performPasswordUpdate — denials", () => {
   it("unauthenticated → controlled failure, no updateUser", async () => {
     const client = clientOk();
     createClientMock.mockReturnValue(client);
-    getIdentityMock.mockResolvedValue({ ok: false, reason: "unauthenticated" });
+    getIdentityMock.mockResolvedValue({ ok: false, reason: "unauthenticated", actorId: null });
     const r = await performPasswordUpdate({ password: "whatever1", confirm: "whatever1" });
     expect(r).toEqual({ success: false, error: "Please sign in again." });
     expect(client.auth.updateUser).not.toHaveBeenCalled();
@@ -183,7 +183,7 @@ describe("performPasswordUpdate — denials", () => {
 
   it("inactive staff (recovery) → controlled failure", async () => {
     createClientMock.mockReturnValue(clientOk());
-    getIdentityMock.mockResolvedValue({ ok: false, reason: "inactive_staff" });
+    getIdentityMock.mockResolvedValue({ ok: false, reason: "inactive_staff", actorId: "actor-1" });
     const r = await performPasswordUpdate({ password: STAFF_PW, confirm: STAFF_PW });
     expect(r).toEqual({ success: false, error: "Please sign in again." });
   });

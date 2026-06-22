@@ -30,15 +30,34 @@ invitee clicks link → `auth.confirm.tsx` (allowlist now includes `invite`) →
 `performEmailConfirm` `verifyOtp({ type: "invite" })` → routed to
 `/auth/update-password` to set an initial password → role-aware redirect to admin.
 
-## Staff mutations (Bugs 1 + 3, Item D) — needs `20260622120000` applied
+## Staff mutations (Bugs 1 + 3, Item D + follow-up) — needs `20260622120000` applied
 
 `provisionStaff` / `updateStaffRole` / `setStaffActive` (`staff.api.ts`):
-CSRF → `requireRole(...)` → **`requireStepUp(role)`** (AAL2, only when
-`ENFORCE_ADMIN_MFA=true`) → **`admin.schema("api").rpc(...)`**. The `api.*` wrapper
-delegates to the `private.*` function, which performs the staff_profiles mutation
-AND the canonical `audit_logs` INSERT in the SAME transaction (no EXCEPTION
-handler → they commit or roll back together). A supplementary best-effort
-`writeAudit('staff.invited')` records the auth.users side-effect only.
+CSRF → **baseline `requireRole("admin")` FIRST** (before the service-role client
+is built or `staff_profiles` is queried — no existence oracle for unauthorized
+callers) → target lookup → owner elevation via the already-resolved actor role →
+**`requireStepUp(role)`** (AAL2, only when `ENFORCE_ADMIN_MFA=true`) →
+**`admin.schema("api").rpc(...)`**. The `api.*` wrapper delegates to the
+`private.*` function, which performs the staff_profiles mutation AND the canonical
+`audit_logs` INSERT in the SAME transaction (no EXCEPTION handler → commit or roll
+back together). A supplementary best-effort `writeAudit('staff.invited')` records
+the auth.users side-effect only. `authz.denied` audits carry the verified actor id
+(null only when unauthenticated).
+
+## MFA enrollment (follow-up hardening)
+
+`startMfaEnrollment` (`performStartMfaEnrollment`): CSRF → strict staff identity →
+independent per-IP/per-account rate limit (`mfaEnroll`) → `listFactors`. If a
+VERIFIED factor exists, an AAL2 session is required to add another (an aal1
+session cannot attach a factor). Stale UNVERIFIED factors are `unenroll`-ed so
+they cannot pile up. Initiation/denial/failure are audited with NO secret/QR in
+metadata.
+
+## Startup env validation (follow-up hardening)
+
+`server.ts` fetch → `ensureEnvValidated()` (in `env.server.ts`): validates once,
+recording success ONLY after `validateEnvAtStartup()` completes — a failed
+validation does not latch, so later requests are not silently bypassed.
 
 ## Last-owner protection (Item C) — needs `20260622130000` applied
 
@@ -62,10 +81,14 @@ from the `product_*` tables. Cart/wishlist hold ids only in `localStorage`.
 
 ## CI
 
-`.github/workflows/ci.yml` runs on push to `main` and all PRs: Bun frozen
-install → typecheck → lint → format:check → test → build (all mandatory). A
-separate advisory job runs `supabase db lint --linked` only when project
-credentials are configured; otherwise it skips with a visible notice.
+`.github/workflows/ci.yml` runs on push to `main` and all PRs: Bun (pinned
+1.3.14) frozen install → typecheck → lint → format:check → test → build (all
+mandatory). A `migrations-local` job applies every migration to a fresh LOCAL
+Supabase DB (Docker, no creds) — the authoritative migrate-from-empty check. A
+separate advisory job runs `supabase db lint --linked` only when
+`SUPABASE_ACCESS_TOKEN` + `SUPABASE_PROJECT_ID` + `SUPABASE_DB_PASSWORD` are
+configured; otherwise it skips with a visible notice (it lints the DEPLOYED DB
+and does not validate pending migrations).
 
 ## Still mock / localStorage (later stages)
 

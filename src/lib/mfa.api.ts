@@ -47,13 +47,31 @@ export const getMfaState = createServerFn({ method: "GET" }).handler(async () =>
 /**
  * Begin TOTP enrollment. Returns the otpauth URI + secret for QR display.
  * The factor is unverified until verifyMfaEnrollment() succeeds.
+ *
+ * Hardening:
+ *   - CSRF + strict staff identity.
+ *   - Independent per-IP and per-account rate limit on initiation.
+ *   - If the account already has a VERIFIED factor, require a current AAL2
+ *     session before another factor may be added (an aal1 session — e.g. a
+ *     hijacked first-factor session — must not be able to attach a new factor).
+ *   - Clean up stale UNVERIFIED factors first so repeated initiations cannot
+ *     accumulate unbounded factors.
+ *   - Audit initiation / denial / failure. NEVER log or audit the TOTP secret
+ *     or QR payload.
+ *
+ * Extracted as a plain function so it is unit-testable with mocked modules; the
+ * createServerFn handler just delegates.
  */
-export const startMfaEnrollment = createServerFn({ method: "POST" }).handler(async () => {
+export async function performStartMfaEnrollment() {
   await setNoCacheHeaders();
   const { createServerSupabaseClient } = await import("@/lib/server/supabase.server");
   const { getPublicSupabaseEnv } = await import("@/lib/server/env.server");
-  const { checkCsrfOrigin, safeServerLog } = await import("@/lib/server/security.server");
+  const { checkCsrfOrigin, getClientIp, safeServerLog } =
+    await import("@/lib/server/security.server");
   const { requireStaff } = await import("@/lib/server/identity.server");
+  const { checkIndependentRateLimit, rateLimitMessage } =
+    await import("@/lib/server/rate-limit.server");
+  const { writeAudit } = await import("@/lib/server/audit.server");
 
   const env = getPublicSupabaseEnv();
   if (!checkCsrfOrigin(env.siteUrl)) {
@@ -65,8 +83,50 @@ export const startMfaEnrollment = createServerFn({ method: "POST" }).handler(asy
   if (!staff.ok) {
     return { success: false as const, error: "Not authorized." };
   }
+  const actorId = staff.identity.userId;
+
+  // Rate-limit initiation per IP and per account.
+  const rl = await checkIndependentRateLimit("mfaEnroll", { ip: getClientIp(), account: actorId });
+  if (!rl.allowed) return { success: false as const, error: rateLimitMessage() };
 
   const supabase = createServerSupabaseClient();
+
+  const { data: factors, error: listError } = await supabase.auth.mfa.listFactors();
+  if (listError) {
+    safeServerLog("warn", "MFA enrollment: listFactors failed", {
+      code: (listError as { code?: string } | null)?.code ?? "unknown",
+    });
+    await writeAudit({ action: "mfa.enroll.failed", actorId, metadata: { stage: "list" } });
+    return { success: false as const, error: "Could not start MFA setup. Please try again." };
+  }
+
+  // `data.totp` is the SDK's convenience list of VERIFIED TOTP factors; `data.all`
+  // contains every factor (incl. unverified), which we need for cleanup.
+  const verifiedTotp = factors?.totp ?? [];
+  const allFactors = factors?.all ?? [];
+
+  // Adding a factor when one is already verified requires AAL2.
+  if (verifiedTotp.length > 0) {
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (((aal?.currentLevel as string | null) ?? "aal1") !== "aal2") {
+      await writeAudit({
+        action: "mfa.enroll.denied",
+        actorId,
+        metadata: { reason: "aal2_required" },
+      });
+      return {
+        success: false as const,
+        requiresAal2: true as const,
+        error: "Verify your existing authenticator first, then add another.",
+      };
+    }
+  }
+
+  // Remove stale UNVERIFIED totp factors so repeated initiations don't pile up.
+  for (const f of allFactors.filter((x) => x.factor_type === "totp" && x.status === "unverified")) {
+    await supabase.auth.mfa.unenroll({ factorId: f.id }).catch(() => undefined);
+  }
+
   const { data, error } = await supabase.auth.mfa.enroll({
     factorType: "totp",
     friendlyName: `nongorr-${Date.now()}`,
@@ -76,11 +136,15 @@ export const startMfaEnrollment = createServerFn({ method: "POST" }).handler(asy
     safeServerLog("warn", "MFA enrollment start failed", {
       code: (error as { code?: string } | null)?.code ?? "unknown",
     });
+    await writeAudit({ action: "mfa.enroll.failed", actorId, metadata: { stage: "enroll" } });
     return {
       success: false as const,
       error: "Could not start MFA setup. Ensure MFA is enabled for this project.",
     };
   }
+
+  // Audit initiation WITHOUT any secret/QR material.
+  await writeAudit({ action: "mfa.enroll.started", actorId, metadata: { factorId: data.id } });
 
   return {
     success: true as const,
@@ -89,7 +153,11 @@ export const startMfaEnrollment = createServerFn({ method: "POST" }).handler(asy
     uri: data.totp?.uri ?? null,
     secret: data.totp?.secret ?? null,
   };
-});
+}
+
+export const startMfaEnrollment = createServerFn({ method: "POST" }).handler(async () =>
+  performStartMfaEnrollment(),
+);
 
 // ---- Verify enrollment ------------------------------------------------------
 

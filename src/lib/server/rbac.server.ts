@@ -27,7 +27,10 @@ export type AuthzReason =
 
 export type AuthzResult =
   | { ok: true; identity: StaffIdentity }
-  | { ok: false; reason: AuthzReason };
+  // actorId is the verified auth user id when a session was established but the
+  // request is denied (e.g. authenticated-but-forbidden, inactive, customer) —
+  // for audit attribution. null only when no session could be verified.
+  | { ok: false; reason: AuthzReason; actorId: string | null };
 
 interface GateOptions {
   strict?: boolean;
@@ -47,7 +50,7 @@ export async function requireRole(
   if (!staff.ok) return normalizeFailure(staff);
 
   if (!meetsMinimumRole(staff.identity.role, minimumRole)) {
-    return { ok: false, reason: "forbidden" };
+    return { ok: false, reason: "forbidden", actorId: staff.identity.userId };
   }
   return { ok: true, identity: staff.identity };
 }
@@ -64,7 +67,7 @@ export async function requirePermission(
   if (!staff.ok) return normalizeFailure(staff);
 
   if (!roleHasPermission(staff.identity.role, permission)) {
-    return { ok: false, reason: "forbidden" };
+    return { ok: false, reason: "forbidden", actorId: staff.identity.userId };
   }
   return { ok: true, identity: staff.identity };
 }
@@ -80,5 +83,5 @@ export function hasPermission(
 // ---- Internal ---------------------------------------------------------------
 
 function normalizeFailure(staff: Extract<StaffGuardResult, { ok: false }>): AuthzResult {
-  return { ok: false, reason: staff.reason };
+  return { ok: false, reason: staff.reason, actorId: staff.actorId };
 }
