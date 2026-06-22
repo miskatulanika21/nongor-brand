@@ -1,4 +1,5 @@
 # Nongorr Studio — Phase 2 Backend, API, Server and Production-Readiness Prompt
+
 **Version 3 — Incorporates Stage 1.5 security-closure requirements**
 
 ## Role
@@ -28,6 +29,7 @@ When these conflict, follow the earlier item. Documentation and self-reported te
 These must be confirmed or completed before writing a single line of new code.
 
 ### Credential rotation
+
 The Stage 1 auth report (§22) documents that live secrets were committed to `.env`:
 
 - Supabase service-role key
@@ -59,6 +61,7 @@ Rotating and revoking credentials is the **immediate** safety action. History sc
 ## Current project state — read before assuming anything
 
 ### Stack (post-Stage 1)
+
 - TanStack Start, file-based routing
 - React 19, TypeScript strict mode, Tailwind CSS v4, Vite 7
 - TanStack Router, TanStack React Query
@@ -68,9 +71,11 @@ Rotating and revoking credentials is the **immediate** safety action. History sc
 - 21 admin routes, 33 public/site routes, auth routes
 
 ### Stage 1 design intent (substantially implemented — not yet fully verified)
+
 Stage 1 aimed to deliver: unified login, server-side identity resolution, fail-closed RBAC, CSRF protection, rate limiting, security headers, TOTP MFA scaffolding, password-tier validation, owner-safety at the database level, and audit logging. The architecture of all of these is sound.
 
 ### Stage 1 confirmed defects — must fix before Stage 2
+
 Four confirmed bugs exist that will silently fail or create security gaps in a live environment:
 
 **Bug 1 — Staff RPC calls target the wrong schema (CRITICAL)**
@@ -103,6 +108,7 @@ The rate limiter is designed to fail open on store errors so a limiter outage do
 The `guard_owner_safety` trigger checks for remaining owners with a plain `SELECT count(*)`. Under PostgreSQL Read Committed isolation, two concurrent transactions can both pass this check simultaneously and both proceed, potentially leaving no active owner. The check needs `SELECT ... FOR UPDATE` on a sentinel row or use of an advisory lock for true serialization. This is a low-probability risk for a small boutique but should be fixed for correctness.
 
 ### What is still mock / localStorage-only (the Phase 2 scope)
+
 - Products, categories, inventory — hardcoded in `src/lib/products.ts`
 - Orders — 3 seed records in `src/lib/orders.ts`; checkout writes to `localStorage` with `Math.random()` order ID
 - Cart, wishlist, checkout state — `localStorage` only
@@ -116,14 +122,18 @@ The `guard_owner_safety` trigger checks for remaining owners with a plain `SELEC
 - bKash number, phone, WhatsApp — placeholders (`01700-000000`)
 
 ### Database tables that currently exist (verified from migrations directory)
+
 ```
 public.staff_profiles    — RBAC roles and active status
 public.audit_logs        — security event records
 ```
+
 Migration files exist for 8 migrations in `supabase/migrations/`. Whether these are applied to the live Supabase environment must be independently verified before Stage 1.5 begins:
+
 ```
 bun run supabase migration list
 ```
+
 or the equivalent Supabase CLI command against the target project. **Do not assume migration files in the repository means migrations are applied remotely.**
 
 ---
@@ -133,6 +143,7 @@ or the equivalent Supabase CLI command against the target project. **Do not assu
 Before changing any implementation:
 
 1. Clone the repository and run:
+
    ```
    bun install --frozen-lockfile
    bun run typecheck
@@ -141,6 +152,7 @@ Before changing any implementation:
    bun run test
    bun run build
    ```
+
    Record every command's exact output. This is the baseline. All results must pass before Stage 1.5 begins.
 
 2. Read these files in this order:
@@ -169,6 +181,7 @@ Before changing any implementation:
 6. Identify genuine blockers and ask the owner. Continue all non-blocked work. Never report a blocked integration as complete.
 
 When you find a conflict, ambiguity, security risk, or destructive migration path:
+
 - Stop that specific change
 - State the exact files and behavior involved
 - Explain the risk plainly
@@ -245,6 +258,7 @@ GRANT EXECUTE ON FUNCTION api.provision_staff TO service_role;
 Expose only the `api` schema via PostgREST. Do not expose `private`.
 
 Then update `staff.api.ts` to call:
+
 ```typescript
 const { error } = await admin.schema("api").rpc("provision_staff", { ... });
 ```
@@ -269,7 +283,7 @@ Supabase JS v2.108 supports `.schema("api").rpc(...)`. Apply this pattern to `up
    Two options — choose one and confirm with owner:
    - **Option A:** Add `"invite"` to `ALLOWED_CONFIRM_TYPES` in `validation.ts` and handle it in `auth.confirm.tsx` (Supabase sends a `token_hash` for invitations that `verifyOtp` accepts with `type: "invite"`)
    - **Option B:** Change the invitation `redirectTo` to use `type=email` (Supabase invitation tokens are also accepted as `type=email` depending on the Supabase project configuration — verify which type the project actually sends)
-   
+
    After fixing, perform a complete real email E2E test: invite sent → email received → link clicked → session created → staff profile found → onboarding completed
 
 3. **Enforce AAL2 on sensitive privileged operations (Bug 3)**
@@ -277,9 +291,9 @@ Supabase JS v2.108 supports `.schema("api").rpc(...)`. Apply this pattern to `up
    - `provisionStaff`
    - `updateStaffRole`
    - `setStaffActive`
-   
+
    Also require AAL2 for any future: payment verification, refund approval, integration-key changes, customer-data exports, security/owner changes.
-   
+
    **MFA enforcement rollout order — do not skip steps:**
    1. Verify the owner account exists in the live Supabase project
    2. Owner enrolls TOTP and verifies it works
@@ -288,21 +302,24 @@ Supabase JS v2.108 supports `.schema("api").rpc(...)`. Apply this pattern to `up
    5. Add `requireAssuranceLevel` to sensitive handlers
    6. Set `ENFORCE_ADMIN_MFA=true` in the environment
    7. Test the full admin onboarding path: owner invites admin → admin accepts → admin enrolls MFA → admin reaches only authorized modules
-   
+
    Do not add enforcement before step 4 or the owner risks being locked out.
 
 4. **Align audit-log RLS with the permission registry (Bug 4)**
    Change the `admin_read_audit_logs` policy to match `audit.view` being owner-only:
+
    ```sql
    DROP POLICY IF EXISTS "admin_read_audit_logs" ON public.audit_logs;
    CREATE POLICY "admin_read_audit_logs"
      ON public.audit_logs FOR SELECT TO authenticated
      USING (private.current_staff_role() = 'owner'::private.staff_role);
    ```
+
    If the intent is for admins to also read audit logs, update `permissions.ts` to grant `audit.view` to the admin role — choose one source of truth and make the database match it.
 
 5. **Fix security header mutation pattern**
    Replace the in-place mutation in `headers.server.ts` and `server.ts` with a pattern that constructs a new `Response`:
+
    ```typescript
    const newHeaders = new Headers(response.headers);
    // set headers on newHeaders
@@ -312,18 +329,21 @@ Supabase JS v2.108 supports `.schema("api").rpc(...)`. Apply this pattern to `up
      headers: newHeaders,
    });
    ```
+
    After deployment, verify actual HTTP responses include the expected headers using `curl -I` or a header-inspection tool against the deployed URL.
 
 6. **Add independent per-IP and per-account rate limits**
    Replace the single combined-key approach with independent checks:
+
    ```typescript
    // Check IP limit independently
    const ipResult = await checkRateLimit("login:ip", [ip]);
-   // Check account limit independently  
+   // Check account limit independently
    const accountResult = await checkRateLimit("login:account", [normalizedEmail]);
    // Both must pass
    if (!ipResult.allowed || !accountResult.allowed) { ... }
    ```
+
    Verify that the forwarded-IP header (`x-forwarded-for`, `cf-connecting-ip`) is trusted only from the actual hosting proxy and cannot be spoofed by the client.
 
 7. **Verify all 8 Stage 1 migrations in the target Supabase environment**
@@ -340,6 +360,7 @@ Supabase JS v2.108 supports `.schema("api").rpc(...)`. Apply this pattern to `up
 
 11. **Add CI pipeline**
     Add a CI workflow (GitHub Actions or equivalent) that runs on every push to `main` and every pull request:
+
     ```
     bun install --frozen-lockfile
     bun run typecheck
@@ -349,6 +370,7 @@ Supabase JS v2.108 supports `.schema("api").rpc(...)`. Apply this pattern to `up
     supabase db lint (if available)
     bun run build
     ```
+
     No failing commit should reach `main` without a failing CI run.
 
 12. **Independently run and record the complete quality suite**
@@ -376,6 +398,7 @@ Stage 1.5 is complete only when all of the following are true and verifiable:
 Begin only after Stage 1.5 exit criteria are fully met.
 
 ### Database tables to create
+
 ```
 categories
 products
@@ -392,6 +415,7 @@ site_settings
 Design with: UUID primary keys, `created_at`/`updated_at` timestamps, `deleted_at` for soft-delete, RLS policies on every table, indexes on slug, SKU, status, category, and created_at.
 
 ### Key decisions
+
 - Product images go to Supabase Storage (private bucket for drafts, public bucket for approved/live images)
 - `site_settings` replaces hardcoded values in `brand.ts` for bKash number, phone, WhatsApp, email, legal name, and domain
 - Replace runtime `PRODUCTS` array import with Supabase query in loaders
@@ -404,13 +428,16 @@ Design with: UUID primary keys, `created_at`/`updated_at` timestamps, `deleted_a
 ## Stage 3 — Authoritative pricing and checkout
 
 ### Key rules — non-negotiable
+
 - **Never trust browser-supplied totals.** The server must reload product price, sale price, custom-size charge, coupon discount, shipping fee, and free-delivery eligibility from the database and recalculate the final total.
 - **Transactional order creation:** validate stock → reserve inventory → create order → create order items → create payment record → commit. If any step fails, roll back everything.
 - **Idempotency key:** the checkout form generates a UUID before submission; the server uses it to prevent duplicate orders on retry or double-click.
 - **Real order IDs:** sequential, server-generated order numbers replace the current `Math.random()` approach.
 
 ### Payment provider abstraction
+
 Create an interface that both manual bKash and a future gateway implement:
+
 ```typescript
 interface PaymentProvider {
   initiatePayment(params: PaymentInitParams): Promise<PaymentInitResult>;
@@ -418,9 +445,11 @@ interface PaymentProvider {
   getStatus(paymentId: string): Promise<PaymentStatus>;
 }
 ```
+
 Implement `ManualBkashProvider` first. Never fake a gateway integration.
 
 ### Database tables to create
+
 ```
 orders
 order_items
@@ -436,14 +465,14 @@ idempotency_keys
 
 The following keys exist in users' browsers. Handle them carefully:
 
-| Key | Strategy |
-|---|---|
-| `nongorr_cart` | Keep for guest sessions; merge into server state on login; clear only after successful merge |
-| `nongorr_wishlist` | Keep for guest sessions; sync to server on login |
-| `nongorr_checkout_ui` | Keep delivery zone preference; clear coupon and notes after real order created |
-| `nongorr_orders` | Clear on first authenticated load after real orders exist in DB; replace with server fetch |
-| `nongorr_last_order` | Clear on first authenticated load; replace with server fetch |
-| `nongorr.announce.dismissed` | Safe to keep indefinitely — UX preference only |
+| Key                          | Strategy                                                                                     |
+| ---------------------------- | -------------------------------------------------------------------------------------------- |
+| `nongorr_cart`               | Keep for guest sessions; merge into server state on login; clear only after successful merge |
+| `nongorr_wishlist`           | Keep for guest sessions; sync to server on login                                             |
+| `nongorr_checkout_ui`        | Keep delivery zone preference; clear coupon and notes after real order created               |
+| `nongorr_orders`             | Clear on first authenticated load after real orders exist in DB; replace with server fetch   |
+| `nongorr_last_order`         | Clear on first authenticated load; replace with server fetch                                 |
+| `nongorr.announce.dismissed` | Safe to keep indefinitely — UX preference only                                               |
 
 Use a migration flag (e.g., `nongorr_migrated_v2`) so cleanup runs once per browser, not on every page load.
 
@@ -452,6 +481,7 @@ Use a migration flag (e.g., `nongorr_migrated_v2`) so cleanup runs once per brow
 ## Stage 4 — Customer accounts and orders
 
 ### Database tables to create
+
 ```
 customer_profiles
 saved_addresses
@@ -459,6 +489,7 @@ saved_measurements
 ```
 
 ### Key decisions
+
 - Replace `src/lib/account-ui.tsx` localStorage implementation with `createServerFn` calls
 - Customer order history loads from the `orders` table filtered by `auth.uid()`
 - Address prefill in checkout reads from `saved_addresses`
@@ -470,7 +501,9 @@ saved_measurements
 ## Stage 5 — Admin sales operations and integrations
 
 ### Courier adapter interface
+
 Create before implementing Steadfast or Pathao:
+
 ```typescript
 interface CourierAdapter {
   createConsignment(order: OrderForShipment): Promise<ConsignmentResult>;
@@ -479,9 +512,11 @@ interface CourierAdapter {
   handleWebhook(payload: unknown, signature: string): Promise<WebhookResult>;
 }
 ```
+
 Implement `SteadFastAdapter` first only after the owner confirms rotated credentials are available. `PathaoAdapter` second. Verify webhook signatures. Store raw event IDs. Process webhooks idempotently. Log all failures and retries.
 
 ### Database tables to create
+
 ```
 courier_providers
 shipments
@@ -547,6 +582,7 @@ Build on Stage 1. Do not duplicate or weaken existing controls.
 Follow the existing Vitest/jsdom pattern in `src/lib/__tests__/`. New tests extend this directory.
 
 Add:
+
 - Unit tests for pricing, shipping, coupon eligibility, phone normalization, measurement validation, order-state transitions, inventory calculations
 - Database/repository integration tests
 - Customer-isolation/IDOR tests
@@ -558,6 +594,7 @@ Add:
 - Admin CRUD permission tests
 
 **Critical E2E journeys to maintain:**
+
 1. Browse → filter → product detail → select size (ready/custom) → add to cart
 2. Apply valid/invalid coupon → delivery selection → server quote
 3. Guest checkout → payment evidence → one order only despite retry/double-submit

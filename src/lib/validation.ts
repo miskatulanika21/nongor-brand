@@ -173,7 +173,10 @@ export type PasswordUpdateInput = z.infer<typeof passwordUpdateSchema>;
 
 // ---- Auth confirm ----
 
-const ALLOWED_CONFIRM_TYPES = ["email", "recovery", "magiclink"] as const;
+// "invite" is the token type Supabase sends for inviteUserByEmail links (staff
+// onboarding). It is verified like recovery: the invitee then sets an initial
+// password on /auth/update-password.
+const ALLOWED_CONFIRM_TYPES = ["email", "recovery", "magiclink", "invite"] as const;
 export type ConfirmType = (typeof ALLOWED_CONFIRM_TYPES)[number];
 
 export const authConfirmSchema = z.object({

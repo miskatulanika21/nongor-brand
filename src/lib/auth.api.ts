@@ -458,7 +458,7 @@ export const completeOAuthCallback = createServerFn({ method: "POST" })
 
 const authTokenConfirmSchema = z.object({
   token_hash: z.string().min(1).max(2048),
-  type: z.enum(["email", "recovery", "magiclink"]),
+  type: z.enum(["email", "recovery", "magiclink", "invite"]),
   next: z.string().max(2048).optional(),
 });
 
@@ -491,10 +491,11 @@ export async function performEmailConfirm(data: z.infer<typeof authTokenConfirmS
     return { success: false as const, type: data.type, destination: null };
   }
 
-  // Recovery routes to the STANDALONE password-update screen (outside the
-  // customer-only /account layout) so staff/admin/owner can complete recovery
-  // too. A safe `next` is preserved for the role-aware post-update redirect.
-  if (data.type === "recovery") {
+  // Recovery and staff invitation both route to the STANDALONE password-update
+  // screen (outside the customer-only /account layout): recovery so any role can
+  // reset, invitation so a newly-invited staff member sets their initial
+  // password. A safe `next` is preserved for the role-aware post-update redirect.
+  if (data.type === "recovery" || data.type === "invite") {
     const { isSafeRedirect } = await import("@/lib/safe-redirect");
     const safeNext = data.next && isSafeRedirect(data.next) ? data.next : undefined;
     const destination = safeNext

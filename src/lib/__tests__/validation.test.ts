@@ -252,6 +252,14 @@ describe("authConfirmSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts invite type", () => {
+    const result = authConfirmSchema.safeParse({
+      token_hash: "abc123",
+      type: "invite",
+    });
+    expect(result.success).toBe(true);
+  });
+
   it("rejects invalid type", () => {
     const result = authConfirmSchema.safeParse({
       token_hash: "abc123",
