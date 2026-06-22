@@ -31,6 +31,31 @@ async function setNoCache(): Promise<void> {
 
 const roleEnum = z.enum(["staff", "admin", "owner"]);
 
+/**
+ * Step-up (AAL2) gate for sensitive staff mutations.
+ *
+ * Only enforced when ENFORCE_ADMIN_MFA=true — mirroring the admin route guard
+ * in loadAdminArea — so turning on enforcement stays a deliberate go-live step
+ * and cannot lock out an owner/admin who has not yet enrolled a TOTP factor.
+ * When enforced, an owner/admin acting on a first-factor (aal1) session is
+ * refused until they complete the MFA challenge.
+ */
+async function requireStepUp(
+  role: "staff" | "admin" | "owner",
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { isAdminMfaEnforced } = await import("@/lib/server/env.server");
+  if (!isAdminMfaEnforced()) return { ok: true };
+
+  const { requireAssuranceLevel } = await import("@/lib/server/mfa.server");
+  const aal = await requireAssuranceLevel(role);
+  if (aal.ok) return { ok: true };
+
+  return {
+    ok: false,
+    error: "Additional verification is required. Complete two-factor authentication and try again.",
+  };
+}
+
 // ---- List staff -------------------------------------------------------------
 
 export const listStaff = createServerFn({ method: "GET" }).handler(async () => {
@@ -103,6 +128,9 @@ export const provisionStaff = createServerFn({ method: "POST" })
     }
     const actorId = authz.identity.userId;
 
+    const stepUp = await requireStepUp(authz.identity.role);
+    if (!stepUp.ok) return { success: false as const, error: stepUp.error };
+
     const rl = await checkRateLimit("staffProvision", [getClientIp(), actorId]);
     if (!rl.allowed) return { success: false as const, error: rateLimitMessage() };
 
@@ -128,7 +156,7 @@ export const provisionStaff = createServerFn({ method: "POST" })
 
     const userId = invited.user.id;
 
-    const { error: rpcError } = await admin.rpc("provision_staff", {
+    const { error: rpcError } = await admin.schema("api").rpc("provision_staff", {
       p_user_id: userId,
       p_role: data.role,
       p_display_name: data.displayName ?? null,
@@ -200,7 +228,10 @@ export const updateStaffRole = createServerFn({ method: "POST" })
       return { success: false as const, error: "You are not allowed to perform this change." };
     }
 
-    const { error } = await admin.rpc("update_staff_role", {
+    const stepUp = await requireStepUp(authz.identity.role);
+    if (!stepUp.ok) return { success: false as const, error: stepUp.error };
+
+    const { error } = await admin.schema("api").rpc("update_staff_role", {
       p_actor_id: authz.identity.userId,
       p_target_user_id: data.targetUserId,
       p_new_role: data.newRole,
@@ -253,7 +284,10 @@ export const setStaffActive = createServerFn({ method: "POST" })
       return { success: false as const, error: "You are not allowed to perform this change." };
     }
 
-    const { error } = await admin.rpc("set_staff_active", {
+    const stepUp = await requireStepUp(authz.identity.role);
+    if (!stepUp.ok) return { success: false as const, error: stepUp.error };
+
+    const { error } = await admin.schema("api").rpc("set_staff_active", {
       p_actor_id: authz.identity.userId,
       p_target_user_id: data.targetUserId,
       p_active: data.active,

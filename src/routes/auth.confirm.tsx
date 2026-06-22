@@ -5,6 +5,7 @@
  *   - Email confirmation after signup (?token_hash=...&type=email)
  *   - Password recovery links (?token_hash=...&type=recovery)
  *   - Magic links (?token_hash=...&type=magiclink)
+ *   - Staff invitations (?token_hash=...&type=invite)
  *
  * Architecture choice: beforeLoad + server function.
  *
@@ -54,7 +55,7 @@ export const Route = createFileRoute("/auth/confirm")({
     const { token_hash, type, next } = search;
 
     // Validate inputs before calling server
-    const validTypes: ConfirmType[] = ["email", "recovery", "magiclink"];
+    const validTypes: ConfirmType[] = ["email", "recovery", "magiclink", "invite"];
     if (!token_hash || !validTypes.includes(type as ConfirmType)) {
       return { confirmError: "Invalid confirmation link." };
     }
