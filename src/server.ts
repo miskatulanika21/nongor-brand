@@ -2,7 +2,7 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
-import { applySecurityHeaders } from "./lib/server/headers.server";
+import { withSecurityHeaders } from "./lib/server/headers.server";
 import { isProduction, validateEnvAtStartup } from "./lib/server/env.server";
 
 // Validate critical environment once at boot. In production this throws on
@@ -55,24 +55,17 @@ export default {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       const normalized = await normalizeCatastrophicSsrResponse(response);
-      try {
-        applySecurityHeaders(normalized, isProduction());
-      } catch {
-        // Header application must never break the response.
-      }
-      return normalized;
+      // Rebuild the response with security headers. No swallow: a failure here
+      // falls through to the outer catch, which returns a safe error page WITH
+      // headers — never an unprotected response.
+      return withSecurityHeaders(normalized, isProduction());
     } catch (error) {
       console.error(error);
       const errorResponse = new Response(renderErrorPage(), {
         status: 500,
         headers: { "content-type": "text/html; charset=utf-8" },
       });
-      try {
-        applySecurityHeaders(errorResponse, isProduction());
-      } catch {
-        // ignore
-      }
-      return errorResponse;
+      return withSecurityHeaders(errorResponse, isProduction());
     }
   },
 };

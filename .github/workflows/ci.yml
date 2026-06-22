@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: the workflow only needs to read the repo.
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Quality (typecheck, lint, format, test, build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # Reproducible install from the committed lockfile.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Core checks — all MANDATORY. Run as separate steps so a failure points
+      # at the exact gate. No step is allowed to fail silently.
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Format check
+        run: bun run format:check
+
+      - name: Test
+        run: bun run test
+
+      - name: Build
+        run: bun run build
+
+  supabase-lint:
+    name: Supabase DB lint (advisory)
+    runs-on: ubuntu-latest
+    needs: quality
+    # Only on pushes (never fork PRs, which have no secrets) so credentials are
+    # never exposed to untrusted pull requests.
+    if: ${{ github.event_name == 'push' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # `supabase db lint` needs a linked project (credentials). When those are
+      # absent we SKIP visibly with a notice — we do NOT emit a passing no-op
+      # that could be mistaken for a clean lint.
+      - name: Detect Supabase credentials
+        id: creds
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+        run: |
+          if [ -n "$SUPABASE_ACCESS_TOKEN" ] && [ -n "$SUPABASE_PROJECT_ID" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Supabase DB lint skipped::SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_ID not configured. This step needs a linked project and is intentionally skipped rather than reported as a passing no-op."
+          fi
+
+      - name: Setup Supabase CLI
+        if: steps.creds.outputs.available == 'true'
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Database lint
+        if: steps.creds.outputs.available == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+        run: |
+          supabase link --project-ref "$SUPABASE_PROJECT_ID"
+          supabase db lint --linked --level warning

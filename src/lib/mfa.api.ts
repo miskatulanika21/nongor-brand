@@ -107,7 +107,8 @@ export const verifyMfaEnrollment = createServerFn({ method: "POST" })
     const { checkCsrfOrigin, getClientIp, safeServerLog } =
       await import("@/lib/server/security.server");
     const { requireStaff } = await import("@/lib/server/identity.server");
-    const { checkRateLimit, rateLimitMessage } = await import("@/lib/server/rate-limit.server");
+    const { checkIndependentRateLimit, rateLimitMessage } =
+      await import("@/lib/server/rate-limit.server");
     const { writeAudit } = await import("@/lib/server/audit.server");
 
     const env = getPublicSupabaseEnv();
@@ -118,7 +119,10 @@ export const verifyMfaEnrollment = createServerFn({ method: "POST" })
     const staff = await requireStaff({ strict: true });
     if (!staff.ok) return { success: false as const, error: "Not authorized." };
 
-    const rl = await checkRateLimit("mfaVerify", [getClientIp(), staff.identity.userId]);
+    const rl = await checkIndependentRateLimit("mfaVerify", {
+      ip: getClientIp(),
+      account: staff.identity.userId,
+    });
     if (!rl.allowed) return { success: false as const, error: rateLimitMessage() };
 
     const supabase = createServerSupabaseClient();
@@ -167,7 +171,8 @@ export const challengeMfa = createServerFn({ method: "POST" })
     const { checkCsrfOrigin, getClientIp, safeServerLog } =
       await import("@/lib/server/security.server");
     const { requireStaff } = await import("@/lib/server/identity.server");
-    const { checkRateLimit, rateLimitMessage } = await import("@/lib/server/rate-limit.server");
+    const { checkIndependentRateLimit, rateLimitMessage } =
+      await import("@/lib/server/rate-limit.server");
     const { writeAudit } = await import("@/lib/server/audit.server");
 
     const env = getPublicSupabaseEnv();
@@ -178,7 +183,10 @@ export const challengeMfa = createServerFn({ method: "POST" })
     const staff = await requireStaff();
     if (!staff.ok) return { success: false as const, error: "Not authorized." };
 
-    const rl = await checkRateLimit("mfaVerify", [getClientIp(), staff.identity.userId]);
+    const rl = await checkIndependentRateLimit("mfaVerify", {
+      ip: getClientIp(),
+      account: staff.identity.userId,
+    });
     if (!rl.allowed) return { success: false as const, error: rateLimitMessage() };
 
     const supabase = createServerSupabaseClient();

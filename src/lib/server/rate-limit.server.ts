@@ -12,10 +12,12 @@
  * limiter to the distributed backend with no code change. See README /
  * DEPLOYMENT for setup. (Spec §27.)
  *
- * Keys combine action + identifier (IP and/or normalized email) so an
- * attacker cannot exhaust one user's allowance by guessing, and a single IP
- * cannot brute force across many emails. Messages never reveal the exact
- * threshold. The .server.ts suffix keeps this off the client.
+ * Auth endpoints use checkIndependentRateLimit() to enforce SEPARATE per-IP
+ * and per-account buckets (both must pass) so neither IP rotation nor account
+ * rotation can bypass the other's limit. checkRateLimit() remains the lower
+ * level primitive (single bucket per identifier set), used directly only for
+ * single-dimension limits (e.g. IP-only OAuth start). Messages never reveal the
+ * exact threshold. The .server.ts suffix keeps this off the client.
  */
 import process from "node:process";
 import { safeServerLog } from "./security.server";
@@ -172,6 +174,50 @@ export async function checkRateLimit(
     });
     return { allowed: true, retryAfterSec: 0 };
   }
+}
+
+/**
+ * Independent per-IP and per-account rate limiting.
+ *
+ * Runs two SEPARATE buckets for the same action and requires BOTH to pass:
+ *   - per-IP bucket      → key `action:ip:<ip>`      (catches account rotation)
+ *   - per-account bucket → key `action:account:<id>` (catches IP rotation)
+ *
+ * This replaces the weaker single combined `action:ip|account` key, where an
+ * attacker rotating IPs got a fresh bucket every request, and rotating accounts
+ * likewise. With independent buckets, rotating one dimension cannot exhaust the
+ * other's allowance.
+ *
+ * The account identifier is normalized (trim + lowercase) so casing/whitespace
+ * variants share one bucket. Both checks inherit checkRateLimit's fail-open
+ * policy (a limiter outage must not lock everyone out of auth).
+ *
+ * Trusted-proxy note: the IP must come from a source the platform controls
+ * (see getClientIp in security.server.ts). A client-spoofable IP would let an
+ * attacker mint unlimited per-IP buckets; the per-account bucket is the
+ * backstop in that case.
+ */
+export async function checkIndependentRateLimit(
+  action: RateLimitAction,
+  parts: { ip?: string | null; account?: string | null },
+): Promise<RateLimitResult> {
+  const tasks: Array<Promise<RateLimitResult>> = [];
+
+  if (parts.ip) tasks.push(checkRateLimit(action, [`ip:${parts.ip}`]));
+
+  const account = parts.account?.trim().toLowerCase();
+  if (account) tasks.push(checkRateLimit(action, [`account:${account}`]));
+
+  // No identifiers at all → one anonymous bucket so the endpoint is never
+  // completely unlimited.
+  if (tasks.length === 0) tasks.push(checkRateLimit(action, [null]));
+
+  const results = await Promise.all(tasks);
+  const blocked = results.filter((r) => !r.allowed);
+  if (blocked.length > 0) {
+    return { allowed: false, retryAfterSec: Math.max(...blocked.map((r) => r.retryAfterSec)) };
+  }
+  return { allowed: true, retryAfterSec: 0 };
 }
 
 /** Generic, threshold-free message for a blocked request. */

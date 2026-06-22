@@ -6,7 +6,7 @@ sync with `CURRENT_STATUS.md`.
 
 ## Stage 1.5 — Security closure (current)
 
-**Done (code):**
+**Done (code) — four confirmed bugs:**
 
 - [x] Bug 1 — `api` schema wrappers + `staff.api.ts` uses `.schema("api").rpc()`
 - [x] Bug 2 — `invite` confirm type wired end-to-end (→ set initial password)
@@ -14,18 +14,32 @@ sync with `CURRENT_STATUS.md`.
       `ENFORCE_ADMIN_MFA`
 - [x] Bug 4 — `admin_read_audit_logs` RLS tightened to owner-only
 
+**Done (code) — five mandatory items (A–E):**
+
+- [x] A — `withSecurityHeaders()` rebuilds the Response (no in-place mutation, no
+      swallowed failure); 7 tests incl. multi-`Set-Cookie`, redirect, streaming
+- [x] B — `checkIndependentRateLimit()` separate per-IP + per-account buckets at
+      all account-bearing auth ops; trusted-proxy boundary documented; 5 tests
+- [x] C — `guard_owner_safety` takes a transaction advisory lock before the
+      owner-count check (new migration `20260622130000`); SQL proof in report
+- [x] D — verified the three critical RPCs write their canonical audit row in the
+      same transaction as the mutation (no swallow, rolls back together); not an
+      outbox; supplementary best-effort writes clearly distinguished
+- [x] E — `.github/workflows/ci.yml` (Bun, frozen lockfile, mandatory
+      typecheck/lint/format/test/build, concurrency cancel, least-privilege,
+      advisory Supabase lint that skips visibly without secrets)
+
 **Remaining to close the stage (operator):**
 
-- [ ] Apply migration `20260622120000_stage_1_5_security_closure.sql`
+- [ ] Apply both pending migrations (`20260622120000`, `20260622130000`)
 - [ ] Add `api` to PostgREST exposed schemas (keep `private` hidden)
-- [ ] Confirm all 9 migrations applied (`supabase migration list`)
+- [ ] Confirm all 11 migrations applied (`supabase migration list`), subject to
+      the documented harden-migration filename drift
+- [ ] `curl -I` the deployed origin to confirm security headers (Item A)
+- [ ] Run the Item C concurrency SQL procedure and the Item D rollback proof
 - [ ] Rotate & revoke all Stage 1-committed credentials
 - [ ] MFA rollout (owner enrolls + verifies recovery) → `ENFORCE_ADMIN_MFA=true`
 - [ ] Real-email invite E2E: invite → email → link → password set → admin
-
-**Deferred V3 weaknesses (schedule before launch):** independent per-IP/account
-rate-limit keys; header rebuild-vs-mutate; `guard_owner_safety` concurrency
-serialization; transactional/outbox audit for critical ops; CI pipeline.
 
 **Exit gate:** all checkboxes above true and verified against the live project.
 

@@ -9,8 +9,16 @@
  * Never store secrets: passwords, tokens, OAuth codes, full API keys. Metadata
  * is redacted defensively before insert.
  *
- * Writes are best-effort: a failed audit insert is logged but never blocks or
- * reverses the primary action. The .server.ts suffix keeps this off the client.
+ * Writes here are best-effort: a failed audit insert is logged but never blocks
+ * or reverses the primary action. Use this ONLY for non-critical / supplementary
+ * events (logins, denials, the auth.users invitation side-effect, etc.).
+ *
+ * CRITICAL security mutations (staff provisioning, role changes, activation/
+ * deactivation) must NOT rely on this path. Their CANONICAL audit row is written
+ * inside the same PL/pgSQL transaction as the mutation by the private.* RPCs
+ * (migration 8), so the mutation and its audit record cannot silently diverge.
+ *
+ * The .server.ts suffix keeps this off the client.
  */
 import { createAdminSupabaseClient } from "./supabase-admin.server";
 import { safeServerLog, redactPII } from "./security.server";

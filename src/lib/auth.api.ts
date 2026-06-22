@@ -78,7 +78,8 @@ export async function performEmailLogin(data: z.infer<typeof loginSchema>) {
   const { getAuthenticatedIdentity, invalidateSession } =
     await import("@/lib/server/identity.server");
   const { resolvePostLoginDestination } = await import("@/lib/server/login-destination.server");
-  const { checkRateLimit, rateLimitMessage } = await import("@/lib/server/rate-limit.server");
+  const { checkIndependentRateLimit, rateLimitMessage } =
+    await import("@/lib/server/rate-limit.server");
   const { writeAudit } = await import("@/lib/server/audit.server");
 
   const env = getPublicSupabaseEnv();
@@ -86,8 +87,9 @@ export async function performEmailLogin(data: z.infer<typeof loginSchema>) {
     return { success: false as const, error: "Invalid request origin." };
   }
 
-  // Rate limit by IP + normalized email before touching credentials.
-  const rl = await checkRateLimit("login", [getClientIp(), data.email]);
+  // Independent per-IP and per-account limits (both must pass) so neither IP
+  // rotation nor account rotation can bypass the other's bucket.
+  const rl = await checkIndependentRateLimit("login", { ip: getClientIp(), account: data.email });
   if (!rl.allowed) {
     return { success: false as const, error: rateLimitMessage() };
   }
@@ -174,14 +176,18 @@ export const registerWithEmail = createServerFn({ method: "POST" })
     const { getPublicSupabaseEnv } = await import("@/lib/server/env.server");
     const { checkCsrfOrigin, getClientIp, safeServerLog } =
       await import("@/lib/server/security.server");
-    const { checkRateLimit, rateLimitMessage } = await import("@/lib/server/rate-limit.server");
+    const { checkIndependentRateLimit, rateLimitMessage } =
+      await import("@/lib/server/rate-limit.server");
 
     const env = getPublicSupabaseEnv();
     if (!checkCsrfOrigin(env.siteUrl)) {
       return { success: false as const, error: "Invalid request origin." };
     }
 
-    const rl = await checkRateLimit("register", [getClientIp(), data.email]);
+    const rl = await checkIndependentRateLimit("register", {
+      ip: getClientIp(),
+      account: data.email,
+    });
     if (!rl.allowed) {
       return { success: false as const, error: rateLimitMessage() };
     }
@@ -246,7 +252,7 @@ export const requestPasswordReset = createServerFn({ method: "POST" })
     const { createServerSupabaseClient } = await import("@/lib/server/supabase.server");
     const { getPublicSupabaseEnv } = await import("@/lib/server/env.server");
     const { checkCsrfOrigin, getClientIp } = await import("@/lib/server/security.server");
-    const { checkRateLimit } = await import("@/lib/server/rate-limit.server");
+    const { checkIndependentRateLimit } = await import("@/lib/server/rate-limit.server");
 
     const env = getPublicSupabaseEnv();
     if (!checkCsrfOrigin(env.siteUrl)) {
@@ -255,7 +261,10 @@ export const requestPasswordReset = createServerFn({ method: "POST" })
 
     // Rate-limit but ALWAYS return the same generic message regardless of
     // whether the account exists or the limit was hit (no enumeration).
-    const rl = await checkRateLimit("passwordReset", [getClientIp(), data.email]);
+    const rl = await checkIndependentRateLimit("passwordReset", {
+      ip: getClientIp(),
+      account: data.email,
+    });
     if (rl.allowed) {
       const supabase = createServerSupabaseClient();
       await supabase.auth.resetPasswordForEmail(data.email, {
@@ -306,7 +315,8 @@ export async function performPasswordUpdate(data: z.infer<typeof passwordUpdateW
     await import("@/lib/server/security.server");
   const { getAuthenticatedIdentity } = await import("@/lib/server/identity.server");
   const { resolvePostLoginDestination } = await import("@/lib/server/login-destination.server");
-  const { checkRateLimit, rateLimitMessage } = await import("@/lib/server/rate-limit.server");
+  const { checkIndependentRateLimit, rateLimitMessage } =
+    await import("@/lib/server/rate-limit.server");
   const { writeAudit } = await import("@/lib/server/audit.server");
 
   const env = getPublicSupabaseEnv();
@@ -324,7 +334,10 @@ export async function performPasswordUpdate(data: z.infer<typeof passwordUpdateW
   }
   const identity = result.identity;
 
-  const rl = await checkRateLimit("passwordUpdate", [getClientIp(), identity.userId]);
+  const rl = await checkIndependentRateLimit("passwordUpdate", {
+    ip: getClientIp(),
+    account: identity.userId,
+  });
   if (!rl.allowed) {
     return { success: false as const, error: rateLimitMessage() };
   }
