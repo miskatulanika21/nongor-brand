@@ -3,16 +3,7 @@ import "./lib/error-capture";
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 import { withSecurityHeaders } from "./lib/server/headers.server";
-import { isProduction, validateEnvAtStartup } from "./lib/server/env.server";
-
-// Validate critical environment once at boot. In production this throws on
-// misconfiguration (fail fast); in development it logs guidance.
-let envValidated = false;
-function ensureEnvValidated() {
-  if (envValidated) return;
-  envValidated = true;
-  validateEnvAtStartup();
-}
+import { isProduction, ensureEnvValidated } from "./lib/server/env.server";
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
@@ -55,9 +46,11 @@ export default {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       const normalized = await normalizeCatastrophicSsrResponse(response);
-      // Rebuild the response with security headers. No swallow: a failure here
-      // falls through to the outer catch, which returns a safe error page WITH
-      // headers — never an unprotected response.
+      // Rebuild the response with security headers. We no longer swallow a
+      // failure here: instead it falls through to the outer catch, which returns
+      // a safe error page that is itself passed through withSecurityHeaders. The
+      // intent is that a normal response is never emitted without headers; the
+      // error-path rebuild is best-effort and not an absolute guarantee.
       return withSecurityHeaders(normalized, isProduction());
     } catch (error) {
       console.error(error);

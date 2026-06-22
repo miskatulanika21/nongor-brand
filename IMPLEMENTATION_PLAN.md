@@ -29,6 +29,20 @@ sync with `CURRENT_STATUS.md`.
       typecheck/lint/format/test/build, concurrency cancel, least-privilege,
       advisory Supabase lint that skips visibly without secrets)
 
+**Done (code) — follow-up hardening patch (2026-06-23):**
+
+- [x] 1 — env-validation latch fixed (success recorded only after validation)
+- [x] 2 — authorize before privileged staff lookup (no existence oracle)
+- [x] 3 — MFA enrollment: rate limit + AAL2-when-verified + cleanup + audit
+- [x] 4 — `authz.denied` carries the verified actor id (null only if anon)
+- [x] 5 — CI: `SUPABASE_DB_PASSWORD` gate + local migrate-from-empty job
+- [x] 6 — pinned Bun (1.3.14) and Supabase CLI (2.33.9)
+- [x] 7 — operator scripts use `schema("api")`; redundant direct write removed
+- [x] 8 — corrected the over-absolute security-header comment
+
+**Code closure: COMPLETE.** Operational closure (below) still pending; Stage 2
+must not begin until these are done AND this patch is reviewed/accepted.
+
 **Remaining to close the stage (operator):**
 
 - [ ] Apply both pending migrations (`20260622120000`, `20260622130000`)

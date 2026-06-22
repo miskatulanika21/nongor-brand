@@ -16,7 +16,7 @@ project, and credential rotation / MFA rollout remain operator actions.
 | `tsc --noEmit`     | clean                                               |
 | `eslint .`         | 0 errors (31 pre-existing `react-refresh` warnings) |
 | `prettier --check` | clean                                               |
-| `vitest run`       | 193 passed / 15 files (+12 new)                     |
+| `vitest run`       | 211 passed / 18 files (+18 incl. follow-up patch)   |
 | `vite build`       | success (client + server)                           |
 
 ---
@@ -216,10 +216,64 @@ each critical mutation. The six required confirmations:
 
 ---
 
+---
+
+## Part 3 — Follow-up hardening patch (2026-06-23)
+
+Additional pre-existing findings closed in code (no new migration). Stage 1.5
+**code closure** is complete after this patch; **operational closure** still
+pending (see operator actions).
+
+1. **Env-validation latch (High).** `server.ts` set the "validated" flag BEFORE
+   `validateEnvAtStartup()` ran, so a production throw latched it and later
+   requests bypassed validation. Moved to `env.server.ensureEnvValidated()`,
+   which sets the flag ONLY after validation completes; `server.ts` delegates.
+   Tests: a failed validation does not latch (throws again); success latches and
+   is not repeated.
+2. **Authorize before privileged lookup (Med).** `updateStaffRole` /
+   `setStaffActive` now require the baseline admin role BEFORE constructing the
+   service-role client or querying `staff_profiles`, removing the
+   staff-existence oracle for unauthorized callers; owner elevation uses the
+   already-resolved actor role (no second identity lookup). Tests prove the admin
+   client is never built for unauthenticated/customer/under-privileged callers,
+   and the owner/admin matrix.
+3. **MFA enrollment hardening (High).** `startMfaEnrollment` (extracted as
+   `performStartMfaEnrollment`): independent per-IP/per-account rate limit
+   (`mfaEnroll`), AAL2 required to add a factor when one is already verified,
+   stale unverified factors cleaned up via `unenroll` (read from `listFactors().all`,
+   since `.totp` is verified-only), and initiation/denial/failure audited with NO
+   secret/QR in metadata. Tests cover all of these.
+4. **Denial actor attribution (Med).** `IdentityResult`, `StaffGuardResult`,
+   `CustomerGuardResult` and `AuthzResult` failures now carry `actorId` (verified
+   user id when a session existed; `null` only when unauthenticated). All three
+   `authz.denied` writers use it. Tests updated/added at the identity and staff
+   layers.
+5. **CI credentials + local migration validation.** `db lint --linked` gate now
+   also requires `SUPABASE_DB_PASSWORD` (skips visibly otherwise). New
+   `migrations-local` job applies every migration to a fresh LOCAL Supabase DB
+   (Docker, no production creds) — the authoritative check that pending
+   migrations build from empty; `db lint --linked` inspects the deployed DB and
+   does NOT validate pending migrations.
+6. **Pinned versions.** Bun `1.3.14` (matches the lockfile's `configVersion`),
+   Supabase CLI `2.33.9` — replaces `latest`. Confirm the CLI tag exists before
+   relying on the Supabase jobs; bump deliberately.
+7. **Operator scripts.** `provision-admin.ts` and `e2e-auth-test.ts` call
+   `admin.schema("api").rpc("provision_staff", …)`; the redundant direct
+   `staff_profiles` write in the E2E setup is removed (the RPC sets `is_active`).
+   The E2E script already refuses to run outside a dedicated non-production
+   project (`E2E_ALLOW=1` + separate `E2E_SUPABASE_*`); its test-6 direct
+   `UPDATE` is an intentional owner-safety trigger assertion and is preserved.
+8. **Header comment.** The over-absolute "never an unprotected response" wording
+   is corrected to describe best-effort behavior without an absolute guarantee.
+
+Local validation note: this environment has no Docker / Supabase CLI / actionlint,
+so the `migrations-local` job and full YAML schema lint run on the first CI
+execution; the workflow was checked structurally here (no tabs, expected jobs).
+
 ## Migrations
 
-11 local migration files. **9 applied** to the live project (8 Stage 1 + the
-catalog migration). **2 pending apply:**
+11 local migration files (this patch adds NO migration). **9 applied** to the
+live project (8 Stage 1 + the catalog migration). **2 pending apply:**
 
 - `20260622120000_stage_1_5_security_closure.sql` (Bug 1 `api` wrappers + Bug 4
   audit RLS)

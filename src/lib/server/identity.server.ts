@@ -51,7 +51,10 @@ export type IdentityDenial =
 
 export type IdentityResult =
   | { ok: true; identity: AuthenticatedIdentity }
-  | { ok: false; reason: IdentityDenial };
+  // actorId carries the verified auth user id when a session WAS established but
+  // the request is still denied (inactive_staff / lookup_failed) — for security
+  // audit attribution. null when no session could be verified (unauthenticated).
+  | { ok: false; reason: IdentityDenial; actorId: string | null };
 
 /** True when the resolved identity is an active privileged account. */
 export function isPrivileged(identity: AuthenticatedIdentity): identity is StaffIdentity {
@@ -173,7 +176,7 @@ export async function getAuthenticatedIdentity(
         error,
       } = await supabase.auth.getUser();
       if (error || !user) {
-        return { ok: false, reason: "unauthenticated" };
+        return { ok: false, reason: "unauthenticated", actorId: null };
       }
       userId = user.id;
       email = user.email ?? null;
@@ -182,7 +185,7 @@ export async function getAuthenticatedIdentity(
       const { data, error } = await supabase.auth.getClaims();
       const sub = data?.claims?.sub;
       if (error || !sub) {
-        return { ok: false, reason: "unauthenticated" };
+        return { ok: false, reason: "unauthenticated", actorId: null };
       }
       userId = sub;
       email = typeof data.claims.email === "string" ? data.claims.email : null;
@@ -195,7 +198,7 @@ export async function getAuthenticatedIdentity(
     safeServerLog("error", "Identity: session read failed", {
       error: err instanceof Error ? err.message : "unknown",
     });
-    return { ok: false, reason: "unauthenticated" };
+    return { ok: false, reason: "unauthenticated", actorId: null };
   }
 
   // Staff-profile lookup. Distinguish outcomes precisely:
@@ -221,7 +224,7 @@ export async function getAuthenticatedIdentity(
       safeServerLog("error", "Identity: staff_profiles lookup failed", {
         code: (error as { code?: string }).code ?? "unknown",
       });
-      return { ok: false, reason: "lookup_failed" };
+      return { ok: false, reason: "lookup_failed", actorId: userId };
     }
 
     if (!profile) {
@@ -232,7 +235,7 @@ export async function getAuthenticatedIdentity(
     }
 
     if (profile.is_active !== true) {
-      return { ok: false, reason: "inactive_staff" };
+      return { ok: false, reason: "inactive_staff", actorId: userId };
     }
 
     const role = profile.role;
@@ -242,7 +245,7 @@ export async function getAuthenticatedIdentity(
       safeServerLog("error", "Identity: unrecognized staff role", {
         role: String(role),
       });
-      return { ok: false, reason: "lookup_failed" };
+      return { ok: false, reason: "lookup_failed", actorId: userId };
     }
 
     return {
@@ -261,7 +264,7 @@ export async function getAuthenticatedIdentity(
     safeServerLog("error", "Identity: staff lookup threw", {
       error: err instanceof Error ? err.message : "unknown",
     });
-    return { ok: false, reason: "lookup_failed" };
+    return { ok: false, reason: "lookup_failed", actorId: userId };
   }
 }
 
@@ -280,7 +283,7 @@ export async function requireAuthenticatedUser(
 
 export type CustomerGuardResult =
   | { ok: true; identity: CustomerIdentity }
-  | { ok: false; reason: IdentityDenial | "is_staff" };
+  | { ok: false; reason: IdentityDenial | "is_staff"; actorId: string | null };
 
 /**
  * Require an active CUSTOMER identity for customer-private routes/actions.
@@ -295,14 +298,14 @@ export async function requireCustomer(options: ResolveOptions = {}): Promise<Cus
   const result = await getAuthenticatedIdentity(options);
   if (!result.ok) return result;
   if (result.identity.kind === "staff") {
-    return { ok: false, reason: "is_staff" };
+    return { ok: false, reason: "is_staff", actorId: result.identity.userId };
   }
   return { ok: true, identity: result.identity };
 }
 
 export type StaffGuardResult =
   | { ok: true; identity: StaffIdentity }
-  | { ok: false; reason: IdentityDenial | "is_customer" };
+  | { ok: false; reason: IdentityDenial | "is_customer"; actorId: string | null };
 
 /**
  * Require an active privileged identity (staff/admin/owner) for /admin
@@ -318,7 +321,7 @@ export async function requireStaff(options: ResolveOptions = {}): Promise<StaffG
   const result = await getAuthenticatedIdentity(options);
   if (!result.ok) return result;
   if (result.identity.kind === "customer") {
-    return { ok: false, reason: "is_customer" };
+    return { ok: false, reason: "is_customer", actorId: result.identity.userId };
   }
   return { ok: true, identity: result.identity };
 }

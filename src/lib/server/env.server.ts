@@ -154,6 +154,24 @@ export function validateEnvAtStartup(): void {
   console.warn(message);
 }
 
+let envValidated = false;
+
+/**
+ * Idempotent guard around validateEnvAtStartup(), used by the server entry on
+ * first request.
+ *
+ * The success flag is set ONLY AFTER validation completes. If validation throws
+ * (misconfigured production), the flag stays false, so a later request re-runs
+ * validation and is rejected again — it does not silently bypass validation as
+ * a "set the flag first" ordering would. On success the flag latches so the
+ * (synchronous, cheap) checks run once.
+ */
+export function ensureEnvValidated(): void {
+  if (envValidated) return;
+  validateEnvAtStartup();
+  envValidated = true;
+}
+
 // ---------------------------------------------------------------------------
 
 function requireEnv(name: string): string {

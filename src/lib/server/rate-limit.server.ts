@@ -44,6 +44,8 @@ export const RATE_LIMITS = {
   oauthStart: { limit: 15, windowSec: 60 * 5 },
   /** MFA verification attempts. */
   mfaVerify: { limit: 10, windowSec: 60 * 5 },
+  /** MFA enrollment initiation — limit factor churn / abuse. */
+  mfaEnroll: { limit: 5, windowSec: 60 * 10 },
   /** Staff invitation / provisioning. */
   staffProvision: { limit: 10, windowSec: 60 * 10 },
 } as const satisfies Record<string, RateLimitPolicy>;

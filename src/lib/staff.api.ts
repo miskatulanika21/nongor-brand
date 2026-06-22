@@ -122,7 +122,7 @@ export const provisionStaff = createServerFn({ method: "POST" })
     if (!authz.ok) {
       await writeAudit({
         action: "authz.denied",
-        actorId: null,
+        actorId: authz.actorId,
         metadata: { op: "provisionStaff", role: data.role, reason: authz.reason },
       });
       return { success: false as const, error: "You are not allowed to create this account type." };
@@ -201,117 +201,150 @@ export const provisionStaff = createServerFn({ method: "POST" })
 
 const updateRoleSchema = z.object({ targetUserId: z.string().uuid(), newRole: roleEnum });
 
+// Extracted for unit-testability (the createServerFn handler delegates).
+export async function performUpdateStaffRole(data: z.infer<typeof updateRoleSchema>) {
+  await setNoCache();
+  const { getPublicSupabaseEnv } = await import("@/lib/server/env.server");
+  const { checkCsrfOrigin } = await import("@/lib/server/security.server");
+  const { requireRole } = await import("@/lib/server/rbac.server");
+  const { meetsMinimumRole } = await import("@/lib/auth-types");
+  const { createAdminSupabaseClient } = await import("@/lib/server/supabase-admin.server");
+  const { writeAudit } = await import("@/lib/server/audit.server");
+
+  const env = getPublicSupabaseEnv();
+  if (!checkCsrfOrigin(env.siteUrl)) {
+    return { success: false as const, error: "Invalid request origin." };
+  }
+
+  // Authorize the BASELINE (admin) BEFORE any privileged lookup, so an
+  // unauthorized caller cannot use this endpoint as a staff-existence oracle.
+  // Owner-level elevation is checked after we learn the target/requested role.
+  const authz = await requireRole("admin", { strict: true });
+  if (!authz.ok) {
+    await writeAudit({
+      action: "authz.denied",
+      actorId: authz.actorId,
+      metadata: { op: "updateStaffRole", reason: authz.reason },
+    });
+    return { success: false as const, error: "You are not allowed to perform this change." };
+  }
+  const actor = authz.identity;
+
+  const admin = createAdminSupabaseClient();
+  const { data: target } = await admin
+    .from("staff_profiles")
+    .select("role")
+    .eq("user_id", data.targetUserId)
+    .maybeSingle();
+
+  if (!target) return { success: false as const, error: "Staff member not found." };
+
+  // Touching an owner row, or assigning owner, requires owner. Use the
+  // already-resolved actor role — no second identity lookup.
+  const ownerInvolved = target.role === "owner" || data.newRole === "owner";
+  if (ownerInvolved && !meetsMinimumRole(actor.role, "owner")) {
+    await writeAudit({
+      action: "authz.denied",
+      actorId: actor.userId,
+      metadata: { op: "updateStaffRole", reason: "owner_required" },
+    });
+    return { success: false as const, error: "You are not allowed to perform this change." };
+  }
+
+  const stepUp = await requireStepUp(actor.role);
+  if (!stepUp.ok) return { success: false as const, error: stepUp.error };
+
+  const { error } = await admin.schema("api").rpc("update_staff_role", {
+    p_actor_id: actor.userId,
+    p_target_user_id: data.targetUserId,
+    p_new_role: data.newRole,
+  });
+
+  if (error) {
+    // The owner-safety trigger raises a friendly message; surface generically.
+    return { success: false as const, error: messageFromDbError(error) };
+  }
+
+  return { success: true as const, message: "Role updated." };
+}
+
 export const updateStaffRole = createServerFn({ method: "POST" })
   .validator(updateRoleSchema)
-  .handler(async ({ data }) => {
-    await setNoCache();
-    const { getPublicSupabaseEnv } = await import("@/lib/server/env.server");
-    const { checkCsrfOrigin } = await import("@/lib/server/security.server");
-    const { requireRole } = await import("@/lib/server/rbac.server");
-    const { createAdminSupabaseClient } = await import("@/lib/server/supabase-admin.server");
-    const { writeAudit } = await import("@/lib/server/audit.server");
-
-    const env = getPublicSupabaseEnv();
-    if (!checkCsrfOrigin(env.siteUrl)) {
-      return { success: false as const, error: "Invalid request origin." };
-    }
-
-    const admin = createAdminSupabaseClient();
-    const { data: target } = await admin
-      .from("staff_profiles")
-      .select("role")
-      .eq("user_id", data.targetUserId)
-      .maybeSingle();
-
-    if (!target) return { success: false as const, error: "Staff member not found." };
-
-    // Touching an owner row, or assigning owner, requires owner. Otherwise admin.
-    const ownerInvolved = target.role === "owner" || data.newRole === "owner";
-    const minRole = ownerInvolved ? "owner" : "admin";
-    const authz = await requireRole(minRole, { strict: true });
-    if (!authz.ok) {
-      await writeAudit({
-        action: "authz.denied",
-        actorId: null,
-        metadata: { op: "updateStaffRole", reason: authz.reason },
-      });
-      return { success: false as const, error: "You are not allowed to perform this change." };
-    }
-
-    const stepUp = await requireStepUp(authz.identity.role);
-    if (!stepUp.ok) return { success: false as const, error: stepUp.error };
-
-    const { error } = await admin.schema("api").rpc("update_staff_role", {
-      p_actor_id: authz.identity.userId,
-      p_target_user_id: data.targetUserId,
-      p_new_role: data.newRole,
-    });
-
-    if (error) {
-      // The owner-safety trigger raises a friendly message; surface generically.
-      return { success: false as const, error: messageFromDbError(error) };
-    }
-
-    return { success: true as const, message: "Role updated." };
-  });
+  .handler(async ({ data }) => performUpdateStaffRole(data));
 
 // ---- Activate / deactivate --------------------------------------------------
 
 const setActiveSchema = z.object({ targetUserId: z.string().uuid(), active: z.boolean() });
 
+// Extracted for unit-testability (the createServerFn handler delegates).
+export async function performSetStaffActive(data: z.infer<typeof setActiveSchema>) {
+  await setNoCache();
+  const { getPublicSupabaseEnv } = await import("@/lib/server/env.server");
+  const { checkCsrfOrigin } = await import("@/lib/server/security.server");
+  const { requireRole } = await import("@/lib/server/rbac.server");
+  const { meetsMinimumRole } = await import("@/lib/auth-types");
+  const { createAdminSupabaseClient } = await import("@/lib/server/supabase-admin.server");
+  const { writeAudit } = await import("@/lib/server/audit.server");
+
+  const env = getPublicSupabaseEnv();
+  if (!checkCsrfOrigin(env.siteUrl)) {
+    return { success: false as const, error: "Invalid request origin." };
+  }
+
+  // Baseline (admin) authorization BEFORE the privileged lookup — no existence
+  // oracle for unauthorized callers. Owner elevation checked after lookup.
+  const authz = await requireRole("admin", { strict: true });
+  if (!authz.ok) {
+    await writeAudit({
+      action: "authz.denied",
+      actorId: authz.actorId,
+      metadata: { op: "setStaffActive", reason: authz.reason },
+    });
+    return { success: false as const, error: "You are not allowed to perform this change." };
+  }
+  const actor = authz.identity;
+
+  const admin = createAdminSupabaseClient();
+  const { data: target } = await admin
+    .from("staff_profiles")
+    .select("role")
+    .eq("user_id", data.targetUserId)
+    .maybeSingle();
+
+  if (!target) return { success: false as const, error: "Staff member not found." };
+
+  // Activating/deactivating an owner requires owner.
+  if (target.role === "owner" && !meetsMinimumRole(actor.role, "owner")) {
+    await writeAudit({
+      action: "authz.denied",
+      actorId: actor.userId,
+      metadata: { op: "setStaffActive", reason: "owner_required" },
+    });
+    return { success: false as const, error: "You are not allowed to perform this change." };
+  }
+
+  const stepUp = await requireStepUp(actor.role);
+  if (!stepUp.ok) return { success: false as const, error: stepUp.error };
+
+  const { error } = await admin.schema("api").rpc("set_staff_active", {
+    p_actor_id: actor.userId,
+    p_target_user_id: data.targetUserId,
+    p_active: data.active,
+  });
+
+  if (error) {
+    return { success: false as const, error: messageFromDbError(error) };
+  }
+
+  return {
+    success: true as const,
+    message: data.active ? "Account activated." : "Account deactivated.",
+  };
+}
+
 export const setStaffActive = createServerFn({ method: "POST" })
   .validator(setActiveSchema)
-  .handler(async ({ data }) => {
-    await setNoCache();
-    const { getPublicSupabaseEnv } = await import("@/lib/server/env.server");
-    const { checkCsrfOrigin } = await import("@/lib/server/security.server");
-    const { requireRole } = await import("@/lib/server/rbac.server");
-    const { createAdminSupabaseClient } = await import("@/lib/server/supabase-admin.server");
-    const { writeAudit } = await import("@/lib/server/audit.server");
-
-    const env = getPublicSupabaseEnv();
-    if (!checkCsrfOrigin(env.siteUrl)) {
-      return { success: false as const, error: "Invalid request origin." };
-    }
-
-    const admin = createAdminSupabaseClient();
-    const { data: target } = await admin
-      .from("staff_profiles")
-      .select("role")
-      .eq("user_id", data.targetUserId)
-      .maybeSingle();
-
-    if (!target) return { success: false as const, error: "Staff member not found." };
-
-    const minRole = target.role === "owner" ? "owner" : "admin";
-    const authz = await requireRole(minRole, { strict: true });
-    if (!authz.ok) {
-      await writeAudit({
-        action: "authz.denied",
-        actorId: null,
-        metadata: { op: "setStaffActive", reason: authz.reason },
-      });
-      return { success: false as const, error: "You are not allowed to perform this change." };
-    }
-
-    const stepUp = await requireStepUp(authz.identity.role);
-    if (!stepUp.ok) return { success: false as const, error: stepUp.error };
-
-    const { error } = await admin.schema("api").rpc("set_staff_active", {
-      p_actor_id: authz.identity.userId,
-      p_target_user_id: data.targetUserId,
-      p_active: data.active,
-    });
-
-    if (error) {
-      return { success: false as const, error: messageFromDbError(error) };
-    }
-
-    return {
-      success: true as const,
-      message: data.active ? "Account activated." : "Account deactivated.",
-    };
-  });
+  .handler(async ({ data }) => performSetStaffActive(data));
 
 // ---- Helpers ----------------------------------------------------------------
 

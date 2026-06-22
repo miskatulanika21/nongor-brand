@@ -101,7 +101,9 @@ async function createTempUser(opts: {
   createdUserIds.push(data.user.id);
 
   if (opts.staffRole) {
-    const { error: rpcError } = await admin.rpc("provision_staff", {
+    // Canonical path: call through the exposed `api` schema. The RPC sets
+    // is_active from p_is_active, so inactive setup needs no direct table write.
+    const { error: rpcError } = await admin.schema("api").rpc("provision_staff", {
       p_user_id: data.user.id,
       p_role: opts.staffRole,
       p_display_name: "E2E Temp",
@@ -109,9 +111,6 @@ async function createTempUser(opts: {
       p_is_active: opts.active ?? true,
     });
     if (rpcError) throw new Error(`provision_staff failed: ${rpcError.message}`);
-    if (opts.active === false) {
-      await admin.from("staff_profiles").update({ is_active: false }).eq("user_id", data.user.id);
-    }
   }
 
   return { id: data.user.id, email, password };

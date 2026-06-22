@@ -214,9 +214,10 @@ async function main() {
   }
 
   // Step 2: Provision via atomic RPC (staff_profiles + audit_logs).
-  // Bootstrap provisioning has no human actor → p_actor_id null (recorded as a
-  // system action in the audit log).
-  const { error: rpcError } = await admin.rpc("provision_staff", {
+  // Call through the exposed `api` schema (the canonical runtime path); the
+  // `private.*` functions are not exposed via PostgREST. Bootstrap provisioning
+  // has no human actor → p_actor_id null (recorded as a system action in audit).
+  const { error: rpcError } = await admin.schema("api").rpc("provision_staff", {
     p_user_id: userId,
     p_role: role,
     p_display_name: displayName,

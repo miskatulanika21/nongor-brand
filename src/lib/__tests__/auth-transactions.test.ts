@@ -116,7 +116,7 @@ describe("performEmailLogin", () => {
   it("on denial, threads the SAME client into invalidateSession", async () => {
     const client = fakeClient();
     createClientMock.mockReturnValue(client);
-    getIdentityMock.mockResolvedValue({ ok: false, reason: "lookup_failed" });
+    getIdentityMock.mockResolvedValue({ ok: false, reason: "lookup_failed", actorId: "actor-1" });
 
     const result = await performEmailLogin({ email: "a@b.com", password: "secret" });
 
@@ -156,7 +156,7 @@ describe("performOAuthCallback", () => {
   it("on denial, threads the SAME client into invalidateSession", async () => {
     const client = fakeClient();
     createClientMock.mockReturnValue(client);
-    getIdentityMock.mockResolvedValue({ ok: false, reason: "inactive_staff" });
+    getIdentityMock.mockResolvedValue({ ok: false, reason: "inactive_staff", actorId: "actor-1" });
 
     const result = await performOAuthCallback({ code: "abc" });
 
