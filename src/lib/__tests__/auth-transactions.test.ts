@@ -56,6 +56,7 @@ vi.mock("@/lib/server/security.server", () => ({
 }));
 vi.mock("@/lib/server/rate-limit.server", () => ({
   checkRateLimit: async () => ({ allowed: true, retryAfterSec: 0 }),
+  checkIndependentRateLimit: async () => ({ allowed: true, retryAfterSec: 0 }),
   rateLimitMessage: () => "Too many attempts.",
 }));
 vi.mock("@/lib/server/audit.server", () => ({ writeAudit: writeAuditMock }));

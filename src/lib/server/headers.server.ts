@@ -47,11 +47,28 @@ function buildCsp(): string {
 }
 
 /**
- * Apply security headers to a response in place. Adds CSP only to HTML
- * responses; the lighter headers apply to all. HSTS only in production HTTPS.
+ * Return a NEW Response carrying the security headers.
+ *
+ * Why not mutate in place: some runtimes hand back a Response whose `headers`
+ * are guarded/immutable, so an in-place `headers.set(...)` can throw or be a
+ * silent no-op — shipping the response without its security headers. We instead
+ * clone the header list into a fresh, writable `Headers`, add our headers, and
+ * rebuild the Response. This must NOT swallow failures: a throw here should
+ * surface (the server entry's outer catch renders a safe error page) rather than
+ * quietly emit an unprotected response.
+ *
+ * Everything else is preserved exactly:
+ *   - status + statusText (so redirects keep their 3xx + Location)
+ *   - body, including a streaming ReadableStream (passed through, not buffered)
+ *   - all existing headers, including multiple Set-Cookie entries
+ *
+ * Adds CSP only to HTML responses; the lighter headers apply to all. HSTS only
+ * in production (assumes HTTPS termination at the edge).
  */
-export function applySecurityHeaders(response: Response, isProd: boolean): void {
-  const headers = response.headers;
+export function withSecurityHeaders(response: Response, isProd: boolean): Response {
+  // `new Headers(response.headers)` copies the full header list, preserving
+  // every Set-Cookie entry (undici/Bun keep them as a list, not a merged value).
+  const headers = new Headers(response.headers);
 
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
@@ -66,4 +83,12 @@ export function applySecurityHeaders(response: Response, isProd: boolean): void 
   if (contentType.includes("text/html")) {
     headers.set("Content-Security-Policy", buildCsp());
   }
+
+  // Passing `response.body` transfers the (possibly streaming) body without
+  // reading it; null bodies (e.g. 204/redirects) stay null.
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }

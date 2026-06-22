@@ -107,7 +107,8 @@ export const provisionStaff = createServerFn({ method: "POST" })
       await import("@/lib/server/security.server");
     const { requireRole } = await import("@/lib/server/rbac.server");
     const { createAdminSupabaseClient } = await import("@/lib/server/supabase-admin.server");
-    const { checkRateLimit, rateLimitMessage } = await import("@/lib/server/rate-limit.server");
+    const { checkIndependentRateLimit, rateLimitMessage } =
+      await import("@/lib/server/rate-limit.server");
     const { writeAudit } = await import("@/lib/server/audit.server");
 
     const env = getPublicSupabaseEnv();
@@ -131,7 +132,10 @@ export const provisionStaff = createServerFn({ method: "POST" })
     const stepUp = await requireStepUp(authz.identity.role);
     if (!stepUp.ok) return { success: false as const, error: stepUp.error };
 
-    const rl = await checkRateLimit("staffProvision", [getClientIp(), actorId]);
+    const rl = await checkIndependentRateLimit("staffProvision", {
+      ip: getClientIp(),
+      account: actorId,
+    });
     if (!rl.allowed) return { success: false as const, error: rateLimitMessage() };
 
     const admin = createAdminSupabaseClient();
@@ -176,6 +180,12 @@ export const provisionStaff = createServerFn({ method: "POST" })
       };
     }
 
+    // SUPPLEMENTARY, best-effort audit. The CANONICAL record for this mutation
+    // is 'staff.provisioned', written inside the same transaction as the
+    // staff_profiles insert by private.provision_staff() — so the mutation and
+    // its canonical audit cannot diverge. This extra 'staff.invited' event only
+    // records the auth.users invitation side-effect and may safely be dropped on
+    // failure without affecting the provisioning record.
     await writeAudit({
       action: "staff.invited",
       actorId,

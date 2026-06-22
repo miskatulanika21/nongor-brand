@@ -83,9 +83,25 @@ export function checkCsrfOrigin(siteUrl: string): boolean {
 /**
  * Best-effort client IP for rate-limiting keys.
  *
- * Prefers Cloudflare's trusted cf-connecting-ip, then the first hop of
- * x-forwarded-for, then x-real-ip. Returns null if none are present. Used
- * only as a rate-limit dimension, never for authorization.
+ * TRUST BOUNDARY — read before relying on this value:
+ *   These headers are only trustworthy when the app sits behind a proxy that
+ *   sets/overwrites them and strips any client-supplied copy. If the app is
+ *   ever exposed directly to the internet, ALL of these are client-controlled
+ *   and an attacker can forge a unique IP per request, minting unlimited
+ *   per-IP rate-limit buckets. Therefore:
+ *     - This value is used ONLY as a rate-limit dimension, never for
+ *       authorization, and the independent per-ACCOUNT bucket
+ *       (checkIndependentRateLimit) is the backstop when the IP is unreliable.
+ *     - Prefer the platform-authoritative source. We try, in order:
+ *         cf-connecting-ip → Cloudflare sets this and strips client copies.
+ *         x-forwarded-for  → trust ONLY the proxy-appended value; we read the
+ *                            FIRST hop, correct for a single trusted proxy.
+ *                            Behind multiple proxies, configure the platform
+ *                            to expose its own authoritative header instead.
+ *         x-real-ip        → common single-proxy (nginx) authoritative header.
+ *   Operator note: on Vercel use x-vercel-forwarded-for / x-real-ip; on
+ *   Cloudflare cf-connecting-ip is authoritative. Do not deploy the Node
+ *   server with a raw internet-facing port and trust x-forwarded-for.
  */
 export function getClientIp(): string | null {
   const cf = getRequestHeader("cf-connecting-ip");
