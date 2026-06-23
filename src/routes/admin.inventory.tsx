@@ -1,7 +1,13 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { AdminHeader, AdminSectionCard } from "@/components/admin/AdminUI";
-import { listInventory, adjustInventory, bulkAdjustInventory } from "@/lib/catalog-admin.api";
+import {
+  listInventory,
+  adjustInventory,
+  bulkAdjustInventory,
+  addVariant,
+  removeVariant,
+} from "@/lib/catalog-admin.api";
 import type { InventoryItem, InventoryMovement } from "@/lib/server/catalog-admin.server";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,7 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { Boxes, History, Loader2 } from "lucide-react";
+import { Boxes, History, Loader2, Plus, Trash2 } from "lucide-react";
 
 const LOW_STOCK = 10;
 
@@ -56,6 +62,7 @@ function Inventory() {
   const [lowOnly, setLowOnly] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [adjustTarget, setAdjustTarget] = useState<InventoryItem | null>(null);
+  const [variantTarget, setVariantTarget] = useState<InventoryItem | null>(null);
   const [busy, setBusy] = useState(false);
 
   const refresh = () => router.invalidate();
@@ -228,14 +235,24 @@ function Inventory() {
                     </Badge>
                   </td>
                   <td className="p-3 text-right">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => setAdjustTarget(r)}
-                    >
-                      Adjust
-                    </Button>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => setVariantTarget(r)}
+                      >
+                        <Plus className="mr-1 h-3 w-3" /> Sizes
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => setAdjustTarget(r)}
+                      >
+                        Adjust
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -350,6 +367,14 @@ function Inventory() {
         onClose={() => setAdjustTarget(null)}
         onApplied={async () => {
           setAdjustTarget(null);
+          await refresh();
+        }}
+      />
+      <VariantDialog
+        target={variantTarget}
+        onClose={() => setVariantTarget(null)}
+        onChanged={async () => {
+          setVariantTarget(null);
           await refresh();
         }}
       />
@@ -468,6 +493,158 @@ function AdjustDialog({
           <Button disabled={!valid || saving} onClick={apply}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Boxes className="h-4 w-4" />}{" "}
             Apply
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function VariantDialog({
+  target,
+  onClose,
+  onChanged,
+}: {
+  target: InventoryItem | null;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [newSize, setNewSize] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (target) {
+      setNewSize("");
+      setConfirmRemove(null);
+    }
+  }, [target]);
+
+  if (!target) return null;
+
+  const trimmedSize = newSize.trim();
+  const canAdd = trimmedSize.length > 0 && trimmedSize.length <= 40;
+
+  const handleAdd = async () => {
+    if (!canAdd) return;
+    setSaving(true);
+    const res = await addVariant({ data: { code: target.code, size: trimmedSize } });
+    setSaving(false);
+    if (res.success) {
+      const initial = res.result?.initial;
+      toast.success(
+        `Size "${trimmedSize}" added${initial && initial > 0 ? ` (${initial} units transferred)` : ""}.`,
+      );
+      onChanged();
+    } else {
+      toast.error(res.error);
+    }
+  };
+
+  const handleRemove = async (size: string) => {
+    setSaving(true);
+    const res = await removeVariant({ data: { code: target.code, size } });
+    setSaving(false);
+    setConfirmRemove(null);
+    if (res.success) {
+      toast.success(`Size "${size}" removed.`);
+      onChanged();
+    } else {
+      toast.error(res.error);
+    }
+  };
+
+  return (
+    <Dialog open={!!target} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Manage sizes — {target.name}</DialogTitle>
+          <DialogDescription>
+            Add or remove size variants. Stock quantities are adjusted separately via the Adjust
+            dialog.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          {target.sizes.length > 0 && (
+            <div className="space-y-2">
+              <Label>Current sizes</Label>
+              <ul className="space-y-1">
+                {target.sizes.map((s) => (
+                  <li
+                    key={s.size}
+                    className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm"
+                  >
+                    <span>
+                      {s.size}{" "}
+                      <span className="text-muted-foreground">({s.quantity} in stock)</span>
+                    </span>
+                    {confirmRemove === s.size ? (
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={saving}
+                          onClick={() => handleRemove(s.size)}
+                        >
+                          {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Confirm"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={saving}
+                          onClick={() => setConfirmRemove(null)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={saving || s.quantity > 0}
+                        title={
+                          s.quantity > 0
+                            ? "Set stock to 0 before removing this size"
+                            : `Remove ${s.size}`
+                        }
+                        onClick={() => setConfirmRemove(s.size)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <Label htmlFor="variant-new-size">Add a new size</Label>
+            <div className="flex gap-2">
+              <Input
+                id="variant-new-size"
+                placeholder="e.g. M, L, XL, Free"
+                value={newSize}
+                maxLength={40}
+                onChange={(e) => setNewSize(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && canAdd && handleAdd()}
+              />
+              <Button disabled={!canAdd || saving} onClick={handleAdd}>
+                {saving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4" />
+                )}{" "}
+                Add
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              First size inherits existing stock. Additional sizes start at 0.
+            </p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
+            Done
           </Button>
         </DialogFooter>
       </DialogContent>
