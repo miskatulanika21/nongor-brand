@@ -389,6 +389,41 @@ export async function adjustInventory(params: {
   return { total: result?.total ?? params.quantity };
 }
 
+export interface BulkInventoryItem {
+  code: string;
+  size: string | null;
+  quantity: number;
+  reason: string;
+}
+
+export interface BulkInventoryResult {
+  op_key: string;
+  count: number;
+  ok: number;
+  failed: number;
+  results: Array<{ code: string; size: string | null; ok: boolean; error?: string }>;
+}
+
+/**
+ * One bounded, idempotent bulk adjustment. All integrity guards still apply
+ * per item (each routes through api.set_inventory inside the RPC). `opKey`
+ * makes retries safe — a replay returns the stored result without re-applying.
+ */
+export async function bulkSetInventory(
+  items: BulkInventoryItem[],
+  actorId: string,
+  opKey: string,
+): Promise<BulkInventoryResult> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin.schema("api").rpc("bulk_set_inventory", {
+    p_items: items,
+    p_actor_id: actorId,
+    p_op_key: opKey,
+  });
+  if (error) fromPgError(error, "Bulk inventory update failed");
+  return data as BulkInventoryResult;
+}
+
 // ---- Product writes ---------------------------------------------------------
 
 type ProductWrite = {

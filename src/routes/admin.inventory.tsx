@@ -1,7 +1,7 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { AdminHeader, AdminSectionCard } from "@/components/admin/AdminUI";
-import { listInventory, adjustInventory } from "@/lib/catalog-admin.api";
+import { listInventory, adjustInventory, bulkAdjustInventory } from "@/lib/catalog-admin.api";
 import type { InventoryItem, InventoryMovement } from "@/lib/server/catalog-admin.server";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -94,20 +94,29 @@ function Inventory() {
       return;
     }
     setBusy(true);
-    const results = await Promise.all(
-      targets.map((r) =>
-        adjustInventory({
-          data: { code: r.code, size: null, quantity: 0, reason: "Bulk set to zero", note: null },
-        }),
-      ),
-    );
+    // One bounded, idempotent server call (op key makes a retry safe).
+    const res = await bulkAdjustInventory({
+      data: {
+        opKey: crypto.randomUUID(),
+        items: targets.map((r) => ({
+          code: r.code,
+          size: null,
+          quantity: 0,
+          reason: "Bulk set to zero",
+        })),
+      },
+    });
     setBusy(false);
-    const failed = results.filter((x) => !x.success).length;
-    if (failed) toast.error(`${failed} update(s) failed.`);
-    else
-      toast.success(
-        `${targets.length} product(s) set to 0${skipped ? ` · ${skipped} variant product(s) skipped` : ""}.`,
-      );
+    if (res.success) {
+      const note = res.result.failed
+        ? ` · ${res.result.failed} unchanged/failed`
+        : skipped
+          ? ` · ${skipped} variant product(s) skipped`
+          : "";
+      toast.success(`${res.result.ok} product(s) set to 0${note}.`);
+    } else {
+      toast.error(res.error);
+    }
     setSelected(new Set());
     await refresh();
   };

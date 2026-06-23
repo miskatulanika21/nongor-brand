@@ -56,7 +56,8 @@ export type AuditAction =
   | "category.status_changed"
   | "category.reordered"
   | "category.deleted"
-  | "inventory.adjusted";
+  | "inventory.adjusted"
+  | "inventory.bulk_adjusted";
 
 export interface AuditEntry {
   action: AuditAction;
