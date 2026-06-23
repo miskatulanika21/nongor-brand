@@ -104,19 +104,12 @@ export const saveProduct = createServerFn({ method: "POST" })
     if (!g.ok) return { success: false as const, error: g.error };
 
     const repo = await import("@/lib/server/catalog-admin.server");
-    const { writeAudit } = await import("@/lib/server/audit.server");
+    // Canonical product.created/updated audit is written inside api.save_product.
     try {
       const saved =
         data.mode === "create"
-          ? await repo.createProduct(data.product)
-          : await repo.updateProduct(requireCode(data.code), data.product);
-      await writeAudit({
-        action: data.mode === "create" ? "product.created" : "product.updated",
-        actorId: g.actorId,
-        targetType: "products",
-        targetId: saved.code,
-        metadata: { slug: saved.slug, status: data.product.status },
-      });
+          ? await repo.createProduct(data.product, g.actorId)
+          : await repo.updateProduct(requireCode(data.code), data.product, g.actorId);
       return { success: true as const, product: saved };
     } catch (e) {
       return { success: false as const, error: await messageFromError(e) };
@@ -131,16 +124,8 @@ export const setProductStatus = createServerFn({ method: "POST" })
     if (!g.ok) return { success: false as const, error: g.error };
 
     const repo = await import("@/lib/server/catalog-admin.server");
-    const { writeAudit } = await import("@/lib/server/audit.server");
     try {
-      await repo.setProductStatus(data.code, data.status);
-      await writeAudit({
-        action: "product.status_changed",
-        actorId: g.actorId,
-        targetType: "products",
-        targetId: data.code,
-        metadata: { status: data.status },
-      });
+      await repo.setProductStatus(data.code, data.status, g.actorId);
       return { success: true as const };
     } catch (e) {
       return { success: false as const, error: await messageFromError(e) };
@@ -186,16 +171,10 @@ export const saveCategory = createServerFn({ method: "POST" })
     if (!g.ok) return { success: false as const, error: g.error };
 
     const repo = await import("@/lib/server/catalog-admin.server");
-    const { writeAudit } = await import("@/lib/server/audit.server");
+    // Canonical category.created/updated audit is written inside api.save_category.
     try {
-      if (data.mode === "create") await repo.createCategory(data.category);
-      else await repo.updateCategory(requireSlug(data.slug), data.category);
-      await writeAudit({
-        action: data.mode === "create" ? "category.created" : "category.updated",
-        actorId: g.actorId,
-        targetType: "product_categories",
-        targetId: data.category.slug,
-      });
+      if (data.mode === "create") await repo.createCategory(data.category, g.actorId);
+      else await repo.updateCategory(requireSlug(data.slug), data.category, g.actorId);
       return { success: true as const };
     } catch (e) {
       return { success: false as const, error: await messageFromError(e) };
@@ -210,16 +189,8 @@ export const setCategoryActive = createServerFn({ method: "POST" })
     if (!g.ok) return { success: false as const, error: g.error };
 
     const repo = await import("@/lib/server/catalog-admin.server");
-    const { writeAudit } = await import("@/lib/server/audit.server");
     try {
-      await repo.setCategoryActive(data.slug, data.active);
-      await writeAudit({
-        action: "category.status_changed",
-        actorId: g.actorId,
-        targetType: "product_categories",
-        targetId: data.slug,
-        metadata: { isActive: data.active },
-      });
+      await repo.setCategoryActive(data.slug, data.active, g.actorId);
       return { success: true as const };
     } catch (e) {
       return { success: false as const, error: await messageFromError(e) };
@@ -234,15 +205,8 @@ export const reorderCategories = createServerFn({ method: "POST" })
     if (!g.ok) return { success: false as const, error: g.error };
 
     const repo = await import("@/lib/server/catalog-admin.server");
-    const { writeAudit } = await import("@/lib/server/audit.server");
     try {
-      await repo.reorderCategories(data.items);
-      await writeAudit({
-        action: "category.reordered",
-        actorId: g.actorId,
-        targetType: "product_categories",
-        metadata: { count: data.items.length },
-      });
+      await repo.reorderCategories(data.items, g.actorId);
       return { success: true as const };
     } catch (e) {
       return { success: false as const, error: await messageFromError(e) };
@@ -257,15 +221,8 @@ export const deleteCategory = createServerFn({ method: "POST" })
     if (!g.ok) return { success: false as const, error: g.error };
 
     const repo = await import("@/lib/server/catalog-admin.server");
-    const { writeAudit } = await import("@/lib/server/audit.server");
     try {
-      await repo.deleteCategory(data.slug);
-      await writeAudit({
-        action: "category.deleted",
-        actorId: g.actorId,
-        targetType: "product_categories",
-        targetId: data.slug,
-      });
+      await repo.deleteCategory(data.slug, g.actorId);
       return { success: true as const };
     } catch (e) {
       return { success: false as const, error: await messageFromError(e) };
