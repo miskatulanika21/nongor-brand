@@ -61,6 +61,7 @@ export interface AdminCategory {
   name: string;
   sortOrder: number;
   isActive: boolean;
+  productCount: number;
 }
 
 // ---- Internal row shapes ----------------------------------------------------
@@ -233,15 +234,23 @@ export async function fetchAdminCategories(): Promise<AdminCategory[]> {
   const admin = createAdminSupabaseClient();
   const { data, error } = await admin
     .from("product_categories")
-    .select("slug, name, sort_order, is_active")
+    .select("slug, name, sort_order, is_active, products(count)")
     .order("sort_order", { ascending: true });
   if (error)
     throw new CatalogAdminError("query_failed", "Failed to load categories", error.message);
-  return (data ?? []).map((c) => ({
+  type CategoryCountRow = {
+    slug: string;
+    name: string;
+    sort_order: number;
+    is_active: boolean;
+    products: Array<{ count: number }> | null;
+  };
+  return ((data ?? []) as unknown as CategoryCountRow[]).map((c) => ({
     slug: c.slug,
     name: c.name,
     sortOrder: c.sort_order,
     isActive: c.is_active,
+    productCount: c.products?.[0]?.count ?? 0,
   }));
 }
 

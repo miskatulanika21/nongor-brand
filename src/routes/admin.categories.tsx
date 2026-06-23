@@ -1,13 +1,15 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { AdminHeader, ViewToggle } from "@/components/admin/AdminUI";
 import {
-  AdminHeader,
-  PreviewNotice,
-  AdminSectionCard,
-  MockBadge,
-  ViewToggle,
-} from "@/components/admin/AdminUI";
-import { PRODUCTS, CATEGORIES, type ProductType } from "@/lib/products";
+  listAdminCategories,
+  saveCategory,
+  setCategoryActive,
+  reorderCategories,
+  deleteCategory as deleteCategoryFn,
+} from "@/lib/catalog-admin.api";
+import { categoryInputSchema } from "@/lib/catalog-admin.schema";
+import type { AdminCategory } from "@/lib/server/catalog-admin.server";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -38,7 +40,6 @@ import {
   ArrowDown,
   Eye,
   EyeOff,
-  Star,
   LayoutGrid,
   List,
 } from "lucide-react";
@@ -47,121 +48,97 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/admin/categories")({
   head: () => ({ meta: [{ title: "Categories · Nongorr Admin" }] }),
+  loader: async () => {
+    const c = await listAdminCategories();
+    return { categories: c.success ? c.categories : [], loadError: !c.success };
+  },
   component: Categories,
 });
 
-interface AdminCategoryRecord {
-  name: string;
-  slug: string;
-  count: number;
-  image?: string;
-  visible: boolean;
-  featured: boolean;
-}
-
-function imageForType(slug: string): string | undefined {
-  return PRODUCTS.find((p) => p.type === slug)?.image;
-}
-
-function buildInitial(): AdminCategoryRecord[] {
-  return CATEGORIES.map((c) => ({
-    name: c.name,
-    slug: c.slug,
-    count: PRODUCTS.filter((p) => p.type === (c.slug as ProductType)).length,
-    image: imageForType(c.slug),
-    visible: true,
-    featured: false,
-  }));
-}
-
-interface CollectionRecord {
-  key: string;
-  title: string;
-  count: number;
-  visible: boolean;
-  image?: string;
-}
-
-function buildCollections(): CollectionRecord[] {
-  return [
-    {
-      key: "new",
-      title: "New Arrivals",
-      count: PRODUCTS.filter((p) => p.isNew).length,
-      visible: true,
-      image: PRODUCTS.find((p) => p.isNew)?.image,
-    },
-    {
-      key: "best",
-      title: "Best Sellers",
-      count: PRODUCTS.filter((p) => p.isBestSeller).length,
-      visible: true,
-      image: PRODUCTS.find((p) => p.isBestSeller)?.image,
-    },
-    {
-      key: "custom",
-      title: "Custom Fit",
-      count: PRODUCTS.filter((p) => p.customSize).length,
-      visible: true,
-      image: PRODUCTS.find((p) => p.customSize)?.image,
-    },
-    {
-      key: "cosmetics",
-      title: "Cosmetics",
-      count: PRODUCTS.filter((p) => ["cosmetics", "makeup", "serum"].includes(p.type)).length,
-      visible: true,
-      image: PRODUCTS.find((p) => ["cosmetics", "makeup", "serum"].includes(p.type))?.image,
-    },
-  ];
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function Categories() {
-  const [records, setRecords] = useState<AdminCategoryRecord[]>(buildInitial);
-  const [collections, setCollections] = useState<CollectionRecord[]>(buildCollections);
-  const [view, setView] = useState<"card" | "list">("card");
-  const [editing, setEditing] = useState<AdminCategoryRecord | null>(null);
-  const [adding, setAdding] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<AdminCategoryRecord | null>(null);
+  const { categories, loadError } = Route.useLoaderData();
+  const router = useRouter();
 
-  const move = (i: number, dir: -1 | 1) => {
+  // Local mirror for snappy reordering; reconciled with the loader after writes.
+  const [items, setItems] = useState<AdminCategory[]>(categories);
+  useEffect(() => setItems(categories), [categories]);
+
+  const [view, setView] = useState<"card" | "list">("card");
+  const [editing, setEditing] = useState<AdminCategory | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<AdminCategory | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = () => router.invalidate();
+
+  const move = async (i: number, dir: -1 | 1) => {
     const j = i + dir;
-    if (j < 0 || j >= records.length) return;
-    setRecords((rs) => {
-      const next = [...rs];
-      [next[i], next[j]] = [next[j], next[i]];
-      return next;
+    if (j < 0 || j >= items.length) return;
+    const next = [...items];
+    [next[i], next[j]] = [next[j], next[i]];
+    setItems(next); // optimistic
+    setBusy(true);
+    const res = await reorderCategories({
+      data: { items: next.map((c, idx) => ({ slug: c.slug, sortOrder: idx })) },
     });
-    toast("Reordered in this local preview.");
+    setBusy(false);
+    if (!res.success) toast.error(res.error);
+    await refresh();
   };
 
-  const toggleVisible = (slug: string) =>
-    setRecords((rs) => rs.map((r) => (r.slug === slug ? { ...r, visible: !r.visible } : r)));
-  const toggleFeatured = (slug: string) =>
-    setRecords((rs) => rs.map((r) => (r.slug === slug ? { ...r, featured: !r.featured } : r)));
+  const toggleActive = async (slug: string, active: boolean) => {
+    setBusy(true);
+    const res = await setCategoryActive({ data: { slug, active } });
+    setBusy(false);
+    if (res.success) toast.success(active ? "Category shown." : "Category hidden.");
+    else toast.error(res.error);
+    await refresh();
+  };
 
-  const removeCat = (slug: string) => {
-    setRecords((rs) => rs.filter((r) => r.slug !== slug));
+  const removeCat = async (slug: string) => {
+    setBusy(true);
+    const res = await deleteCategoryFn({ data: { slug } });
+    setBusy(false);
     setDeleteTarget(null);
-    toast("Removed from this local preview. Reloading restores the original mock data.");
+    if (res.success) toast.success("Category deleted.");
+    else toast.error(res.error);
+    await refresh();
+  };
+
+  const onSaved = async () => {
+    setAdding(false);
+    setEditing(null);
+    await refresh();
   };
 
   return (
     <div>
       <AdminHeader
-        title="Categories & Collections"
-        description="Organise the catalog display — local preview only."
+        title="Categories"
+        description="Organise the catalog taxonomy. Changes are saved to the database."
         action={
           <Button onClick={() => setAdding(true)}>
             <Plus className="h-4 w-4" /> Add category
           </Button>
         }
       />
-      <PreviewNotice className="mb-5" />
+
+      {loadError && (
+        <div className="mb-5 rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+          Categories could not be loaded. Refresh to try again.
+        </div>
+      )}
 
       <div className="mb-4 flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          {records.length} categories · counts derived from products
-        </p>
+        <p className="text-sm text-muted-foreground">{items.length} categories</p>
         <ViewToggle
           value={view}
           onValueChange={setView}
@@ -175,80 +152,68 @@ function Categories() {
 
       {view === "card" ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {records.map((c, i) => (
+          {items.map((c, i) => (
             <div
               key={c.slug}
               className={cn(
                 "flex flex-col rounded-xl border border-border bg-card p-4",
-                !c.visible && "opacity-60",
+                !c.isActive && "opacity-60",
               )}
             >
               <div className="mb-3 flex items-center gap-3">
-                {c.image ? (
-                  <img
-                    src={c.image}
-                    alt={`${c.name} category`}
-                    className="h-14 w-12 rounded object-cover"
-                  />
-                ) : (
-                  <div className="grid h-14 w-12 place-items-center rounded bg-secondary text-xs text-muted-foreground">
-                    No image
-                  </div>
-                )}
+                <div className="grid h-14 w-12 place-items-center rounded bg-secondary font-display text-lg text-muted-foreground">
+                  {c.name.charAt(0).toUpperCase()}
+                </div>
                 <div className="min-w-0">
                   <p className="truncate font-display text-lg text-foreground">{c.name}</p>
-                  <Badge variant="outline">{c.count} products</Badge>
+                  <p className="text-xs text-muted-foreground">/{c.slug}</p>
                 </div>
               </div>
               <div className="mb-3 flex flex-wrap gap-1">
-                {c.featured && <Badge className="bg-gold/15 text-primary">Featured</Badge>}
-                <Badge variant="outline">{c.visible ? "Visible" : "Hidden"}</Badge>
+                <Badge variant="outline">{c.productCount} products</Badge>
+                <Badge variant="outline">{c.isActive ? "Visible" : "Hidden"}</Badge>
               </div>
               <CatControls
                 index={i}
-                total={records.length}
+                total={items.length}
                 record={c}
+                busy={busy}
                 onMove={move}
-                onToggleVisible={toggleVisible}
-                onToggleFeatured={toggleFeatured}
+                onToggleActive={toggleActive}
                 onEdit={() => setEditing(c)}
                 onDelete={() => setDeleteTarget(c)}
               />
             </div>
           ))}
+          {items.length === 0 && (
+            <p className="col-span-full py-10 text-center text-muted-foreground">
+              No categories yet. Add your first category.
+            </p>
+          )}
         </div>
       ) : (
         <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
-          {records.map((c, i) => (
+          {items.map((c, i) => (
             <div
               key={c.slug}
-              className={cn("flex flex-wrap items-center gap-3 p-3", !c.visible && "opacity-60")}
+              className={cn("flex flex-wrap items-center gap-3 p-3", !c.isActive && "opacity-60")}
             >
-              {c.image ? (
-                <img
-                  src={c.image}
-                  alt={`${c.name} category`}
-                  className="h-10 w-9 rounded object-cover"
-                />
-              ) : (
-                <div className="grid h-10 w-9 place-items-center rounded bg-secondary text-[0.6rem] text-muted-foreground">
-                  N/A
-                </div>
-              )}
+              <div className="grid h-10 w-9 place-items-center rounded bg-secondary text-sm text-muted-foreground">
+                {c.name.charAt(0).toUpperCase()}
+              </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium text-foreground">{c.name}</p>
                 <p className="text-xs text-muted-foreground">
-                  {c.count} products · {c.visible ? "Visible" : "Hidden"}
-                  {c.featured ? " · Featured" : ""}
+                  /{c.slug} · {c.productCount} products · {c.isActive ? "Visible" : "Hidden"}
                 </p>
               </div>
               <CatControls
                 index={i}
-                total={records.length}
+                total={items.length}
                 record={c}
+                busy={busy}
                 onMove={move}
-                onToggleVisible={toggleVisible}
-                onToggleFeatured={toggleFeatured}
+                onToggleActive={toggleActive}
                 onEdit={() => setEditing(c)}
                 onDelete={() => setDeleteTarget(c)}
               />
@@ -257,89 +222,24 @@ function Categories() {
         </div>
       )}
 
-      {/* Collections */}
-      <div className="mt-8">
-        <AdminSectionCard
-          title="Collections"
-          description="Membership is derived from the current mock product flags. Editing a card only changes its local display."
-          action={<MockBadge label="Derived" />}
-        >
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {collections.map((col) => (
-              <div
-                key={col.key}
-                className={cn(
-                  "rounded-xl border border-border bg-background p-4",
-                  !col.visible && "opacity-60",
-                )}
-              >
-                {col.image ? (
-                  <img
-                    src={col.image}
-                    alt={`${col.title} collection`}
-                    className="mb-3 h-24 w-full rounded object-cover"
-                  />
-                ) : (
-                  <div className="mb-3 grid h-24 w-full place-items-center rounded bg-secondary text-xs text-muted-foreground">
-                    No preview
-                  </div>
-                )}
-                <p className="font-medium text-foreground">{col.title}</p>
-                <p className="text-xs text-muted-foreground">{col.count} matching products</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-3 w-full"
-                  onClick={() =>
-                    setCollections((cs) =>
-                      cs.map((x) => (x.key === col.key ? { ...x, visible: !x.visible } : x)),
-                    )
-                  }
-                >
-                  {col.visible ? (
-                    <>
-                      <EyeOff className="h-4 w-4" /> Hide (preview)
-                    </>
-                  ) : (
-                    <>
-                      <Eye className="h-4 w-4" /> Show (preview)
-                    </>
-                  )}
-                </Button>
-              </div>
-            ))}
-          </div>
-        </AdminSectionCard>
-      </div>
-
-      {/* Add / Edit dialog */}
       <CategoryDialog
         open={adding || !!editing}
         editing={editing}
+        nextSortOrder={items.length}
         onClose={() => {
           setAdding(false);
           setEditing(null);
         }}
-        onSave={(rec) => {
-          if (editing) {
-            setRecords((rs) => rs.map((r) => (r.slug === editing.slug ? { ...r, ...rec } : r)));
-            toast("Updated in this local preview. Reloading restores the original mock data.");
-          } else {
-            setRecords((rs) => [...rs, { ...rec, count: 0, visible: true, featured: false }]);
-            toast("Added to this local preview. Reloading restores the original mock data.");
-          }
-          setAdding(false);
-          setEditing(null);
-        }}
+        onSaved={onSaved}
       />
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove from preview?</AlertDialogTitle>
+            <AlertDialogTitle>Delete this category?</AlertDialogTitle>
             <AlertDialogDescription>
-              This removes <strong>{deleteTarget?.name}</strong> from this local preview only.
-              Product taxonomy is not changed.
+              This permanently deletes <strong>{deleteTarget?.name}</strong>. A category that still
+              has products cannot be deleted — reassign or remove its products first.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -348,7 +248,7 @@ function Categories() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => deleteTarget && removeCat(deleteTarget.slug)}
             >
-              Remove
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -361,18 +261,18 @@ function CatControls({
   index,
   total,
   record,
+  busy,
   onMove,
-  onToggleVisible,
-  onToggleFeatured,
+  onToggleActive,
   onEdit,
   onDelete,
 }: {
   index: number;
   total: number;
-  record: AdminCategoryRecord;
+  record: AdminCategory;
+  busy: boolean;
   onMove: (i: number, d: -1 | 1) => void;
-  onToggleVisible: (slug: string) => void;
-  onToggleFeatured: (slug: string) => void;
+  onToggleActive: (slug: string, active: boolean) => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -382,7 +282,7 @@ function CatControls({
         variant="ghost"
         size="icon"
         aria-label={`Move ${record.name} up`}
-        disabled={index === 0}
+        disabled={index === 0 || busy}
         onClick={() => onMove(index, -1)}
       >
         <ArrowUp className="h-4 w-4" />
@@ -391,7 +291,7 @@ function CatControls({
         variant="ghost"
         size="icon"
         aria-label={`Move ${record.name} down`}
-        disabled={index === total - 1}
+        disabled={index === total - 1 || busy}
         onClick={() => onMove(index, 1)}
       >
         <ArrowDown className="h-4 w-4" />
@@ -399,23 +299,22 @@ function CatControls({
       <Button
         variant="ghost"
         size="icon"
-        aria-label={record.visible ? `Hide ${record.name}` : `Show ${record.name}`}
-        onClick={() => onToggleVisible(record.slug)}
+        aria-label={record.isActive ? `Hide ${record.name}` : `Show ${record.name}`}
+        disabled={busy}
+        onClick={() => onToggleActive(record.slug, !record.isActive)}
       >
-        {record.visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label={record.featured ? `Unfeature ${record.name}` : `Feature ${record.name}`}
-        onClick={() => onToggleFeatured(record.slug)}
-      >
-        <Star className={cn("h-4 w-4", record.featured && "fill-gold text-gold")} />
+        {record.isActive ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
       </Button>
       <Button variant="ghost" size="icon" aria-label={`Edit ${record.name}`} onClick={onEdit}>
         <Pencil className="h-4 w-4" />
       </Button>
-      <Button variant="ghost" size="icon" aria-label={`Delete ${record.name}`} onClick={onDelete}>
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label={`Delete ${record.name}`}
+        disabled={busy}
+        onClick={onDelete}
+      >
         <Trash2 className="h-4 w-4 text-destructive" />
       </Button>
     </div>
@@ -425,18 +324,20 @@ function CatControls({
 function CategoryDialog({
   open,
   editing,
+  nextSortOrder,
   onClose,
-  onSave,
+  onSaved,
 }: {
   open: boolean;
-  editing: AdminCategoryRecord | null;
+  editing: AdminCategory | null;
+  nextSortOrder: number;
   onClose: () => void;
-  onSave: (rec: { name: string; slug: string; image?: string }) => void;
+  onSaved: () => void;
 }) {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  // Reset fields whenever the target changes or the dialog opens.
   useEffect(() => {
     if (open) {
       setName(editing?.name ?? "");
@@ -444,16 +345,37 @@ function CategoryDialog({
     }
   }, [editing, open]);
 
-  const valid = name.trim().length > 0 && slug.trim().length > 0;
+  const save = async () => {
+    const category = {
+      slug: slug.trim(),
+      name: name.trim(),
+      sortOrder: editing?.sortOrder ?? nextSortOrder,
+      isActive: editing?.isActive ?? true,
+    };
+    const parsed = categoryInputSchema.safeParse(category);
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0]?.message ?? "Please fix the highlighted fields.");
+      return;
+    }
+    setSaving(true);
+    const res = await saveCategory({
+      data: { mode: editing ? "update" : "create", slug: editing?.slug, category: parsed.data },
+    });
+    setSaving(false);
+    if (res.success) {
+      toast.success(editing ? "Category saved." : "Category created.");
+      onSaved();
+    } else {
+      toast.error(res.error);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{editing ? "Edit category" : "Add category"}</DialogTitle>
-          <DialogDescription>
-            Local preview only · Changes reset when this page reloads.
-          </DialogDescription>
+          <DialogDescription>Saved to the catalog database.</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
@@ -461,12 +383,13 @@ function CategoryDialog({
             <Input
               id="cat-name"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                setName(v);
+                if (!editing && (slug === "" || slug === slugify(name))) setSlug(slugify(v));
+              }}
               placeholder="e.g. Kurti"
             />
-            {name.trim().length === 0 && (
-              <p className="text-xs text-destructive">Name is required.</p>
-            )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="cat-slug">Slug</Label>
@@ -476,22 +399,17 @@ function CategoryDialog({
               onChange={(e) => setSlug(e.target.value)}
               placeholder="e.g. kurti"
             />
-            {slug.trim().length === 0 && (
-              <p className="text-xs text-destructive">Slug is required.</p>
-            )}
+            <p className="text-[0.7rem] text-muted-foreground">
+              Lowercase letters, numbers and single hyphens.
+            </p>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button
-            disabled={!valid}
-            onClick={() =>
-              onSave({ name: name.trim(), slug: slug.trim(), image: imageForType(slug.trim()) })
-            }
-          >
-            {editing ? "Save (preview)" : "Add (preview)"}
+          <Button disabled={saving || !name.trim() || !slug.trim()} onClick={save}>
+            {editing ? "Save" : "Add"}
           </Button>
         </DialogFooter>
       </DialogContent>
