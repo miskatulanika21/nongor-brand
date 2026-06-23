@@ -331,6 +331,39 @@ export const adjustInventory = createServerFn({ method: "POST" })
     }
   });
 
+export const bulkAdjustInventory = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      opKey: z.string().trim().min(1).max(100),
+      items: z
+        .array(
+          z.object({
+            code: z.string().trim().min(1).max(64),
+            size: z.string().trim().min(1).max(40).nullable(),
+            quantity: z.number().int().nonnegative(),
+            reason: z.string().trim().min(1).max(120),
+          }),
+        )
+        .min(1)
+        .max(100),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { guardAdminWrite } = await import("@/lib/server/admin-guard.server");
+    const g = await guardAdminWrite("inventory.manage", "bulkAdjustInventory");
+    if (!g.ok) return { success: false as const, error: g.error };
+
+    const repo = await import("@/lib/server/catalog-admin.server");
+    // Canonical per-item ledger + audit + a bulk summary audit are written inside
+    // api.bulk_set_inventory; idempotency is enforced by op_key.
+    try {
+      const result = await repo.bulkSetInventory(data.items, g.actorId, data.opKey);
+      return { success: true as const, result };
+    } catch (e) {
+      return { success: false as const, error: await messageFromError(e) };
+    }
+  });
+
 // ---- helpers ----------------------------------------------------------------
 
 function requireCode(code: string | undefined): string {
