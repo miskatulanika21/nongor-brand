@@ -78,6 +78,37 @@ export const categoryInputSchema = z.object({
 
 export type CategoryInput = z.infer<typeof categoryInputSchema>;
 
+// ---- Inventory --------------------------------------------------------------
+
+/** A single stock adjustment (size = null for non-sized products). */
+export const inventoryAdjustSchema = z.object({
+  code: z.string().trim().min(1).max(64),
+  size: z.string().trim().min(1).max(40).nullable(),
+  quantity: z.number().int().nonnegative(),
+  reason: z.string().trim().min(1, "A reason is required.").max(120),
+  note: z.string().trim().max(500).nullable().optional(),
+});
+
+export type InventoryAdjust = z.infer<typeof inventoryAdjustSchema>;
+
+/** Bounded bulk adjustment with a client idempotency key (1..100 items). */
+export const bulkInventorySchema = z.object({
+  opKey: z.string().trim().min(1).max(100),
+  items: z
+    .array(
+      z.object({
+        code: z.string().trim().min(1).max(64),
+        size: z.string().trim().min(1).max(40).nullable(),
+        quantity: z.number().int().nonnegative(),
+        reason: z.string().trim().min(1).max(120),
+      }),
+    )
+    .min(1)
+    .max(100),
+});
+
+export type BulkInventory = z.infer<typeof bulkInventorySchema>;
+
 /** Reorder payload: one entry per category being repositioned. */
 export const categoryReorderSchema = z
   .array(z.object({ slug: slugSchema, sortOrder: z.number().int().min(0).max(100000) }))
