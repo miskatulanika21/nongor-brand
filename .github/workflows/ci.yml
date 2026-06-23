@@ -87,6 +87,19 @@ jobs:
       - name: Apply migrations to a fresh local database
         run: supabase start
 
+      # DB integration tests: assert the Stage-2 Pass-2 database guards
+      # (stock-write guard, set_inventory validation, ledger immutability,
+      # FK RESTRICT, first-variant conservation, owner-only purge, reorder
+      # validation, bulk idempotency) against the freshly-migrated local DB.
+      # Any unhandled error or `FAIL:` RAISE aborts (ON_ERROR_STOP) and fails CI.
+      - name: DB integration tests (pass-2 guards)
+        run: |
+          command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
+          DB_URL=$(supabase status -o env 2>/dev/null | sed -n 's/^DB_URL=//p' | tr -d '"')
+          [ -z "$DB_URL" ] && DB_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+          echo "Running DB integration tests..."
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/pass2_db.test.sql
+
       - name: Tear down local stack
         if: always()
         run: supabase stop --no-backup || true
