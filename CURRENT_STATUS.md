@@ -5,8 +5,8 @@ behavior are the source of truth; this file is updated after every stage.
 
 _Last updated: 2026-06-23 — Stage 1.5 operationally closed; Stage 2 public read
 (Pass 1) + admin product/category/inventory writes (Pass 2) implemented, hardened
-and CI-green. 17 migrations applied to the live project; remote ledger matches the
-17 repo files._
+and CI-green. 18 migrations applied to the live project; remote ledger matches the
+18 repo files._
 
 State legend: **(1) code complete · (2) migration applied · (3) deployed
 verification complete · (4) operator action pending.**
@@ -28,8 +28,8 @@ verification complete · (4) operator action pending.**
 
 ## Migrations (live project xomjxtmhkglhuiccekld)
 
-**17 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
-ledger matches the 17 repo files exactly (versions + names), in order:
+**18 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
+ledger matches the 18 repo files exactly (versions + names), in order:
 
 ```
 …143927 create_private_schema            …622120000 stage_1_5_security_closure
@@ -40,7 +40,7 @@ ledger matches the 17 repo files exactly (versions + names), in order:
 …150547 fix_staff_profiles_rls_recursion …623210000 inventory_hardening
 …165800 harden_security_definer_functions…623220000 bulk_set_inventory
 …621090000 staff_provisioning_and_owner_safety   …623230000 catalog_write_rpcs
-…622000000 catalog_schema
+…622000000 catalog_schema                …623240000 pass2_closure
 ```
 
 Note: `apply_migration` (MCP) stamps its own version, so after every MCP apply the

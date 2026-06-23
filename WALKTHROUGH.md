@@ -1,7 +1,8 @@
 # WALKTHROUGH — actual data flows
 
-Reflects what the code does today (after Stage 1.5 code completion). Updated each
+Reflects what the code does today (after Stage 2 Pass 2 final closure). Updated each
 stage. Where a flow depends on a pending migration, that is called out.
+
 
 ## Request → response security wrapper
 
