@@ -7,7 +7,6 @@ import {
   getAdminProduct,
   saveProduct,
   setProductStatus,
-  deleteProduct as deleteProductFn,
 } from "@/lib/catalog-admin.api";
 import {
   PRODUCT_STATUSES,
@@ -15,11 +14,7 @@ import {
   type ProductStatus,
   type ProductInput,
 } from "@/lib/catalog-admin.schema";
-import type {
-  AdminProductListItem,
-  AdminCategory,
-  AdminProductDetail,
-} from "@/lib/server/catalog-admin.server";
+import type { AdminCategory, AdminProductDetail } from "@/lib/server/catalog-admin.server";
 import { formatBDT } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,16 +32,6 @@ import {
 } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -56,7 +41,7 @@ import {
   Plus,
   Search,
   Pencil,
-  Trash2,
+  Archive,
   MoreHorizontal,
   LayoutGrid,
   List,
@@ -102,8 +87,6 @@ function ProductsAdmin() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<AdminProductDetail | null>(null);
   const [editingLoading, setEditingLoading] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<AdminProductListItem | null>(null);
-  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const refresh = () => router.invalidate();
@@ -165,33 +148,6 @@ function ProductsAdmin() {
     const failed = results.filter((r) => !r.success).length;
     if (failed) toast.error(`${failed} update(s) failed.`);
     else toast.success(`${results.length} product(s) updated.`);
-    setSelected(new Set());
-    await refresh();
-  };
-
-  const removeOne = async (code: string) => {
-    setBusy(true);
-    const res = await deleteProductFn({ data: { code } });
-    setBusy(false);
-    setDeleteTarget(null);
-    if (res.success) {
-      toast.success("Product deleted.");
-      await refresh();
-    } else {
-      toast.error(res.error);
-    }
-  };
-
-  const bulkDelete = async () => {
-    setBusy(true);
-    const results = await Promise.all(
-      selectedVisible.map((code) => deleteProductFn({ data: { code } })),
-    );
-    setBusy(false);
-    setBulkDeleteOpen(false);
-    const failed = results.filter((r) => !r.success).length;
-    if (failed) toast.error(`${failed} delete(s) failed.`);
-    else toast.success(`${results.length} product(s) deleted.`);
     setSelected(new Set());
     await refresh();
   };
@@ -398,7 +354,6 @@ function ProductsAdmin() {
                       busy={busy}
                       onEdit={() => openEdit(r.code)}
                       onStatus={(s) => changeStatus(r.code, s)}
-                      onDelete={() => setDeleteTarget(r)}
                     />
                   </td>
                 </tr>
@@ -450,7 +405,6 @@ function ProductsAdmin() {
                 busy={busy}
                 onEdit={() => openEdit(r.code)}
                 onStatus={(s) => changeStatus(r.code, s)}
-                onDelete={() => setDeleteTarget(r)}
               />
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -498,15 +452,6 @@ function ProductsAdmin() {
             >
               Archive
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="text-destructive"
-              disabled={busy}
-              onClick={() => setBulkDeleteOpen(true)}
-            >
-              Delete
-            </Button>
             <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
               Clear
             </Button>
@@ -531,48 +476,6 @@ function ProductsAdmin() {
           )}
         </SheetContent>
       </Sheet>
-
-      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this product?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This permanently deletes <strong>{deleteTarget?.name}</strong> and its media, sizes
-              and reviews. This cannot be undone. To hide it instead, use Archive.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => deleteTarget && removeOne(deleteTarget.code)}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete selected products?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This permanently deletes {selectedVisible.length} product(s) and their related media,
-              sizes and reviews. This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={bulkDelete}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
@@ -589,14 +492,12 @@ function RowMenu({
   busy,
   onEdit,
   onStatus,
-  onDelete,
 }: {
   name: string;
   status: ProductStatus;
   busy: boolean;
   onEdit: () => void;
   onStatus: (s: ProductStatus) => void;
-  onDelete: () => void;
 }) {
   return (
     <DropdownMenu>
@@ -616,11 +517,13 @@ function RowMenu({
           <DropdownMenuItem onClick={() => onStatus("hidden")}>Hide</DropdownMenuItem>
         )}
         {status !== "archived" && (
-          <DropdownMenuItem onClick={() => onStatus("archived")}>Archive</DropdownMenuItem>
+          <DropdownMenuItem
+            className="text-destructive focus:text-destructive"
+            onClick={() => onStatus("archived")}
+          >
+            <Archive className="h-4 w-4" /> Archive
+          </DropdownMenuItem>
         )}
-        <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={onDelete}>
-          <Trash2 className="h-4 w-4" /> Delete
-        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -636,7 +539,6 @@ interface DraftValues {
   description: string;
   price: string;
   salePrice: string;
-  stock: string;
   customSize: boolean;
   customSizeCharge: string;
   isNew: boolean;
@@ -653,7 +555,6 @@ function detailToDraft(d: AdminProductDetail): DraftValues {
     description: d.description ?? "",
     price: String(d.price),
     salePrice: d.salePrice != null ? String(d.salePrice) : "",
-    stock: String(d.stock),
     customSize: d.customSize ?? false,
     customSizeCharge: d.customSizeCharge != null ? String(d.customSizeCharge) : "0",
     isNew: d.isNew ?? false,
@@ -671,7 +572,6 @@ function emptyDraft(defaultCategory: string): DraftValues {
     description: "",
     price: "",
     salePrice: "",
-    stock: "0",
     customSize: false,
     customSizeCharge: "0",
     isNew: false,
@@ -710,18 +610,20 @@ function ProductForm({
 
   // Build a typed ProductInput from the draft, carrying through any fields the
   // form does not expose (preserved from `editing`) so an update never wipes them.
-  const buildInput = (status: ProductStatus): ProductInput => {
+  const buildInput = (): ProductInput => {
     const base: Partial<ProductInput> = editing ? { ...editing } : {};
     return {
       ...base,
       name: d.name.trim(),
       slug: d.slug.trim(),
       categorySlug: d.categorySlug,
-      status,
+      status: d.status,
       description: d.description,
       price: Math.trunc(Number(d.price)),
       salePrice: d.salePrice.trim() === "" ? null : Math.trunc(Number(d.salePrice)),
-      stock: Math.trunc(Number(d.stock)),
+      // stock is owned by the Inventory ledger and ignored by the product write
+      // path (the server never persists it); carried only to satisfy the type.
+      stock: editing?.stock ?? 0,
       customSize: d.customSize,
       customSizeCharge: d.customSize ? Math.trunc(Number(d.customSizeCharge || "0")) : null,
       isNew: d.isNew,
@@ -730,9 +632,9 @@ function ProductForm({
     };
   };
 
-  const submit = async (status: ProductStatus) => {
+  const submit = async () => {
     setTouched(true);
-    const input = buildInput(status);
+    const input = buildInput();
     const parsed = productInputSchema.safeParse(input);
     if (!parsed.success) {
       toast.error(parsed.error.issues[0]?.message ?? "Please fix the highlighted fields.");
@@ -896,18 +798,15 @@ function ProductForm({
         </Section>
 
         <Section title="Inventory">
-          <Field label="Stock">
-            <Input
-              type="number"
-              min={0}
-              step={1}
-              value={d.stock}
-              onChange={(e) => set("stock", e.target.value)}
-            />
-          </Field>
-          <p className="text-xs text-muted-foreground">
-            Per-size stock and movements are managed in Inventory.
-          </p>
+          <div className="rounded-lg border border-border p-3">
+            <p className="text-sm text-foreground">
+              Current stock: <span className="font-medium">{editing ? editing.stock : 0}</span>
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Stock is managed on the Inventory page, where every change is recorded in the movement
+              ledger.{editing ? "" : " New products start at 0."}
+            </p>
+          </div>
         </Section>
       </div>
 
@@ -915,11 +814,8 @@ function ProductForm({
         <Button type="button" variant="ghost" onClick={onCancel} disabled={saving}>
           Cancel
         </Button>
-        <Button type="button" variant="outline" onClick={() => submit("draft")} disabled={saving}>
-          Save draft
-        </Button>
-        <Button type="button" onClick={() => submit("active")} disabled={saving}>
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Publish
+        <Button type="button" onClick={() => submit()} disabled={saving}>
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save
         </Button>
       </SheetFooter>
     </>

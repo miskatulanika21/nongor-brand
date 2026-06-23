@@ -22,7 +22,11 @@ export type AdminWriteGuardResult =
   | { ok: true; actorId: string; role: StaffRole }
   | { ok: false; error: string };
 
-async function setNoStore(): Promise<void> {
+/**
+ * Mark the current response private + uncacheable. Privileged reads AND writes
+ * must set this so admin data is never stored by shared/browser caches.
+ */
+export async function setNoStore(): Promise<void> {
   try {
     const { setResponseHeaders } = await import("@tanstack/react-start/server");
     setResponseHeaders({ "Cache-Control": "private, no-store" } as unknown as Headers);
