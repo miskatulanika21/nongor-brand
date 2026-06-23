@@ -20,6 +20,8 @@ import {
 // ---- Reads ------------------------------------------------------------------
 
 export const listAdminProducts = createServerFn({ method: "GET" }).handler(async () => {
+  const { setNoStore } = await import("@/lib/server/admin-guard.server");
+  await setNoStore();
   const { requirePermission } = await import("@/lib/server/rbac.server");
   const authz = await requirePermission("products.view");
   if (!authz.ok) return { success: false as const, error: "Not authorized.", products: [] };
@@ -32,6 +34,8 @@ export const listAdminProducts = createServerFn({ method: "GET" }).handler(async
 });
 
 export const listAdminCategories = createServerFn({ method: "GET" }).handler(async () => {
+  const { setNoStore } = await import("@/lib/server/admin-guard.server");
+  await setNoStore();
   const { requirePermission } = await import("@/lib/server/rbac.server");
   const authz = await requirePermission("products.view");
   if (!authz.ok) return { success: false as const, error: "Not authorized.", categories: [] };
@@ -46,6 +50,8 @@ export const listAdminCategories = createServerFn({ method: "GET" }).handler(asy
 export const getAdminProduct = createServerFn({ method: "GET" })
   .validator(z.object({ code: z.string().trim().min(1).max(64) }))
   .handler(async ({ data }) => {
+    const { setNoStore } = await import("@/lib/server/admin-guard.server");
+    await setNoStore();
     const { requirePermission } = await import("@/lib/server/rbac.server");
     const authz = await requirePermission("products.view");
     if (!authz.ok) return { success: false as const, error: "Not authorized.", product: null };
@@ -269,6 +275,8 @@ export const deleteCategory = createServerFn({ method: "POST" })
 // ---- Inventory --------------------------------------------------------------
 
 export const listInventory = createServerFn({ method: "GET" }).handler(async () => {
+  const { setNoStore } = await import("@/lib/server/admin-guard.server");
+  await setNoStore();
   const { requirePermission } = await import("@/lib/server/rbac.server");
   const authz = await requirePermission("inventory.view");
   if (!authz.ok)

@@ -8,6 +8,7 @@
  * CatalogAdminError with a stable `code` so the API layer can map them to safe,
  * user-facing messages (unique slug, unknown category, category in use, …).
  */
+import { randomUUID } from "node:crypto";
 import { createAdminSupabaseClient } from "./supabase-admin.server";
 import type {
   ProductInput,
@@ -15,6 +16,15 @@ import type {
   CategoryReorder,
   ProductStatus,
 } from "@/lib/catalog-admin.schema";
+
+/**
+ * Stable, immutable, opaque product code (the storefront/cart id). Generated
+ * independently of the mutable SEO slug so the slug can change freely without
+ * breaking carts/wishlists, and always within the 64-char code bound.
+ */
+function generateProductCode(): string {
+  return `prd_${randomUUID().replace(/-/g, "").slice(0, 20)}`;
+}
 
 export type CatalogAdminErrorCode =
   | "unknown_category"
@@ -388,7 +398,8 @@ type ProductWrite = {
   category_id: string;
   price: number;
   sale_price: number | null;
-  stock: number;
+  // products.stock is owned by the inventory ledger (api.set_inventory) and a DB
+  // trigger rejects direct writes — it is deliberately absent from this payload.
   custom_size: boolean;
   custom_size_charge: number | null;
   is_new: boolean;
@@ -440,7 +451,6 @@ function buildProductWrite(input: ProductInput, categoryId: string): ProductWrit
     category_id: categoryId,
     price: input.price,
     sale_price: input.salePrice ?? null,
-    stock: input.stock,
     custom_size: input.customSize ?? false,
     custom_size_charge: input.customSizeCharge ?? null,
     is_new: input.isNew ?? false,
@@ -487,9 +497,11 @@ export interface SavedProduct {
 export async function createProduct(input: ProductInput): Promise<SavedProduct> {
   const admin = createAdminSupabaseClient();
   const categoryId = await resolveCategoryId(admin, input.categorySlug);
+  // New products start at zero stock (DB default). Initial stock is established
+  // through the inventory ledger (api.set_inventory, reason 'initial_stock').
   const { data, error } = await admin
     .from("products")
-    .insert({ ...buildProductWrite(input, categoryId), code: input.slug })
+    .insert({ ...buildProductWrite(input, categoryId), code: generateProductCode() })
     .select("code, slug")
     .single();
   if (error) fromPgError(error, "Failed to create product");
@@ -523,10 +535,17 @@ export async function setProductStatus(code: string, status: ProductStatus): Pro
   if (!data) throw new CatalogAdminError("not_found", "Product not found.");
 }
 
+/**
+ * Permanent product purge. NOT used by normal admin flows (the UI archives
+ * instead). Once the inventory FK is RESTRICT (migration 15) this will be blocked
+ * by the database whenever movement history exists; callers should treat that as
+ * the expected outcome. Verifies a row actually existed (no false success).
+ */
 export async function deleteProduct(code: string): Promise<void> {
   const admin = createAdminSupabaseClient();
-  const { error } = await admin.from("products").delete().eq("code", code);
+  const { data, error } = await admin.from("products").delete().eq("code", code).select("code");
   if (error) fromPgError(error, "Failed to delete product");
+  if (!data || data.length === 0) throw new CatalogAdminError("not_found", "Product not found.");
 }
 
 // ---- Category writes --------------------------------------------------------
@@ -584,6 +603,11 @@ export async function reorderCategories(items: CategoryReorder): Promise<void> {
 
 export async function deleteCategory(slug: string): Promise<void> {
   const admin = createAdminSupabaseClient();
-  const { error } = await admin.from("product_categories").delete().eq("slug", slug);
+  const { data, error } = await admin
+    .from("product_categories")
+    .delete()
+    .eq("slug", slug)
+    .select("slug");
   if (error) fromPgError(error, "Failed to delete category");
+  if (!data || data.length === 0) throw new CatalogAdminError("not_found", "Category not found.");
 }
