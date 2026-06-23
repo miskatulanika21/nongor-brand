@@ -48,6 +48,8 @@ export const RATE_LIMITS = {
   mfaEnroll: { limit: 5, windowSec: 60 * 10 },
   /** Staff invitation / provisioning. */
   staffProvision: { limit: 10, windowSec: 60 * 10 },
+  /** Catalog admin writes (products, categories) — higher volume than auth ops. */
+  catalogWrite: { limit: 120, windowSec: 60 * 5 },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 export type RateLimitAction = keyof typeof RATE_LIMITS;
