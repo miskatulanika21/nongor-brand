@@ -396,18 +396,51 @@ export interface BulkInventoryItem {
   reason: string;
 }
 
+export interface BulkInventoryItemResult {
+  productCode: string;
+  size: string | null;
+  success: boolean;
+  errorCode?: string;
+}
+
 export interface BulkInventoryResult {
-  op_key: string;
+  operationKey: string;
+  replayed: boolean;
   count: number;
   ok: number;
   failed: number;
-  results: Array<{ code: string; size: string | null; ok: boolean; error?: string }>;
+  results: BulkInventoryItemResult[];
+}
+
+/** Map a bulk RPC error_code to a safe user-facing message. */
+export function inventoryErrorMessage(code: string | undefined): string {
+  if (!code) return "An unknown error occurred.";
+  const messages: Record<string, string> = {
+    product_not_found: "Product not found.",
+    variant_not_found: "That size variant does not exist.",
+    variant_required: "This product uses size variants; specify a size.",
+    variant_not_allowed: "This product has no size variants; omit the size.",
+    invalid_quantity: "Invalid quantity.",
+    invalid_reason: "A valid reason is required.",
+    no_change: "Quantity is already at this value.",
+    duplicate_target: "Duplicate product/size target in batch.",
+    idempotency_key_reused: "This operation key was already used with a different request.",
+    actor_not_authorized: "Not authorized.",
+    batch_too_large: "Batch size exceeds the maximum (100).",
+    batch_empty: "Batch must contain at least one item.",
+    variant_not_empty: "Set the variant stock to 0 before removing it.",
+    size_already_exists: "That size already exists.",
+    invalid_size: "Invalid size label.",
+    has_inventory_history: "Cannot purge a product with inventory history.",
+  };
+  return messages[code] ?? "Could not complete the change. Please try again.";
 }
 
 /**
  * One bounded, idempotent bulk adjustment. All integrity guards still apply
  * per item (each routes through api.set_inventory inside the RPC). `opKey`
  * makes retries safe — a replay returns the stored result without re-applying.
+ * Idempotency is scoped by (actor_id, op_key) + canonical request hash.
  */
 export async function bulkSetInventory(
   items: BulkInventoryItem[],
@@ -421,7 +454,75 @@ export async function bulkSetInventory(
     p_op_key: opKey,
   });
   if (error) fromPgError(error, "Bulk inventory update failed");
-  return data as BulkInventoryResult;
+  const raw = data as {
+    op_key: string;
+    replayed: boolean;
+    count: number;
+    ok: number;
+    failed: number;
+    results: Array<{
+      code: string;
+      size: string | null;
+      ok: boolean;
+      error_code?: string;
+    }>;
+  };
+  return {
+    operationKey: raw.op_key,
+    replayed: raw.replayed ?? false,
+    count: raw.count,
+    ok: raw.ok,
+    failed: raw.failed,
+    results: (raw.results ?? []).map((r) => ({
+      productCode: r.code,
+      size: r.size,
+      success: r.ok,
+      errorCode: r.error_code,
+    })),
+  };
+}
+
+// ---- Variant management -----------------------------------------------------
+
+export interface VariantResult {
+  code: string;
+  size: string;
+  initial?: number;
+  total?: number;
+}
+
+/** Add a size variant to a product. First-variant conserves existing stock. */
+export async function addProductVariant(
+  code: string,
+  size: string,
+  actorId: string,
+): Promise<VariantResult> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin.schema("api").rpc("add_product_variant", {
+    p_code: code,
+    p_size: size,
+    p_actor_id: actorId,
+  });
+  if (error) fromPgError(error, "Failed to add variant");
+  const r = data as { code: string; size: string; initial?: number };
+  return { code: r.code, size: r.size, initial: r.initial };
+}
+
+/** Remove a zero-stock size variant from a product. */
+export async function removeProductVariant(
+  code: string,
+  size: string,
+  actorId: string,
+): Promise<VariantResult> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin.schema("api").rpc("remove_product_variant", {
+    p_code: code,
+    p_size: size,
+    p_actor_id: actorId,
+  });
+  if (error) fromPgError(error, "Failed to remove variant");
+  const r = data as { code: string; size: string; total?: number };
+  return { code: r.code, size: r.size, total: r.total };
 }
 
 // ---- Product writes ---------------------------------------------------------
@@ -578,19 +679,6 @@ export async function setProductStatus(
     p_actor_id: actorId,
   });
   if (error) fromPgError(error, "Failed to update status");
-}
-
-/**
- * Permanent product purge. NOT used by normal admin flows (the UI archives
- * instead). Once the inventory FK is RESTRICT (migration 15) this will be blocked
- * by the database whenever movement history exists; callers should treat that as
- * the expected outcome. Verifies a row actually existed (no false success).
- */
-export async function deleteProduct(code: string): Promise<void> {
-  const admin = createAdminSupabaseClient();
-  const { data, error } = await admin.from("products").delete().eq("code", code).select("code");
-  if (error) fromPgError(error, "Failed to delete product");
-  if (!data || data.length === 0) throw new CatalogAdminError("not_found", "Product not found.");
 }
 
 // ---- Category writes (transactional canonical audit via api.* RPCs) ---------

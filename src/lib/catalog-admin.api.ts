@@ -134,29 +134,6 @@ export const setProductStatus = createServerFn({ method: "POST" })
     }
   });
 
-export const deleteProduct = createServerFn({ method: "POST" })
-  .validator(z.object({ code: z.string().trim().min(1).max(64) }))
-  .handler(async ({ data }) => {
-    const { guardAdminWrite } = await import("@/lib/server/admin-guard.server");
-    const g = await guardAdminWrite("products.manage", "deleteProduct");
-    if (!g.ok) return { success: false as const, error: g.error };
-
-    const repo = await import("@/lib/server/catalog-admin.server");
-    const { writeAudit } = await import("@/lib/server/audit.server");
-    try {
-      await repo.deleteProduct(data.code);
-      await writeAudit({
-        action: "product.deleted",
-        actorId: g.actorId,
-        targetType: "products",
-        targetId: data.code,
-      });
-      return { success: true as const };
-    } catch (e) {
-      return { success: false as const, error: await messageFromError(e) };
-    }
-  });
-
 // ---- Category writes --------------------------------------------------------
 
 export const saveCategory = createServerFn({ method: "POST" })
@@ -294,6 +271,50 @@ export const bulkAdjustInventory = createServerFn({ method: "POST" })
     // api.bulk_set_inventory; idempotency is enforced by op_key.
     try {
       const result = await repo.bulkSetInventory(data.items, g.actorId, data.opKey);
+      return { success: true as const, result };
+    } catch (e) {
+      return { success: false as const, error: await messageFromError(e) };
+    }
+  });
+
+// ---- Variant management -----------------------------------------------------
+
+export const addVariant = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      code: z.string().trim().min(1).max(64),
+      size: z.string().trim().min(1, "Size is required.").max(40),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { guardAdminWrite } = await import("@/lib/server/admin-guard.server");
+    const g = await guardAdminWrite("inventory.manage", "addVariant");
+    if (!g.ok) return { success: false as const, error: g.error };
+
+    const repo = await import("@/lib/server/catalog-admin.server");
+    try {
+      const result = await repo.addProductVariant(data.code, data.size, g.actorId);
+      return { success: true as const, result };
+    } catch (e) {
+      return { success: false as const, error: await messageFromError(e) };
+    }
+  });
+
+export const removeVariant = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      code: z.string().trim().min(1).max(64),
+      size: z.string().trim().min(1).max(40),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { guardAdminWrite } = await import("@/lib/server/admin-guard.server");
+    const g = await guardAdminWrite("inventory.manage", "removeVariant");
+    if (!g.ok) return { success: false as const, error: g.error };
+
+    const repo = await import("@/lib/server/catalog-admin.server");
+    try {
+      const result = await repo.removeProductVariant(data.code, data.size, g.actorId);
       return { success: true as const, result };
     } catch (e) {
       return { success: false as const, error: await messageFromError(e) };
