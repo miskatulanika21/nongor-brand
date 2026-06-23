@@ -45,7 +45,17 @@ export type AuditAction =
   | "authz.denied" // permission denial for a sensitive action
   | "settings.changed"
   | "integration.changed"
-  | "owner.action";
+  | "owner.action"
+  // catalog admin writes (Stage 2)
+  | "product.created"
+  | "product.updated"
+  | "product.status_changed"
+  | "product.deleted"
+  | "category.created"
+  | "category.updated"
+  | "category.status_changed"
+  | "category.reordered"
+  | "category.deleted";
 
 export interface AuditEntry {
   action: AuditAction;
