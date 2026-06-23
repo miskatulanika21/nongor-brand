@@ -129,6 +129,105 @@ export async function fetchAdminProducts(): Promise<AdminProductListItem[]> {
   }));
 }
 
+/** Full editable detail for one product (any status), keyed by stable code. */
+export interface AdminProductDetail extends ProductInput {
+  code: string;
+}
+
+interface AdminProductDetailRow {
+  code: string;
+  slug: string;
+  name: string;
+  status: string;
+  price: number;
+  sale_price: number | null;
+  stock: number;
+  custom_size: boolean;
+  custom_size_charge: number | null;
+  is_new: boolean;
+  is_handmade: boolean;
+  is_best_seller: boolean;
+  has_video: boolean;
+  description: string;
+  color: string | null;
+  colors: string[] | null;
+  fabric: string | null;
+  occasion: string | null;
+  care: string | null;
+  length: string | null;
+  work_type: string | null;
+  pieces_included: string | null;
+  shade: string | null;
+  volume: string | null;
+  skin_type: string | null;
+  expiry: string | null;
+  batch: string | null;
+  ingredients: string | null;
+  how_to_use: string | null;
+  safety: string | null;
+  blouse_piece: boolean | null;
+  stitched: boolean | null;
+  category: { slug: string } | null;
+}
+
+const ADMIN_DETAIL_SELECT = `
+  code, slug, name, status, price, sale_price, stock, custom_size, custom_size_charge,
+  is_new, is_handmade, is_best_seller, has_video, description,
+  color, colors, fabric, occasion, care, length, work_type, pieces_included,
+  shade, volume, skin_type, expiry, batch, ingredients, how_to_use, safety,
+  blouse_piece, stitched,
+  category:product_categories ( slug )
+`;
+
+const und = <T>(v: T | null): T | undefined => (v === null ? undefined : v);
+
+export async function fetchAdminProductDetail(code: string): Promise<AdminProductDetail | null> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin
+    .from("products")
+    .select(ADMIN_DETAIL_SELECT)
+    .eq("code", code)
+    .maybeSingle();
+  if (error) throw new CatalogAdminError("query_failed", "Failed to load product", error.message);
+  if (!data) return null;
+  const r = data as unknown as AdminProductDetailRow;
+  return {
+    code: r.code,
+    slug: r.slug,
+    name: r.name,
+    categorySlug: r.category?.slug ?? "",
+    status: r.status as ProductStatus,
+    price: r.price,
+    salePrice: r.sale_price,
+    stock: r.stock,
+    customSize: r.custom_size,
+    customSizeCharge: r.custom_size_charge,
+    isNew: r.is_new,
+    isHandmade: r.is_handmade,
+    isBestSeller: r.is_best_seller,
+    hasVideo: r.has_video,
+    description: r.description,
+    color: und(r.color),
+    colors: und(r.colors),
+    fabric: und(r.fabric),
+    occasion: und(r.occasion),
+    care: und(r.care),
+    length: und(r.length),
+    workType: und(r.work_type),
+    piecesIncluded: und(r.pieces_included),
+    shade: und(r.shade),
+    volume: und(r.volume),
+    skinType: und(r.skin_type),
+    expiry: und(r.expiry),
+    batch: und(r.batch),
+    ingredients: und(r.ingredients),
+    howToUse: und(r.how_to_use),
+    safety: und(r.safety),
+    blousePiece: r.blouse_piece,
+    stitched: r.stitched,
+  };
+}
+
 /** Every category (active or not), ordered for admin display. */
 export async function fetchAdminCategories(): Promise<AdminCategory[]> {
   const admin = createAdminSupabaseClient();

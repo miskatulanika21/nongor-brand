@@ -43,6 +43,22 @@ export const listAdminCategories = createServerFn({ method: "GET" }).handler(asy
   }
 });
 
+export const getAdminProduct = createServerFn({ method: "GET" })
+  .validator(z.object({ code: z.string().trim().min(1).max(64) }))
+  .handler(async ({ data }) => {
+    const { requirePermission } = await import("@/lib/server/rbac.server");
+    const authz = await requirePermission("products.view");
+    if (!authz.ok) return { success: false as const, error: "Not authorized.", product: null };
+    const { fetchAdminProductDetail } = await import("@/lib/server/catalog-admin.server");
+    try {
+      const product = await fetchAdminProductDetail(data.code);
+      if (!product) return { success: false as const, error: "Product not found.", product: null };
+      return { success: true as const, product };
+    } catch {
+      return { success: false as const, error: "Could not load product.", product: null };
+    }
+  });
+
 // ---- Error mapping ----------------------------------------------------------
 
 async function messageFromError(e: unknown): Promise<string> {
