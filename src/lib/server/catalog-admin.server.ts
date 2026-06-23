@@ -254,6 +254,131 @@ export async function fetchAdminCategories(): Promise<AdminCategory[]> {
   }));
 }
 
+// ---- Inventory --------------------------------------------------------------
+
+export interface InventorySize {
+  size: string;
+  quantity: number;
+}
+
+export interface InventoryItem {
+  code: string;
+  name: string;
+  image: string | null;
+  categoryName: string;
+  status: ProductStatus;
+  stock: number;
+  sizes: InventorySize[];
+}
+
+interface InventoryRow {
+  code: string;
+  name: string;
+  stock: number;
+  status: string;
+  category: { name: string } | null;
+  media: Array<{ url: string; is_primary: boolean; sort_order: number }> | null;
+  sizes: Array<{ size: string; quantity: number; sort_order: number }> | null;
+}
+
+const INVENTORY_SELECT = `
+  code, name, stock, status,
+  category:product_categories ( name ),
+  media:product_media ( url, is_primary, sort_order ),
+  sizes:product_size_stock ( size, quantity, sort_order )
+`;
+
+export async function fetchInventoryList(): Promise<InventoryItem[]> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin
+    .from("products")
+    .select(INVENTORY_SELECT)
+    .order("sort_order", { ascending: true });
+  if (error) throw new CatalogAdminError("query_failed", "Failed to load inventory", error.message);
+  return ((data ?? []) as unknown as InventoryRow[]).map((r) => ({
+    code: r.code,
+    name: r.name,
+    image: primaryImage(r.media),
+    categoryName: r.category?.name ?? "",
+    status: r.status as ProductStatus,
+    stock: r.stock,
+    sizes: [...(r.sizes ?? [])]
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((s) => ({ size: s.size, quantity: s.quantity })),
+  }));
+}
+
+export interface InventoryMovement {
+  id: string;
+  code: string;
+  productName: string;
+  size: string | null;
+  previousQuantity: number;
+  newQuantity: number;
+  delta: number;
+  reason: string;
+  note: string | null;
+  createdAt: string;
+}
+
+interface MovementRow {
+  id: string;
+  size: string | null;
+  previous_quantity: number;
+  new_quantity: number;
+  delta: number;
+  reason: string;
+  note: string | null;
+  created_at: string;
+  product: { code: string; name: string } | null;
+}
+
+export async function fetchRecentMovements(limit = 50): Promise<InventoryMovement[]> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin
+    .from("product_inventory_movements")
+    .select(
+      "id, size, previous_quantity, new_quantity, delta, reason, note, created_at, product:products ( code, name )",
+    )
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new CatalogAdminError("query_failed", "Failed to load history", error.message);
+  return ((data ?? []) as unknown as MovementRow[]).map((m) => ({
+    id: m.id,
+    code: m.product?.code ?? "",
+    productName: m.product?.name ?? "",
+    size: m.size,
+    previousQuantity: m.previous_quantity,
+    newQuantity: m.new_quantity,
+    delta: m.delta,
+    reason: m.reason,
+    note: m.note,
+    createdAt: m.created_at,
+  }));
+}
+
+export async function adjustInventory(params: {
+  code: string;
+  size: string | null;
+  quantity: number;
+  reason: string;
+  note: string | null;
+  actorId: string | null;
+}): Promise<{ total: number }> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin.schema("api").rpc("set_inventory", {
+    p_code: params.code,
+    p_size: params.size,
+    p_quantity: params.quantity,
+    p_reason: params.reason,
+    p_note: params.note,
+    p_actor_id: params.actorId,
+  });
+  if (error) fromPgError(error, "Failed to adjust inventory");
+  const result = data as { total?: number } | null;
+  return { total: result?.total ?? params.quantity };
+}
+
 // ---- Product writes ---------------------------------------------------------
 
 type ProductWrite = {

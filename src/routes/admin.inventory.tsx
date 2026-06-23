@@ -1,12 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import {
-  AdminHeader,
-  PreviewNotice,
-  AdminSectionCard,
-  MockBadge,
-} from "@/components/admin/AdminUI";
-import { PRODUCTS, PRODUCT_TYPE_LABEL, type ProductType } from "@/lib/products";
+import { AdminHeader, AdminSectionCard } from "@/components/admin/AdminUI";
+import { listInventory, adjustInventory } from "@/lib/catalog-admin.api";
+import type { InventoryItem, InventoryMovement } from "@/lib/server/catalog-admin.server";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -29,174 +25,117 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { Boxes, History } from "lucide-react";
+import { Boxes, History, Loader2 } from "lucide-react";
+
+const LOW_STOCK = 10;
 
 export const Route = createFileRoute("/admin/inventory")({
   head: () => ({ meta: [{ title: "Inventory · Nongorr Admin" }] }),
+  loader: async () => {
+    const res = await listInventory();
+    return {
+      items: res.success ? res.items : [],
+      movements: res.success ? res.movements : [],
+      loadError: !res.success,
+    };
+  },
   component: Inventory,
 });
 
-interface InventoryRecord {
-  productId: string;
-  name: string;
-  image: string;
-  type: ProductType;
-  stock: number;
-  sizeStock?: Record<string, number>;
-  lowStockThreshold: number;
-}
-
-interface HistoryEntry {
-  id: string;
-  product: string;
-  variant?: string;
-  previous: number;
-  next: number;
-  reason: string;
-  at: string;
-}
-
-function buildInventory(): InventoryRecord[] {
-  return PRODUCTS.map((p) => ({
-    productId: p.id,
-    name: p.name,
-    image: p.image,
-    type: p.type,
-    stock: p.sizeStock ? Object.values(p.sizeStock).reduce((s, q) => s + q, 0) : p.stock,
-    sizeStock: p.sizeStock ? { ...p.sizeStock } : undefined,
-    lowStockThreshold: 10,
-  }));
-}
-
-function statusOf(stock: number, threshold: number): { label: string; cls: string } {
+function statusOf(stock: number): { label: string; cls: string } {
   if (stock === 0) return { label: "Out of stock", cls: "border-destructive/40 text-destructive" };
-  if (stock <= threshold) return { label: "Low stock", cls: "border-gold/40 text-primary" };
+  if (stock <= LOW_STOCK) return { label: "Low stock", cls: "border-gold/40 text-primary" };
   return { label: "Healthy", cls: "border-success/40 text-success" };
 }
 
 function Inventory() {
-  const [records, setRecords] = useState<InventoryRecord[]>(buildInventory);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const { items, movements, loadError } = Route.useLoaderData();
+  const router = useRouter();
+
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [lowOnly, setLowOnly] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [adjustTarget, setAdjustTarget] = useState<InventoryRecord | null>(null);
-  const [bulkThreshold, setBulkThreshold] = useState("");
+  const [adjustTarget, setAdjustTarget] = useState<InventoryItem | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const types = useMemo(() => Array.from(new Set(PRODUCTS.map((p) => p.type))), []);
+  const refresh = () => router.invalidate();
 
-  const visible = records.filter((r) => {
-    if (typeFilter !== "all" && r.type !== typeFilter) return false;
-    if (lowOnly && r.stock > r.lowStockThreshold) return false;
+  const categoryNames = useMemo(
+    () => Array.from(new Set(items.map((i) => i.categoryName).filter(Boolean))).sort(),
+    [items],
+  );
+
+  const visible = items.filter((r) => {
+    if (categoryFilter !== "all" && r.categoryName !== categoryFilter) return false;
+    if (lowOnly && r.stock > LOW_STOCK) return false;
     return true;
   });
 
-  const visibleIds = new Set(visible.map((r) => r.productId));
-  const selectedVisible = [...selected].filter((id) => visibleIds.has(id));
+  const visibleCodes = new Set(visible.map((r) => r.code));
+  const selectedVisible = [...selected].filter((c) => visibleCodes.has(c));
 
-  const toggle = (id: string) =>
+  const toggle = (code: string) =>
     setSelected((s) => {
       const next = new Set(s);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
       return next;
     });
-
   const toggleAll = () => {
-    if (selectedVisible.length === visible.length) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(visible.map((r) => r.productId)));
-    }
+    if (selectedVisible.length === visible.length) setSelected(new Set());
+    else setSelected(new Set(visible.map((r) => r.code)));
   };
 
-  const applyAdjustment = (
-    rec: InventoryRecord,
-    variant: string | undefined,
-    nextValue: number,
-    reason: string,
-  ) => {
-    setRecords((rs) =>
-      rs.map((r) => {
-        if (r.productId !== rec.productId) return r;
-        if (variant && r.sizeStock) {
-          const sizeStock = { ...r.sizeStock, [variant]: nextValue };
-          const total = Object.values(sizeStock).reduce((s, q) => s + q, 0);
-          return { ...r, sizeStock, stock: total };
-        }
-        return { ...r, stock: nextValue };
-      }),
-    );
-    const previous = variant && rec.sizeStock ? rec.sizeStock[variant] : rec.stock;
-    setHistory((h) => [
-      {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        product: rec.name,
-        variant,
-        previous,
-        next: nextValue,
-        reason,
-        at: new Date().toLocaleString(),
-      },
-      ...h,
-    ]);
-    toast("Updated in this local preview. Reloading the page will restore the original mock data.");
-  };
-
-  const bulkSetThreshold = () => {
-    const t = Number(bulkThreshold);
-    if (!Number.isFinite(t) || t < 0) {
-      toast.error("Enter a valid non-negative threshold.");
+  const bulkZeroNonVariant = async () => {
+    const targets = visible.filter((r) => selectedVisible.includes(r.code) && r.sizes.length === 0);
+    const skipped = selectedVisible.length - targets.length;
+    if (targets.length === 0) {
+      toast.error("Selected products have size variants — adjust their sizes individually.");
       return;
     }
-    setRecords((rs) =>
-      rs.map((r) => (selectedVisible.includes(r.productId) ? { ...r, lowStockThreshold: t } : r)),
+    setBusy(true);
+    const results = await Promise.all(
+      targets.map((r) =>
+        adjustInventory({
+          data: { code: r.code, size: null, quantity: 0, reason: "Bulk set to zero", note: null },
+        }),
+      ),
     );
-    toast(`${selectedVisible.length} low-stock thresholds updated in this local preview.`);
-  };
-
-  const bulkZeroNonVariant = () => {
-    const targets = visible.filter((r) => selectedVisible.includes(r.productId));
-    const adjustable = targets.filter((r) => !r.sizeStock);
-    const skipped = targets.length - adjustable.length;
-    setRecords((rs) =>
-      rs.map((r) => (adjustable.some((a) => a.productId === r.productId) ? { ...r, stock: 0 } : r)),
-    );
-    adjustable.forEach((r) =>
-      setHistory((h) => [
-        {
-          id: `${Date.now()}-${r.productId}`,
-          product: r.name,
-          previous: r.stock,
-          next: 0,
-          reason: "Bulk set to 0 (preview)",
-          at: new Date().toLocaleString(),
-        },
-        ...h,
-      ]),
-    );
-    toast(
-      `${adjustable.length} products adjusted locally. ${skipped} variant products were skipped and require size-level changes.`,
-    );
+    setBusy(false);
+    const failed = results.filter((x) => !x.success).length;
+    if (failed) toast.error(`${failed} update(s) failed.`);
+    else
+      toast.success(
+        `${targets.length} product(s) set to 0${skipped ? ` · ${skipped} variant product(s) skipped` : ""}.`,
+      );
     setSelected(new Set());
+    await refresh();
   };
 
   return (
     <div>
-      <AdminHeader title="Inventory" description="Track and adjust stock — local preview only." />
-      <PreviewNotice className="mb-5" />
+      <AdminHeader
+        title="Inventory"
+        description="Track and adjust stock. Every change is recorded in the movement ledger."
+      />
+
+      {loadError && (
+        <div className="mb-5 rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+          Inventory could not be loaded. Refresh to try again.
+        </div>
+      )}
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-3">
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
+          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
             <SelectTrigger className="w-[170px]" aria-label="Filter by category">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All categories</SelectItem>
-              {types.map((t) => (
-                <SelectItem key={t} value={t}>
-                  {PRODUCT_TYPE_LABEL[t]}
+              {categoryNames.map((name) => (
+                <SelectItem key={name} value={name}>
+                  {name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -211,11 +150,10 @@ function Inventory() {
           </label>
         </div>
         <p className="text-sm text-muted-foreground">
-          {visible.length} of {records.length} shown
+          {visible.length} of {items.length} shown
         </p>
       </div>
 
-      {/* Desktop table */}
       <div className="hidden overflow-x-auto rounded-xl border border-border bg-card md:block">
         <table className="w-full text-sm">
           <thead>
@@ -246,28 +184,34 @@ function Inventory() {
           </thead>
           <tbody>
             {visible.map((r) => {
-              const st = statusOf(r.stock, r.lowStockThreshold);
+              const st = statusOf(r.stock);
               return (
-                <tr key={r.productId} className="border-b border-border last:border-0">
+                <tr key={r.code} className="border-b border-border last:border-0">
                   <td className="p-3">
                     <Checkbox
-                      checked={selected.has(r.productId)}
-                      onCheckedChange={() => toggle(r.productId)}
+                      checked={selected.has(r.code)}
+                      onCheckedChange={() => toggle(r.code)}
                       aria-label={`Select ${r.name}`}
                     />
                   </td>
                   <td className="p-3">
                     <div className="flex items-center gap-3">
-                      <img src={r.image} alt={r.name} className="h-10 w-9 rounded object-cover" />
+                      {r.image ? (
+                        <img src={r.image} alt={r.name} className="h-10 w-9 rounded object-cover" />
+                      ) : (
+                        <div className="grid h-10 w-9 place-items-center rounded bg-muted text-[0.6rem] text-muted-foreground">
+                          N/A
+                        </div>
+                      )}
                       <span className="line-clamp-1 text-foreground">
                         {r.name}
-                        {r.sizeStock && (
+                        {r.sizes.length > 0 && (
                           <span className="ml-1 text-xs text-muted-foreground">(variants)</span>
                         )}
                       </span>
                     </div>
                   </td>
-                  <td className="p-3">{PRODUCT_TYPE_LABEL[r.type]}</td>
+                  <td className="p-3">{r.categoryName}</td>
                   <td className="p-3 font-medium text-foreground">{r.stock}</td>
                   <td className="p-3">
                     <Badge variant="outline" className={st.cls}>
@@ -275,7 +219,12 @@ function Inventory() {
                     </Badge>
                   </td>
                   <td className="p-3 text-right">
-                    <Button size="sm" variant="outline" onClick={() => setAdjustTarget(r)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => setAdjustTarget(r)}
+                    >
                       Adjust
                     </Button>
                   </td>
@@ -293,30 +242,37 @@ function Inventory() {
         </table>
       </div>
 
-      {/* Mobile cards */}
       <div className="grid gap-3 md:hidden">
         {visible.map((r) => {
-          const st = statusOf(r.stock, r.lowStockThreshold);
+          const st = statusOf(r.stock);
           return (
-            <div key={r.productId} className="rounded-xl border border-border bg-card p-3">
+            <div key={r.code} className="rounded-xl border border-border bg-card p-3">
               <div className="flex items-start gap-3">
                 <Checkbox
                   className="mt-1"
-                  checked={selected.has(r.productId)}
-                  onCheckedChange={() => toggle(r.productId)}
+                  checked={selected.has(r.code)}
+                  onCheckedChange={() => toggle(r.code)}
                   aria-label={`Select ${r.name}`}
                 />
-                <img src={r.image} alt={r.name} className="h-14 w-12 rounded object-cover" />
+                {r.image ? (
+                  <img src={r.image} alt={r.name} className="h-14 w-12 rounded object-cover" />
+                ) : (
+                  <div className="grid h-14 w-12 place-items-center rounded bg-muted text-[0.6rem] text-muted-foreground">
+                    N/A
+                  </div>
+                )}
                 <div className="min-w-0 flex-1">
                   <p className="line-clamp-2 text-sm font-medium text-foreground">{r.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {PRODUCT_TYPE_LABEL[r.type]} · {r.stock} in stock
+                    {r.categoryName} · {r.stock} in stock
                   </p>
                   <div className="mt-1 flex items-center gap-2">
                     <Badge variant="outline" className={st.cls}>
                       {st.label}
                     </Badge>
-                    {r.sizeStock && <span className="text-xs text-muted-foreground">variants</span>}
+                    {r.sizes.length > 0 && (
+                      <span className="text-xs text-muted-foreground">variants</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -324,6 +280,7 @@ function Inventory() {
                 size="sm"
                 variant="outline"
                 className="mt-3 w-full"
+                disabled={busy}
                 onClick={() => setAdjustTarget(r)}
               >
                 Adjust stock
@@ -333,26 +290,11 @@ function Inventory() {
         })}
       </div>
 
-      {/* Bulk update */}
       {selectedVisible.length > 0 && (
         <div className="admin-bulk-bar mt-4 flex flex-col gap-3 rounded-xl border border-border bg-card p-3 shadow-soft sm:flex-row sm:items-center sm:justify-between">
-          <span className="flex items-center gap-2 text-sm">
-            <MockBadge /> {selectedVisible.length} selected
-          </span>
+          <span className="text-sm">{selectedVisible.length} selected</span>
           <div className="flex flex-wrap items-center gap-2">
-            <Input
-              value={bulkThreshold}
-              onChange={(e) => setBulkThreshold(e.target.value)}
-              placeholder="Low-stock threshold"
-              className="h-9 w-40"
-              type="number"
-              min={0}
-              aria-label="Bulk low-stock threshold"
-            />
-            <Button size="sm" variant="outline" onClick={bulkSetThreshold}>
-              Set threshold
-            </Button>
-            <Button size="sm" variant="outline" onClick={bulkZeroNonVariant}>
+            <Button size="sm" variant="outline" disabled={busy} onClick={bulkZeroNonVariant}>
               Set non-variant stock to 0
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
@@ -362,7 +304,6 @@ function Inventory() {
         </div>
       )}
 
-      {/* History */}
       <div className="mt-8">
         <AdminSectionCard
           title={
@@ -370,25 +311,23 @@ function Inventory() {
               <History className="h-4 w-4 text-gold" /> Adjustment history
             </span>
           }
-          action={<MockBadge label="Session only" />}
         >
-          {history.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No adjustments made in this preview session. Reloading clears this history.
-            </p>
+          {movements.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No stock movements recorded yet.</p>
           ) : (
             <ul className="space-y-2">
-              {history.map((h) => (
+              {movements.map((m) => (
                 <li
-                  key={h.id}
+                  key={m.id}
                   className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border p-2 text-sm"
                 >
                   <span className="text-foreground">
-                    {h.product}
-                    {h.variant ? ` · ${h.variant}` : ""}
+                    {m.productName}
+                    {m.size ? ` · ${m.size}` : ""}
                   </span>
                   <span className="text-muted-foreground">
-                    {h.previous} → {h.next} · {h.reason} · {h.at}
+                    {m.previousQuantity} → {m.newQuantity} ({m.delta >= 0 ? "+" : ""}
+                    {m.delta}) · {m.reason} · {new Date(m.createdAt).toLocaleString()}
                   </span>
                 </li>
               ))}
@@ -400,7 +339,10 @@ function Inventory() {
       <AdjustDialog
         target={adjustTarget}
         onClose={() => setAdjustTarget(null)}
-        onApply={applyAdjustment}
+        onApplied={async () => {
+          setAdjustTarget(null);
+          await refresh();
+        }}
       />
     </div>
   );
@@ -409,35 +351,51 @@ function Inventory() {
 function AdjustDialog({
   target,
   onClose,
-  onApply,
+  onApplied,
 }: {
-  target: InventoryRecord | null;
+  target: InventoryItem | null;
   onClose: () => void;
-  onApply: (
-    rec: InventoryRecord,
-    variant: string | undefined,
-    next: number,
-    reason: string,
-  ) => void;
+  onApplied: () => void;
 }) {
-  const sizes = target?.sizeStock ? Object.keys(target.sizeStock) : [];
+  const sizes = target?.sizes ?? [];
   const [variant, setVariant] = useState<string>("");
   const [value, setValue] = useState("");
   const [reason, setReason] = useState("Manual adjustment");
+  const [saving, setSaving] = useState(false);
 
-  // Reset on target change.
   useEffect(() => {
     if (target) {
-      const firstSize = target.sizeStock ? Object.keys(target.sizeStock)[0] : "";
-      setVariant(firstSize);
-      setValue(String(target.sizeStock ? (target.sizeStock[firstSize] ?? 0) : target.stock));
+      const first = target.sizes[0];
+      setVariant(first?.size ?? "");
+      setValue(String(first ? first.quantity : target.stock));
       setReason("Manual adjustment");
     }
   }, [target]);
 
   if (!target) return null;
   const num = Number(value);
-  const valid = Number.isInteger(num) && num >= 0;
+  const valid = Number.isInteger(num) && num >= 0 && reason.trim().length > 0;
+
+  const apply = async () => {
+    if (!valid) return;
+    setSaving(true);
+    const res = await adjustInventory({
+      data: {
+        code: target.code,
+        size: sizes.length > 0 ? variant : null,
+        quantity: num,
+        reason: reason.trim(),
+        note: null,
+      },
+    });
+    setSaving(false);
+    if (res.success) {
+      toast.success("Stock updated.");
+      onApplied();
+    } else {
+      toast.error(res.error);
+    }
+  };
 
   return (
     <Dialog open={!!target} onOpenChange={(o) => !o && onClose()}>
@@ -445,7 +403,7 @@ function AdjustDialog({
         <DialogHeader>
           <DialogTitle>Adjust stock — {target.name}</DialogTitle>
           <DialogDescription>
-            Local preview only · Changes reset when this page reloads.
+            Sets the new quantity and records a movement in the ledger.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -456,7 +414,7 @@ function AdjustDialog({
                 value={variant}
                 onValueChange={(v) => {
                   setVariant(v);
-                  setValue(String(target.sizeStock?.[v] ?? 0));
+                  setValue(String(sizes.find((s) => s.size === v)?.quantity ?? 0));
                 }}
               >
                 <SelectTrigger id="adj-variant">
@@ -464,8 +422,8 @@ function AdjustDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {sizes.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s} (current {target.sizeStock?.[s] ?? 0})
+                    <SelectItem key={s.size} value={s.size}>
+                      {s.size} (current {s.quantity})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -485,7 +443,7 @@ function AdjustDialog({
               value={value}
               onChange={(e) => setValue(e.target.value)}
             />
-            {!valid && (
+            {!(Number.isInteger(num) && num >= 0) && (
               <p className="text-xs text-destructive">Enter a non-negative whole number.</p>
             )}
           </div>
@@ -495,22 +453,12 @@ function AdjustDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button
-            disabled={!valid}
-            onClick={() => {
-              onApply(
-                target,
-                sizes.length > 0 ? variant : undefined,
-                num,
-                reason || "Manual adjustment",
-              );
-              onClose();
-            }}
-          >
-            <Boxes className="h-4 w-4" /> Apply (preview)
+          <Button disabled={!valid || saving} onClick={apply}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Boxes className="h-4 w-4" />}{" "}
+            Apply
           </Button>
         </DialogFooter>
       </DialogContent>

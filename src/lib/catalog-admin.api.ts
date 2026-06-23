@@ -266,6 +266,63 @@ export const deleteCategory = createServerFn({ method: "POST" })
     }
   });
 
+// ---- Inventory --------------------------------------------------------------
+
+export const listInventory = createServerFn({ method: "GET" }).handler(async () => {
+  const { requirePermission } = await import("@/lib/server/rbac.server");
+  const authz = await requirePermission("inventory.view");
+  if (!authz.ok)
+    return { success: false as const, error: "Not authorized.", items: [], movements: [] };
+  const repo = await import("@/lib/server/catalog-admin.server");
+  try {
+    const [items, movements] = await Promise.all([
+      repo.fetchInventoryList(),
+      repo.fetchRecentMovements(),
+    ]);
+    return { success: true as const, items, movements };
+  } catch {
+    return {
+      success: false as const,
+      error: "Could not load inventory.",
+      items: [],
+      movements: [],
+    };
+  }
+});
+
+export const adjustInventory = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      code: z.string().trim().min(1).max(64),
+      size: z.string().trim().min(1).max(40).nullable(),
+      quantity: z.number().int().nonnegative(),
+      reason: z.string().trim().min(1).max(120),
+      note: z.string().trim().max(500).nullable().optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { guardAdminWrite } = await import("@/lib/server/admin-guard.server");
+    const g = await guardAdminWrite("inventory.manage", "adjustInventory");
+    if (!g.ok) return { success: false as const, error: g.error };
+
+    const repo = await import("@/lib/server/catalog-admin.server");
+    // Canonical audit (inventory.adjusted) is written inside api.set_inventory
+    // in the same transaction as the movement + stock change.
+    try {
+      const res = await repo.adjustInventory({
+        code: data.code,
+        size: data.size,
+        quantity: data.quantity,
+        reason: data.reason,
+        note: data.note ?? null,
+        actorId: g.actorId,
+      });
+      return { success: true as const, total: res.total };
+    } catch (e) {
+      return { success: false as const, error: await messageFromError(e) };
+    }
+  });
+
 // ---- helpers ----------------------------------------------------------------
 
 function requireCode(code: string | undefined): string {
