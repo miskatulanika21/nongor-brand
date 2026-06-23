@@ -30,7 +30,7 @@ invitee clicks link → `auth.confirm.tsx` (allowlist now includes `invite`) →
 `performEmailConfirm` `verifyOtp({ type: "invite" })` → routed to
 `/auth/update-password` to set an initial password → role-aware redirect to admin.
 
-## Staff mutations (Bugs 1 + 3, Item D + follow-up) — needs `20260622120000` applied
+## Staff mutations (Bugs 1 + 3, Item D + follow-up) — migration applied, `api` exposed
 
 `provisionStaff` / `updateStaffRole` / `setStaffActive` (`staff.api.ts`):
 CSRF → **baseline `requireRole("admin")` FIRST** (before the service-role client
@@ -59,14 +59,14 @@ metadata.
 recording success ONLY after `validateEnvAtStartup()` completes — a failed
 validation does not latch, so later requests are not silently bypassed.
 
-## Last-owner protection (Item C) — needs `20260622130000` applied
+## Last-owner protection (Item C) — applied
 
 Any UPDATE/DELETE on `staff_profiles` fires `private.guard_owner_safety()`, which
 now takes `pg_advisory_xact_lock(...)` BEFORE counting other active owners, so
 concurrent owner-removing transactions are serialized and the last owner cannot
 be removed even under a race.
 
-## Audit-log visibility (Bug 4) — needs `20260622120000` applied
+## Audit-log visibility (Bug 4) — applied
 
 `admin_read_audit_logs` RLS allows SELECT only when
 `private.current_staff_role() = 'owner'`, matching `audit.view` being owner-only
@@ -79,6 +79,34 @@ Route loaders call `catalog.api.ts` server fns → `catalog.server.ts` repositor
 maps rows to `Product`. Shop, index, PDP, search, cart, wishlist, sitemap read
 from the `product_*` tables. Cart/wishlist hold ids only in `localStorage`.
 
+## Admin catalog writes (Stage 2 Pass 2) — live
+
+All admin catalog mutations share one guard: `guardAdminWrite(permission, op)`
+(`admin-guard.server.ts`) → no-store headers → CSRF → `requirePermission(..,
+{strict})` → MFA step-up (when `ENFORCE_ADMIN_MFA`) → per-IP/account rate limit
+(`catalogWrite`) → audited denial. Reads (`products.view`) also set no-store.
+
+- **Products** (`admin.products.tsx` → `catalog-admin.api.ts` →
+  `catalog-admin.server.ts`): list/edit load all statuses via the service-role
+  repository. Save routes through `api.save_product` (mutation + canonical
+  `product.created/updated` audit in one txn); `code` is an independent immutable
+  id (never the slug); the editor's stock is read-only (owned by Inventory);
+  status comes from the selector. Removal is **Archive** (`api.set_product_status`)
+  — permanent delete/bulk-delete are not in the UI.
+- **Categories** (`admin.categories.tsx`): `api.save_category` /
+  `set_category_active` / `delete_category` (all with canonical audit); reorder is
+  one atomic statement via `api.reorder_categories`. Product counts come from the DB.
+- **Inventory** (`admin.inventory.tsx`): stock is canonical. `products.stock` can
+  change ONLY via `api.set_inventory` (a DB trigger blocks any other stock write),
+  which locks the product row (`FOR UPDATE`), requires an active staff actor,
+  enforces sized/non-sized, rejects zero-delta, and writes a movement + canonical
+  `inventory.adjusted` audit in one txn. The movement ledger is append-only
+  (UPDATE/DELETE blocked) and deleting a product with history is blocked (FK
+  RESTRICT). Bulk uses `api.bulk_set_inventory` (bounded 1..100, idempotent op_key,
+  structured partial-success). Variants are managed via `api.add_product_variant`
+  / `remove_product_variant`. DB-level guarantees verified by reproducible
+  rolled-back SQL proofs (see the Stage-2 hardening report).
+
 ## CI
 
 `.github/workflows/ci.yml` runs on push to `main` and all PRs: Bun (pinned
@@ -88,7 +116,9 @@ Supabase DB (Docker, no creds) — the authoritative migrate-from-empty check. A
 separate advisory job runs `supabase db lint --linked` only when
 `SUPABASE_ACCESS_TOKEN` + `SUPABASE_PROJECT_ID` + `SUPABASE_DB_PASSWORD` are
 configured; otherwise it skips with a visible notice (it lints the DEPLOYED DB
-and does not validate pending migrations).
+and does not validate pending migrations). **Currently those secrets are NOT set,
+so the linked-lint step SKIPS on every run** — job "success" with that step
+skipped is not a passing lint.
 
 ## Still mock / localStorage (later stages)
 

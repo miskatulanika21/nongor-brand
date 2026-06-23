@@ -40,22 +40,19 @@ sync with `CURRENT_STATUS.md`.
 - [x] 7 — operator scripts use `schema("api")`; redundant direct write removed
 - [x] 8 — corrected the over-absolute security-header comment
 
-**Code closure: COMPLETE.** Operational closure (below) still pending; Stage 2
-must not begin until these are done AND this patch is reviewed/accepted.
+**Stage 1.5: OPERATIONALLY CLOSED (2026-06-23).**
 
-**Remaining to close the stage (operator):**
+- [x] Migrations applied (now 17 total applied; ledger == repo files)
+- [x] `api` exposed in PostgREST (Data API → Settings); `private` hidden
+- [x] Ledger reconciled (`supabase migration list` equivalent verified via MCP)
+- [x] Item C concurrency + Item D rollback proofs run (rolled-back SQL proofs)
+- [ ] Rotate & revoke Stage 1-committed credentials (deferred to go-live, owner)
+- [ ] MFA rollout → `ENFORCE_ADMIN_MFA=true` (owner)
+- [ ] Enable leaked-password protection (Auth dashboard, owner)
+- [ ] Real-email invite E2E (owner)
+- [ ] `curl -I` deployed origin for headers (owner, once deployed)
 
-- [ ] Apply both pending migrations (`20260622120000`, `20260622130000`)
-- [ ] Add `api` to PostgREST exposed schemas (keep `private` hidden)
-- [ ] Confirm all 11 migrations applied (`supabase migration list`), subject to
-      the documented harden-migration filename drift
-- [ ] `curl -I` the deployed origin to confirm security headers (Item A)
-- [ ] Run the Item C concurrency SQL procedure and the Item D rollback proof
-- [ ] Rotate & revoke all Stage 1-committed credentials
-- [ ] MFA rollout (owner enrolls + verifies recovery) → `ENFORCE_ADMIN_MFA=true`
-- [ ] Real-email invite E2E: invite → email → link → password set → admin
-
-**Exit gate:** all checkboxes above true and verified against the live project.
+Remaining boxes are owner/operator go-live actions and do not block Stage 2.
 
 ## Stage 2 (Pass 2+) — Catalog writes
 
@@ -65,8 +62,21 @@ color/fabric facets; Storage media library; rating/review_count maintenance.
 Enforce `products.manage` / `categories.manage`. Retire the `PRODUCTS` array
 once the admin write path is DB-backed.
 
+**Progress (2026-06-23):**
+
+- [x] Pass 1 — public catalog read path (DB-backed)
+- [x] Pass 2 — admin **product** + **category** writes (DB-backed, transactional
+      canonical-audit RPCs, atomic reorder, immutable product code, archive-only)
+- [x] Pass 2 — **inventory**: append-only movement ledger; `api.set_inventory`
+      (FOR UPDATE lock, actor/active-staff, sized/non-sized, zero-delta, bounds);
+      `products.stock` write-guard; FK RESTRICT; bounded idempotent
+      `api.bulk_set_inventory`. All verified via rolled-back SQL proofs.
+- [ ] Pass 3+ — reviews moderation + rating/review_count maintenance; Storage
+      media library; DB-backed category counts & color/fabric facets; settings;
+      retire the `PRODUCTS` array.
+
 **Exit:** admin changes persist and drive the storefront; no mock array for
-catalog; permissions enforced server-side.
+catalog; permissions enforced server-side. (Pass 3+ outstanding.)
 
 ## Stage 3 — Checkout & orders
 

@@ -3,107 +3,116 @@
 Authoritative record of verified project state. Code and live-environment
 behavior are the source of truth; this file is updated after every stage.
 
-_Last updated: 2026-06-23 (Stage 1.5 CODE CLOSURE complete — four bugs + items
-A–E + follow-up hardening patch; OPERATIONAL CLOSURE pending: 2 migrations to
-apply, schema exposure, credential rotation, MFA rollout, concurrency/rollback/
-header proofs)._
+_Last updated: 2026-06-23 — Stage 1.5 operationally closed; Stage 2 public read
+(Pass 1) + admin product/category/inventory writes (Pass 2) implemented, hardened
+and CI-green. 17 migrations applied to the live project; remote ledger matches the
+17 repo files._
 
 State legend: **(1) code complete · (2) migration applied · (3) deployed
 verification complete · (4) operator action pending.**
 
-> **Stage 2 is NOT yet safe to begin.** Stage 1.5 code closure is complete, but
-> operational closure (live migrations, deployed verification, credential
-> rotation, MFA rollout) and review/acceptance of this follow-up patch remain.
-
-## Follow-up security hardening patch (2026-06-23)
-
-Code-complete (1); covered by tests; no new migration (all code/CI/docs):
-
-| #   | Fix                                                                                                                                                                              | Tests                                     |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| 1   | Env-validation latch records success only AFTER validation (no bypass on prior throw); moved to `env.server.ensureEnvValidated()`                                                | `env-validation.test.ts`                  |
-| 2   | `updateStaffRole`/`setStaffActive` authorize baseline admin BEFORE the privileged target lookup (no existence oracle); owner elevation via already-resolved role                 | `staff-authz.test.ts`                     |
-| 3   | MFA enrollment: rate-limited, AAL2 required to add a factor when one is verified, stale unverified factors cleaned up, initiation/denial/failure audited (no secret/QR in audit) | `mfa-enroll.test.ts`                      |
-| 4   | `authz.denied` (and identity/rbac denials) carry the verified actor id; `null` only when unauthenticated                                                                         | `identity.test.ts`, `staff-authz.test.ts` |
-| 5   | CI: `SUPABASE_DB_PASSWORD` added to linked-lint credential gate; new `migrations-local` job applies all migrations to a fresh local DB                                           | CI (runs on push/PR)                      |
-| 6   | Pinned Bun (`1.3.14`) and Supabase CLI (`2.33.9`) — no `latest`                                                                                                                  | —                                         |
-| 7   | Operator scripts (`provision-admin.ts`, `e2e-auth-test.ts`) use `admin.schema("api").rpc(...)`; redundant direct `staff_profiles` write removed                                  | —                                         |
-| 8   | Header-failure comment no longer claims an absolute "never unprotected" guarantee                                                                                                | `headers.test.ts`                         |
-
-## Reproducible command output (this commit)
-
-| Command            | Result                                                                      |
-| ------------------ | --------------------------------------------------------------------------- |
-| `tsc --noEmit`     | clean                                                                       |
-| `eslint .`         | 0 errors, 31 warnings (pre-existing `react-refresh/only-export-components`) |
-| `prettier --check` | clean                                                                       |
-| `vitest run`       | 211 passed / 18 files                                                       |
-| `vite build`       | success                                                                     |
-
 ## Stage status
 
-| Stage       | Scope                                                                    | Status                                                         |
-| ----------- | ------------------------------------------------------------------------ | -------------------------------------------------------------- |
-| 1           | Auth, RBAC, CSRF, headers, rate limit, MFA scaffold, audit, owner-safety | Implemented                                                    |
-| 1.5         | Security closure (4 bugs + A–E + follow-up hardening)                    | **Code closure complete (1); operational closure pending (4)** |
-| 2 (Pass 1)  | DB-backed **public catalog read** path                                   | Implemented + applied to live project                          |
-| 2 (Pass 2+) | Admin catalog/inventory/media/settings **writes**                        | Not started                                                    |
-| 3           | Server-authoritative checkout, orders, payments                          | Not started                                                    |
-| 4           | Customer accounts / addresses / measurements                             | Not started (localStorage)                                     |
-| 5           | Courier adapters, shipments, webhooks, outbox                            | Not started                                                    |
-| 6           | Reviews, banners, CMS, contact, newsletter, reports, settings            | Not started (mock)                                             |
-| 7           | Hardening, perf/a11y, CI/CD, backups                                     | Not started                                                    |
+| Stage       | Scope                                                                                                        | Status                                                                   |
+| ----------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| 1           | Auth, RBAC, CSRF, headers, rate limit, MFA scaffold, audit, owner-safety                                     | Implemented                                                              |
+| 1.5         | Security closure (4 bugs + A–E + follow-up hardening)                                                        | **Operationally closed** (migrations applied; `api` exposed; proofs run) |
+| 2 (Pass 1)  | DB-backed **public catalog read** path                                                                       | Implemented + live                                                       |
+| 2 (Pass 2)  | Admin **product / category / inventory** writes (DB-backed + hardened)                                       | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3+) | Reviews moderation + rating sync; media library (Storage); facets/counts; settings; delete legacy `PRODUCTS` | Not started                                                              |
+| 3           | Server-authoritative checkout, orders, payments                                                              | Not started                                                              |
+| 4           | Customer accounts / addresses / measurements                                                                 | Not started (localStorage)                                               |
+| 5           | Courier adapters, shipments, webhooks, outbox                                                                | Not started                                                              |
+| 6           | Banners, CMS, contact, newsletter, reports, settings                                                         | Not started (mock)                                                       |
+| 7           | Hardening, perf/a11y, CI/CD, backups                                                                         | Not started                                                              |
 
-## Stage 1.5 — items
+## Migrations (live project xomjxtmhkglhuiccekld)
 
-| Item                                        | Code (1) | Live status                                 |
-| ------------------------------------------- | -------- | ------------------------------------------- |
-| Bug 1 — staff RPC `api` wrappers            | Done     | (2) pending migration apply + expose `api`  |
-| Bug 2 — invite confirm type                 | Done     | (3) pending real-email E2E                  |
-| Bug 3 — AAL2 step-up (gated)                | Done     | (3) pending MFA rollout                     |
-| Bug 4 — audit RLS owner-only                | Done     | (2) pending migration apply                 |
-| A — security-header Response rebuild        | Done     | (3) pending `curl -I` on deployed origin    |
-| B — independent IP/account rate limits      | Done     | no live step; covered by tests              |
-| C — owner-safety advisory lock              | Done     | (2)+(3) pending migration apply + SQL proof |
-| D — transactional critical audit (verified) | Done     | (3) pending SQL rollback proof on live      |
-| E — CI pipeline                             | Done     | active on next push/PR                      |
+**17 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
+ledger matches the 17 repo files exactly (versions + names), in order:
 
-See `docs/stage-1.5-security-closure-report.md` for detail, SQL excerpts, the
-Item C concurrency procedure, and the Item D rollback proof.
+```
+…143927 create_private_schema            …622120000 stage_1_5_security_closure
+…143948 create_staff_profiles            …622130000 owner_safety_advisory_lock
+…144004 create_current_staff_role_fn     …623000000 advisor_hardening
+…144019 create_audit_logs                …623100000 vendor_rls_auto_enable
+…144036 create_provision_admin_function  …623200000 inventory_movements
+…150547 fix_staff_profiles_rls_recursion …623210000 inventory_hardening
+…165800 harden_security_definer_functions…623220000 bulk_set_inventory
+…621090000 staff_provisioning_and_owner_safety   …623230000 catalog_write_rpcs
+…622000000 catalog_schema
+```
+
+Note: `apply_migration` (MCP) stamps its own version, so after every MCP apply the
+ledger version is realigned to the repo filename in a **standalone** statement
+(never bundled with a proof DO-block, whose final `RAISE` would roll the realign
+back). Always confirm with `supabase migration list`.
+
+## Stage 1.5 — operational closure (done)
+
+- Migrations applied; `api` schema exposed in PostgREST (Data API → Settings;
+  `private` stays hidden). All three staff RPC wrappers verified reachable via REST.
+- Owner-safety concurrency (advisory lock) and the transactional audit-rollback
+  contract verified via rolled-back SQL proofs.
+- Security advisors: cleared except `auth_leaked_password_protection` (Auth
+  dashboard toggle — enable before broader auth use). `rls_auto_enable`/`ensure_rls`
+  vendored into a migration.
+- Deferred (owner): credential rotation (go-live); leaked-password protection toggle.
+
+## Stage 2 Pass 2 — admin write path (done, hardened)
+
+Every catalog mutation flows through one hardened path (`guardAdminWrite`: CSRF +
+strict permission + MFA step-up + per-IP/account rate limit + audited denial),
+validated by isomorphic zod schemas that mirror the DB CHECKs, and audited.
+
+**Inventory is canonical and tamper-resistant (verified by rolled-back SQL proofs):**
+
+- `products.stock` is writable **only** through `api.set_inventory` — a DB trigger
+  rejects any other stock-changing UPDATE.
+- `api.set_inventory`: `SELECT … FOR UPDATE` product lock (serializes all variant
+  changes), actor required + active-staff check, enforces sized vs non-sized (never
+  invents size rows), rejects zero-delta, bounded inputs; writes the movement +
+  canonical `inventory.adjusted` audit in one transaction.
+- `product_inventory_movements`: append-only (UPDATE/DELETE blocked by trigger);
+  product deletion blocked while history exists (FK `ON DELETE RESTRICT`).
+- Variants created/removed only via `api.add_product_variant` / `remove_product_variant`.
+- Bulk: `api.bulk_set_inventory` — bounded 1..100, idempotent (op_key replay), one
+  auth + one rate-limit charge, structured partial-success; replaces the old
+  client `Promise.all`.
+
+**Product/category writes:** transactional canonical audit via `api.save_product`,
+`api.set_product_status`, `api.save_category`, `api.set_category_active`,
+`api.delete_category`, `api.reorder_categories` (atomic single-statement reorder).
+Product `code` is an independent immutable id (never `code=slug`). Product stock is
+read-only in the editor. Permanent product delete/bulk-delete removed from the UI —
+normal removal is **Archive**. Privileged GET handlers set `private, no-store`.
 
 ## Real vs mock (data flow)
 
-**Real / persistent (DB-backed):** auth, staff RBAC roles (`staff_profiles`),
-audit logs (`audit_logs`); public catalog read (`product_*` tables) — storefront,
-PDP, search, sitemap.
+**Real / persistent (DB-backed):** auth, staff RBAC (`staff_profiles`), audit logs;
+public catalog read (`product_*`); **admin product/category writes**; **inventory
+(ledger + stock)**.
 
-**Still mock / localStorage-only (Phase 2 scope):** admin catalog writes; orders,
-cart, wishlist, checkout state, coupons; payment screenshots/TrxID; customer
-profiles, saved addresses, saved measurements; courier, reviews moderation,
-banners, CMS, contact, newsletter, reports, site settings; business contact
-placeholders.
+**Still mock / localStorage (later passes):** reviews moderation; media library;
+category facets/counts (`categories.ts`) + legacy `PRODUCTS` array (still exported
+until Pass 3+ removes it); orders, cart, wishlist, checkout, coupons; payments;
+customer profiles/addresses/measurements; courier; banners, CMS, contact,
+newsletter, reports, settings.
 
-## Migrations
+## CI (honest)
 
-**11 local** migration files in `supabase/migrations/`. **9 applied** to the live
-project: the 8 Stage 1 files (`…143927` → `…090000`) and
-`20260622000000_catalog_schema.sql`. **2 pending apply:**
+`ci.yml` runs (genuinely): frozen Bun install, typecheck, lint, format, test, build,
+and **migrate-from-empty** (boots a local Supabase, applies all 17 migrations to a
+blank DB). The **linked deployed-DB lint step is SKIPPED** in CI (it needs
+`SUPABASE_ACCESS_TOKEN` + `SUPABASE_PROJECT_ID` + `SUPABASE_DB_PASSWORD`, which are
+not configured as CI secrets). Job conclusion "success" with that step skipped is
+**not** a passing lint — add the secrets to actually run it.
 
-- `20260622120000_stage_1_5_security_closure.sql` — `api` wrappers (Bug 1) +
-  audit RLS owner-only (Bug 4)
-- `20260622130000_owner_safety_advisory_lock.sql` — owner-guard advisory lock
-  (Item C); documents the Item D transactional contract
+## Outstanding follow-ups
 
-After both are applied the synchronized count is **11**, subject to the
-documented filename drift on the harden migration (`…165800` local vs `…165913`
-remote, identical body). Repo files do not prove remote application — always
-confirm with `supabase migration list`.
-
-## Outstanding (owner / operator) actions
-
-1. Apply both pending migrations; expose the `api` schema in PostgREST (keep
-   `private` hidden); confirm 11 synchronized.
-2. `curl -I` the deployed origin to confirm security headers (Item A).
-3. Run the Item C concurrency SQL procedure and the Item D rollback proof.
-4. Rotate & revoke all Stage 1-committed credentials; complete MFA rollout, then
-   set `ENFORCE_ADMIN_MFA=true`.
+1. Enable leaked-password protection (Auth dashboard) before broader auth use.
+2. Rotate exposed credentials before go-live.
+3. Add CI secrets so the linked DB lint runs (or keep treating it as skipped).
+4. DB integration test harness (pgTAP in CI) for inventory concurrency/immutability —
+   currently verified via reproducible MCP SQL proofs, not automated in CI.
+5. Stage 2 Pass 3+: reviews, media (Storage), facets/counts, settings, remove `PRODUCTS`.

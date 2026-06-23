@@ -13,6 +13,8 @@ import {
   productInputSchema,
   categoryInputSchema,
   categoryReorderSchema,
+  inventoryAdjustSchema,
+  bulkInventorySchema,
   PRODUCT_STATUSES,
   slugSchema,
 } from "@/lib/catalog-admin.schema";
@@ -256,15 +258,7 @@ export const listInventory = createServerFn({ method: "GET" }).handler(async () 
 });
 
 export const adjustInventory = createServerFn({ method: "POST" })
-  .validator(
-    z.object({
-      code: z.string().trim().min(1).max(64),
-      size: z.string().trim().min(1).max(40).nullable(),
-      quantity: z.number().int().nonnegative(),
-      reason: z.string().trim().min(1).max(120),
-      note: z.string().trim().max(500).nullable().optional(),
-    }),
-  )
+  .validator(inventoryAdjustSchema)
   .handler(async ({ data }) => {
     const { guardAdminWrite } = await import("@/lib/server/admin-guard.server");
     const g = await guardAdminWrite("inventory.manage", "adjustInventory");
@@ -289,22 +283,7 @@ export const adjustInventory = createServerFn({ method: "POST" })
   });
 
 export const bulkAdjustInventory = createServerFn({ method: "POST" })
-  .validator(
-    z.object({
-      opKey: z.string().trim().min(1).max(100),
-      items: z
-        .array(
-          z.object({
-            code: z.string().trim().min(1).max(64),
-            size: z.string().trim().min(1).max(40).nullable(),
-            quantity: z.number().int().nonnegative(),
-            reason: z.string().trim().min(1).max(120),
-          }),
-        )
-        .min(1)
-        .max(100),
-    }),
-  )
+  .validator(bulkInventorySchema)
   .handler(async ({ data }) => {
     const { guardAdminWrite } = await import("@/lib/server/admin-guard.server");
     const g = await guardAdminWrite("inventory.manage", "bulkAdjustInventory");
