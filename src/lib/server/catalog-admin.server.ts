@@ -528,46 +528,56 @@ export interface SavedProduct {
   slug: string;
 }
 
-/** Create a new product. `code` (the stable storefront id) defaults to the slug. */
-export async function createProduct(input: ProductInput): Promise<SavedProduct> {
+/**
+ * Create a new product through api.save_product (mutation + canonical
+ * product.created audit in one transaction). `code` is an independent immutable
+ * id; new products start at zero stock (set later via the inventory ledger).
+ */
+export async function createProduct(input: ProductInput, actorId: string): Promise<SavedProduct> {
   const admin = createAdminSupabaseClient();
   const categoryId = await resolveCategoryId(admin, input.categorySlug);
-  // New products start at zero stock (DB default). Initial stock is established
-  // through the inventory ledger (api.set_inventory, reason 'initial_stock').
-  const { data, error } = await admin
-    .from("products")
-    .insert({ ...buildProductWrite(input, categoryId), code: generateProductCode() })
-    .select("code, slug")
-    .single();
+  const { data, error } = await admin.schema("api").rpc("save_product", {
+    p_mode: "create",
+    p_code: generateProductCode(),
+    p_payload: buildProductWrite(input, categoryId),
+    p_actor_id: actorId,
+  });
   if (error) fromPgError(error, "Failed to create product");
-  return { code: data!.code, slug: data!.slug };
+  const r = data as { code: string; slug: string };
+  return { code: r.code, slug: r.slug };
 }
 
-/** Update an existing product identified by its stable `code` (slug may change). */
-export async function updateProduct(code: string, input: ProductInput): Promise<SavedProduct> {
+/** Update an existing product (by stable `code`) + canonical audit, one txn. */
+export async function updateProduct(
+  code: string,
+  input: ProductInput,
+  actorId: string,
+): Promise<SavedProduct> {
   const admin = createAdminSupabaseClient();
   const categoryId = await resolveCategoryId(admin, input.categorySlug);
-  const { data, error } = await admin
-    .from("products")
-    .update(buildProductWrite(input, categoryId))
-    .eq("code", code)
-    .select("code, slug")
-    .maybeSingle();
+  const { data, error } = await admin.schema("api").rpc("save_product", {
+    p_mode: "update",
+    p_code: code,
+    p_payload: buildProductWrite(input, categoryId),
+    p_actor_id: actorId,
+  });
   if (error) fromPgError(error, "Failed to update product");
-  if (!data) throw new CatalogAdminError("not_found", "Product not found.");
-  return { code: data.code, slug: data.slug };
+  const r = data as { code: string; slug: string };
+  return { code: r.code, slug: r.slug };
 }
 
-export async function setProductStatus(code: string, status: ProductStatus): Promise<void> {
+export async function setProductStatus(
+  code: string,
+  status: ProductStatus,
+  actorId: string,
+): Promise<void> {
   const admin = createAdminSupabaseClient();
-  const { data, error } = await admin
-    .from("products")
-    .update({ status })
-    .eq("code", code)
-    .select("code")
-    .maybeSingle();
+  const { error } = await admin.schema("api").rpc("set_product_status", {
+    p_code: code,
+    p_status: status,
+    p_actor_id: actorId,
+  });
   if (error) fromPgError(error, "Failed to update status");
-  if (!data) throw new CatalogAdminError("not_found", "Product not found.");
 }
 
 /**
@@ -583,66 +593,68 @@ export async function deleteProduct(code: string): Promise<void> {
   if (!data || data.length === 0) throw new CatalogAdminError("not_found", "Product not found.");
 }
 
-// ---- Category writes --------------------------------------------------------
+// ---- Category writes (transactional canonical audit via api.* RPCs) ---------
 
-export async function createCategory(input: CategoryInput): Promise<void> {
+export async function createCategory(input: CategoryInput, actorId: string): Promise<void> {
   const admin = createAdminSupabaseClient();
-  const { error } = await admin.from("product_categories").insert({
-    slug: input.slug,
-    name: input.name,
-    sort_order: input.sortOrder,
-    is_active: input.isActive,
+  const { error } = await admin.schema("api").rpc("save_category", {
+    p_mode: "create",
+    p_orig_slug: null,
+    p_slug: input.slug,
+    p_name: input.name,
+    p_sort_order: input.sortOrder,
+    p_is_active: input.isActive,
+    p_actor_id: actorId,
   });
   if (error) fromPgError(error, "Failed to create category");
 }
 
-export async function updateCategory(originalSlug: string, input: CategoryInput): Promise<void> {
+export async function updateCategory(
+  originalSlug: string,
+  input: CategoryInput,
+  actorId: string,
+): Promise<void> {
   const admin = createAdminSupabaseClient();
-  const { data, error } = await admin
-    .from("product_categories")
-    .update({
-      slug: input.slug,
-      name: input.name,
-      sort_order: input.sortOrder,
-      is_active: input.isActive,
-    })
-    .eq("slug", originalSlug)
-    .select("slug")
-    .maybeSingle();
+  const { error } = await admin.schema("api").rpc("save_category", {
+    p_mode: "update",
+    p_orig_slug: originalSlug,
+    p_slug: input.slug,
+    p_name: input.name,
+    p_sort_order: input.sortOrder,
+    p_is_active: input.isActive,
+    p_actor_id: actorId,
+  });
   if (error) fromPgError(error, "Failed to update category");
-  if (!data) throw new CatalogAdminError("not_found", "Category not found.");
 }
 
-export async function setCategoryActive(slug: string, active: boolean): Promise<void> {
+export async function setCategoryActive(
+  slug: string,
+  active: boolean,
+  actorId: string,
+): Promise<void> {
   const admin = createAdminSupabaseClient();
-  const { data, error } = await admin
-    .from("product_categories")
-    .update({ is_active: active })
-    .eq("slug", slug)
-    .select("slug")
-    .maybeSingle();
+  const { error } = await admin.schema("api").rpc("set_category_active", {
+    p_slug: slug,
+    p_active: active,
+    p_actor_id: actorId,
+  });
   if (error) fromPgError(error, "Failed to update category");
-  if (!data) throw new CatalogAdminError("not_found", "Category not found.");
 }
 
-export async function reorderCategories(items: CategoryReorder): Promise<void> {
+export async function reorderCategories(items: CategoryReorder, actorId: string): Promise<void> {
   const admin = createAdminSupabaseClient();
-  for (const item of items) {
-    const { error } = await admin
-      .from("product_categories")
-      .update({ sort_order: item.sortOrder })
-      .eq("slug", item.slug);
-    if (error) fromPgError(error, "Failed to reorder categories");
-  }
+  const { error } = await admin.schema("api").rpc("reorder_categories", {
+    p_items: items,
+    p_actor_id: actorId,
+  });
+  if (error) fromPgError(error, "Failed to reorder categories");
 }
 
-export async function deleteCategory(slug: string): Promise<void> {
+export async function deleteCategory(slug: string, actorId: string): Promise<void> {
   const admin = createAdminSupabaseClient();
-  const { data, error } = await admin
-    .from("product_categories")
-    .delete()
-    .eq("slug", slug)
-    .select("slug");
+  const { error } = await admin.schema("api").rpc("delete_category", {
+    p_slug: slug,
+    p_actor_id: actorId,
+  });
   if (error) fromPgError(error, "Failed to delete category");
-  if (!data || data.length === 0) throw new CatalogAdminError("not_found", "Category not found.");
 }
