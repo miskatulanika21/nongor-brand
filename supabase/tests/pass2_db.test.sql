@@ -234,19 +234,20 @@ DO $$ DECLARE ok boolean := false; BEGIN
     RAISE EXCEPTION 'FAIL: actor with movement history was deletable (ON DELETE RESTRICT not enforced)';
   END IF;
 END $$;
--- Deactivation (the correct alternative to deletion) must remain possible
+-- Deactivation (the correct alternative to deletion) must remain possible.
+-- Test on a2 (staff), not a1 (sole active owner — guard_owner_safety blocks).
 UPDATE public.staff_profiles SET is_active = false
-  WHERE user_id = '00000000-0000-0000-0000-0000000000a1';
+  WHERE user_id = '00000000-0000-0000-0000-0000000000a2';
 DO $$ DECLARE v boolean; BEGIN
   SELECT is_active INTO v FROM public.staff_profiles
-    WHERE user_id = '00000000-0000-0000-0000-0000000000a1';
+    WHERE user_id = '00000000-0000-0000-0000-0000000000a2';
   IF v IS DISTINCT FROM false THEN
     RAISE EXCEPTION 'FAIL: staff deactivation did not persist';
   END IF;
 END $$;
 -- Re-activate for any remaining tests
 UPDATE public.staff_profiles SET is_active = true
-  WHERE user_id = '00000000-0000-0000-0000-0000000000a1';
+  WHERE user_id = '00000000-0000-0000-0000-0000000000a2';
 
 -- ============================================================
 -- 9. Role-based function grant restrictions
