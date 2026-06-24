@@ -102,17 +102,22 @@ newsletter, reports, settings.
 ## CI (honest)
 
 `ci.yml` runs (genuinely): frozen Bun install, typecheck, lint, format, test, build,
-and **migrate-from-empty** (boots a local Supabase, applies all 17 migrations to a
-blank DB). The **linked deployed-DB lint step is SKIPPED** in CI (it needs
-`SUPABASE_ACCESS_TOKEN` + `SUPABASE_PROJECT_ID` + `SUPABASE_DB_PASSWORD`, which are
-not configured as CI secrets). Job conclusion "success" with that step skipped is
-**not** a passing lint — add the secrets to actually run it.
+**migrate-from-empty** (boots a local Supabase, applies all 18 migrations to a blank
+DB), and **DB integration tests** (`pass2_db.test.sql` — stock write-guard,
+set_inventory validation, ledger immutability, FK RESTRICT, first-variant
+conservation, owner-only purge, reorder validation, bulk idempotency, actor-deletion
+restriction, grant verification, and post-migration-18 schema proof). The **linked
+deployed-DB lint step is SKIPPED** in CI (it needs `SUPABASE_ACCESS_TOKEN` +
+`SUPABASE_PROJECT_ID` + `SUPABASE_DB_PASSWORD`, which are not configured as CI
+secrets). Job conclusion "success" with that step skipped is **not** a passing
+lint — add the secrets to actually run it.
 
 ## Outstanding follow-ups
 
 1. Enable leaked-password protection (Auth dashboard) before broader auth use.
 2. Rotate exposed credentials before go-live.
 3. Add CI secrets so the linked DB lint runs (or keep treating it as skipped).
-4. DB integration test harness (pgTAP in CI) for inventory concurrency/immutability —
-   currently verified via reproducible MCP SQL proofs, not automated in CI.
+4. DB integration tests are automated in CI (`pass2_db.test.sql`); a genuine
+   two-connection concurrency test (`concurrency.test.sh`) also runs in the
+   `migrations-local` job. True multi-session advisory-lock races are verified.
 5. Stage 2 Pass 3+: reviews, media (Storage), facets/counts, settings, remove `PRODUCTS`.
