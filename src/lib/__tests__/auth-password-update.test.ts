@@ -50,7 +50,7 @@ vi.mock("@/lib/server/audit.server", () => ({ writeAudit: writeAuditMock }));
 // NOTE: login-destination.server, safe-redirect, admin-routes, validation are
 // intentionally NOT mocked — the real role-aware logic is what we want to test.
 
-import { performPasswordUpdate } from "@/lib/auth.api";
+import { performPasswordUpdate } from "@/lib/server/auth.server";
 
 // Strong enough for the privileged (staff) password tier (>=12, mixed classes).
 const STAFF_PW = "NongorrStaff2026X";

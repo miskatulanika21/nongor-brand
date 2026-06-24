@@ -11,6 +11,7 @@
  * The .server.ts suffix keeps this off the client bundle.
  */
 import process from "node:process";
+import { setResponseHeaders } from "@tanstack/react-start/server";
 
 function originOf(url: string | undefined): string | null {
   if (!url) return null;
@@ -91,4 +92,34 @@ export function withSecurityHeaders(response: Response, isProd: boolean): Respon
     statusText: response.statusText,
     headers,
   });
+}
+
+/**
+ * Set Cache-Control: private, no-store on the current server response.
+ * Safely imports setResponseHeaders from @tanstack/react-start/server.
+ */
+export function setNoCacheHeaders(): void {
+  try {
+    const { setResponseHeaders } = require("@tanstack/react-start/server");
+  } catch {
+    // If require is not defined in ESM, we dynamically import it
+    import("@tanstack/react-start/server").then(({ setResponseHeaders }) => {
+      setResponseHeaders({
+        "Cache-Control": "private, no-store",
+        Pragma: "no-cache",
+        Expires: "0",
+      } as unknown as Headers);
+    }).catch(() => {});
+    return;
+  }
+  
+  // If require succeeded (e.g. CommonJS context in tests/build), call it
+  try {
+    const { setResponseHeaders } = require("@tanstack/react-start/server");
+    setResponseHeaders({
+      "Cache-Control": "private, no-store",
+      Pragma: "no-cache",
+      Expires: "0",
+    } as unknown as Headers);
+  } catch {}
 }

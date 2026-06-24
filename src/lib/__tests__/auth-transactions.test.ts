@@ -64,7 +64,7 @@ vi.mock("@/lib/server/login-destination.server", () => ({
   resolvePostLoginDestination: () => ({ destination: "/admin", adminDenied: false }),
 }));
 
-import { performEmailLogin, performOAuthCallback, performEmailConfirm } from "@/lib/auth.api";
+import { performEmailLogin, performOAuthCallback, performEmailConfirm } from "@/lib/server/auth.server";
 
 const STAFF = {
   ok: true as const,
