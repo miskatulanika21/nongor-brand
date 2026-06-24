@@ -223,5 +223,165 @@ DO $$ DECLARE ok boolean := false; BEGIN
   IF NOT ok THEN RAISE EXCEPTION 'FAIL: same op-key different payload not rejected'; END IF;
 END $$;
 
+-- ============================================================
+-- 8. Actor-deletion restriction (ON DELETE RESTRICT on movements)
+-- ============================================================
+-- Actor a1 has inventory movements from tests above. Deleting the user must fail.
+DO $$ DECLARE ok boolean := false; BEGIN
+  BEGIN DELETE FROM auth.users WHERE id = '00000000-0000-0000-0000-0000000000a1';
+  EXCEPTION WHEN OTHERS THEN ok := true; END;
+  IF NOT ok THEN
+    RAISE EXCEPTION 'FAIL: actor with movement history was deletable (ON DELETE RESTRICT not enforced)';
+  END IF;
+END $$;
+-- Deactivation (the correct alternative to deletion) must remain possible
+UPDATE public.staff_profiles SET is_active = false
+  WHERE user_id = '00000000-0000-0000-0000-0000000000a1';
+DO $$ DECLARE v boolean; BEGIN
+  SELECT is_active INTO v FROM public.staff_profiles
+    WHERE user_id = '00000000-0000-0000-0000-0000000000a1';
+  IF v IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'FAIL: staff deactivation did not persist';
+  END IF;
+END $$;
+-- Re-activate for any remaining tests
+UPDATE public.staff_profiles SET is_active = true
+  WHERE user_id = '00000000-0000-0000-0000-0000000000a1';
+
+-- ============================================================
+-- 9. Role-based function grant restrictions
+-- ============================================================
+-- Verify that anon and authenticated CANNOT execute sensitive RPCs,
+-- and that service_role CAN. Uses has_function_privilege (no role-switch needed).
+DO $$
+DECLARE
+  fn text;
+  restricted_fns text[] := ARRAY[
+    'api.set_inventory(text,text,integer,text,text,uuid)',
+    'api.bulk_set_inventory(jsonb,uuid,text)',
+    'api.add_product_variant(text,text,uuid)',
+    'api.remove_product_variant(text,text,uuid)',
+    'api.purge_product(text,uuid)',
+    'api.reorder_categories(jsonb,uuid)'
+  ];
+BEGIN
+  FOREACH fn IN ARRAY restricted_fns LOOP
+    -- anon must NOT have EXECUTE
+    IF has_function_privilege('anon', fn, 'EXECUTE') THEN
+      RAISE EXCEPTION 'FAIL: anon has EXECUTE on %', fn;
+    END IF;
+    -- authenticated must NOT have EXECUTE
+    IF has_function_privilege('authenticated', fn, 'EXECUTE') THEN
+      RAISE EXCEPTION 'FAIL: authenticated has EXECUTE on %', fn;
+    END IF;
+    -- service_role MUST have EXECUTE
+    IF NOT has_function_privilege('service_role', fn, 'EXECUTE') THEN
+      RAISE EXCEPTION 'FAIL: service_role lacks EXECUTE on %', fn;
+    END IF;
+  END LOOP;
+END $$;
+
+-- ============================================================
+-- 10. Post-migration-18 schema verification (upgrade proof)
+-- ============================================================
+-- Proves that migration 18 produced the expected schema state.
+-- If this runs successfully after migrate-from-empty, the 17→18 upgrade path
+-- (for the documented Case A: empty bulk_ops table) is verified.
+
+-- 10a. inventory_bulk_ops PK is composite (actor_id, op_key)
+DO $$ DECLARE v_count int; BEGIN
+  SELECT count(*) INTO v_count
+    FROM pg_constraint c
+    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+   WHERE c.conrelid = 'public.inventory_bulk_ops'::regclass AND c.contype = 'p';
+  IF v_count <> 2 THEN
+    RAISE EXCEPTION 'FAIL: inventory_bulk_ops PK should have 2 columns, has %', v_count;
+  END IF;
+END $$;
+
+-- 10b. request_hash exists and is NOT NULL
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'inventory_bulk_ops'
+       AND column_name = 'request_hash' AND is_nullable = 'NO'
+  ) THEN
+    RAISE EXCEPTION 'FAIL: inventory_bulk_ops.request_hash missing or nullable';
+  END IF;
+END $$;
+
+-- 10c. actor_id is NOT NULL
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'inventory_bulk_ops'
+       AND column_name = 'actor_id' AND is_nullable = 'NO'
+  ) THEN
+    RAISE EXCEPTION 'FAIL: inventory_bulk_ops.actor_id is nullable';
+  END IF;
+END $$;
+
+-- 10d. Movement actor FK is ON DELETE RESTRICT (confdeltype = 'r')
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'public.product_inventory_movements'::regclass
+       AND conname = 'product_inventory_movements_actor_id_fkey'
+       AND confdeltype = 'r'
+  ) THEN
+    RAISE EXCEPTION 'FAIL: movement actor_id FK is not ON DELETE RESTRICT';
+  END IF;
+END $$;
+
+-- 10e. Bulk-ops actor FK is ON DELETE CASCADE (confdeltype = 'c')
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'public.inventory_bulk_ops'::regclass
+       AND conname = 'inventory_bulk_ops_actor_id_fkey'
+       AND confdeltype = 'c'
+  ) THEN
+    RAISE EXCEPTION 'FAIL: bulk_ops actor_id FK is not ON DELETE CASCADE';
+  END IF;
+END $$;
+
+-- 10f. Validation constraints exist
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'public.inventory_bulk_ops'::regclass
+       AND conname = 'bulk_ops_op_key_bounded'
+  ) THEN
+    RAISE EXCEPTION 'FAIL: bulk_ops_op_key_bounded constraint missing';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'public.inventory_bulk_ops'::regclass
+       AND conname = 'bulk_ops_hash_bounded'
+  ) THEN
+    RAISE EXCEPTION 'FAIL: bulk_ops_hash_bounded constraint missing';
+  END IF;
+END $$;
+
+-- 10g. All six sensitive api functions exist
+DO $$
+DECLARE
+  fn text;
+  api_fns text[] := ARRAY[
+    'api.set_inventory(text,text,integer,text,text,uuid)',
+    'api.bulk_set_inventory(jsonb,uuid,text)',
+    'api.add_product_variant(text,text,uuid)',
+    'api.remove_product_variant(text,text,uuid)',
+    'api.purge_product(text,uuid)',
+    'api.reorder_categories(jsonb,uuid)'
+  ];
+BEGIN
+  FOREACH fn IN ARRAY api_fns LOOP
+    IF to_regprocedure(fn) IS NULL THEN
+      RAISE EXCEPTION 'FAIL: function % does not exist', fn;
+    END IF;
+  END LOOP;
+END $$;
+
 \echo '--- ALL PASS ---'
 ROLLBACK;
