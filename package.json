@@ -16,7 +16,7 @@
     "test:watch": "vitest",
     "provision-admin": "npx tsx scripts/provision-admin.ts",
     "seed-catalog": "npx tsx scripts/seed-catalog.ts",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npx vitest run && npm run build"
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test && npm run build"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

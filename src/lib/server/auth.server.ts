@@ -1,9 +1,5 @@
 import { z } from "zod";
-import {
-  loginSchema,
-  passwordSchema,
-  privilegedPasswordSchema,
-} from "@/lib/validation";
+import { loginSchema, passwordSchema, privilegedPasswordSchema } from "@/lib/validation";
 import type { Designation } from "@/lib/server/login-destination.server";
 import { setResponseHeaders } from "@tanstack/react-start/server";
 

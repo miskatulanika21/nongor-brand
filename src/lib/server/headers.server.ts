@@ -94,32 +94,14 @@ export function withSecurityHeaders(response: Response, isProd: boolean): Respon
   });
 }
 
-/**
- * Set Cache-Control: private, no-store on the current server response.
- * Safely imports setResponseHeaders from @tanstack/react-start/server.
- */
 export function setNoCacheHeaders(): void {
   try {
-    const { setResponseHeaders } = require("@tanstack/react-start/server");
-  } catch {
-    // If require is not defined in ESM, we dynamically import it
-    import("@tanstack/react-start/server").then(({ setResponseHeaders }) => {
-      setResponseHeaders({
-        "Cache-Control": "private, no-store",
-        Pragma: "no-cache",
-        Expires: "0",
-      } as unknown as Headers);
-    }).catch(() => {});
-    return;
-  }
-  
-  // If require succeeded (e.g. CommonJS context in tests/build), call it
-  try {
-    const { setResponseHeaders } = require("@tanstack/react-start/server");
     setResponseHeaders({
       "Cache-Control": "private, no-store",
       Pragma: "no-cache",
       Expires: "0",
     } as unknown as Headers);
-  } catch {}
+  } catch {
+    // Ignore error if called outside request context (e.g. in test environments)
+  }
 }
