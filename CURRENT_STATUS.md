@@ -106,17 +106,13 @@ newsletter, reports, settings.
 DB), and **DB integration tests** (`pass2_db.test.sql` — stock write-guard,
 set_inventory validation, ledger immutability, FK RESTRICT, first-variant
 conservation, owner-only purge, reorder validation, bulk idempotency, actor-deletion
-restriction, grant verification, and post-migration-18 schema proof). The **linked
-deployed-DB lint step is SKIPPED** in CI (it needs `SUPABASE_ACCESS_TOKEN` +
-`SUPABASE_PROJECT_ID` + `SUPABASE_DB_PASSWORD`, which are not configured as CI
-secrets). Job conclusion "success" with that step skipped is **not** a passing
-lint — add the secrets to actually run it.
+restriction, grant verification, and post-migration-18 schema proof). The **linked deployed-DB lint step runs** in CI (using `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, and `SUPABASE_DB_PASSWORD` repository secrets). This lints the deployed live database structure against recommendations.
 
 ## Outstanding follow-ups
 
 1. Enable leaked-password protection (Auth dashboard) before broader auth use.
 2. Rotate exposed credentials before go-live.
-3. Add CI secrets so the linked DB lint runs (or keep treating it as skipped).
+3. Deployed DB lint configured and running in CI.
 4. DB integration tests are automated in CI (`pass2_db.test.sql`); a genuine
    two-connection concurrency test (`concurrency.test.sh`) also runs in the
    `migrations-local` job. True multi-session advisory-lock races are verified.
