@@ -478,5 +478,110 @@ DO $$ DECLARE got text; BEGIN
   END;
 END $$;
 
+-- ============================================================
+-- 12. Review moderation + rating/review_count sync
+-- ============================================================
+-- Fresh product with no inventory history so it stays isolated.
+INSERT INTO public.products (code, slug, name, category_id, price)
+  SELECT 'p-rev', 'p-rev', 'Reviewable', id, 100 FROM public.product_categories WHERE slug = 'cat-a';
+
+-- Two PENDING reviews (ratings 4 and 2) must NOT count toward the snapshot.
+INSERT INTO public.product_reviews (product_id, author_name, rating, body, status)
+  SELECT id, 'Reviewer A', 4, 'great', 'pending' FROM public.products WHERE code = 'p-rev';
+INSERT INTO public.product_reviews (product_id, author_name, rating, body, status)
+  SELECT id, 'Reviewer B', 2, 'okay', 'pending' FROM public.products WHERE code = 'p-rev';
+
+DO $$ DECLARE v_rating numeric; v_count int; BEGIN
+  SELECT rating, review_count INTO v_rating, v_count FROM public.products WHERE code = 'p-rev';
+  IF v_rating <> 0 OR v_count <> 0 THEN
+    RAISE EXCEPTION 'FAIL: pending reviews counted (rating=%, count=%)', v_rating, v_count;
+  END IF;
+END $$;
+
+-- Approve A (4) -> rating 4.0, count 1
+DO $$ DECLARE v_rid uuid; v_rating numeric; v_count int; BEGIN
+  SELECT id INTO v_rid FROM public.product_reviews r JOIN public.products p ON p.id = r.product_id
+    WHERE p.code = 'p-rev' AND r.author_name = 'Reviewer A';
+  PERFORM api.set_review_status(v_rid, 'approved', '00000000-0000-0000-0000-0000000000a1');
+  SELECT rating, review_count INTO v_rating, v_count FROM public.products WHERE code = 'p-rev';
+  IF v_rating <> 4.0 OR v_count <> 1 THEN
+    RAISE EXCEPTION 'FAIL: after approve A rating=%, count=%', v_rating, v_count;
+  END IF;
+END $$;
+
+-- Approve B (2) -> rating 3.0, count 2
+DO $$ DECLARE v_rid uuid; v_rating numeric; v_count int; BEGIN
+  SELECT id INTO v_rid FROM public.product_reviews r JOIN public.products p ON p.id = r.product_id
+    WHERE p.code = 'p-rev' AND r.author_name = 'Reviewer B';
+  PERFORM api.set_review_status(v_rid, 'approved', '00000000-0000-0000-0000-0000000000a1');
+  SELECT rating, review_count INTO v_rating, v_count FROM public.products WHERE code = 'p-rev';
+  IF v_rating <> 3.0 OR v_count <> 2 THEN
+    RAISE EXCEPTION 'FAIL: after approve B rating=%, count=%', v_rating, v_count;
+  END IF;
+END $$;
+
+-- Reject B -> back to rating 4.0, count 1
+DO $$ DECLARE v_rid uuid; v_rating numeric; v_count int; BEGIN
+  SELECT id INTO v_rid FROM public.product_reviews r JOIN public.products p ON p.id = r.product_id
+    WHERE p.code = 'p-rev' AND r.author_name = 'Reviewer B';
+  PERFORM api.set_review_status(v_rid, 'rejected', '00000000-0000-0000-0000-0000000000a1');
+  SELECT rating, review_count INTO v_rating, v_count FROM public.products WHERE code = 'p-rev';
+  IF v_rating <> 4.0 OR v_count <> 1 THEN
+    RAISE EXCEPTION 'FAIL: after reject B rating=%, count=%', v_rating, v_count;
+  END IF;
+END $$;
+
+-- Delete A -> no approved reviews -> rating 0, count 0
+DO $$ DECLARE v_rid uuid; v_rating numeric; v_count int; BEGIN
+  SELECT id INTO v_rid FROM public.product_reviews r JOIN public.products p ON p.id = r.product_id
+    WHERE p.code = 'p-rev' AND r.author_name = 'Reviewer A';
+  PERFORM api.delete_review(v_rid, '00000000-0000-0000-0000-0000000000a1');
+  SELECT rating, review_count INTO v_rating, v_count FROM public.products WHERE code = 'p-rev';
+  IF v_rating <> 0 OR v_count <> 0 THEN
+    RAISE EXCEPTION 'FAIL: after delete A rating=%, count=%', v_rating, v_count;
+  END IF;
+END $$;
+
+-- Stable error codes (message_text == code)
+DO $$ DECLARE v_rid uuid; got text; BEGIN
+  SELECT id INTO v_rid FROM public.product_reviews r JOIN public.products p ON p.id = r.product_id
+    WHERE p.code = 'p-rev' AND r.author_name = 'Reviewer B';
+  -- invalid status
+  BEGIN PERFORM api.set_review_status(v_rid, 'bogus', '00000000-0000-0000-0000-0000000000a1');
+        RAISE EXCEPTION 'FAIL: no raise (bad status)';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'invalid_status' THEN RAISE EXCEPTION 'FAIL: bad status code=%', got; END IF;
+  END;
+  -- not found
+  BEGIN PERFORM api.set_review_status(gen_random_uuid(), 'approved', '00000000-0000-0000-0000-0000000000a1');
+        RAISE EXCEPTION 'FAIL: no raise (missing review)';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'review_not_found' THEN RAISE EXCEPTION 'FAIL: missing review code=%', got; END IF;
+  END;
+  -- unauthorized actor
+  BEGIN PERFORM api.set_review_status(v_rid, 'approved', gen_random_uuid());
+        RAISE EXCEPTION 'FAIL: no raise (bad actor)';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'actor_not_authorized' THEN RAISE EXCEPTION 'FAIL: bad actor code=%', got; END IF;
+  END;
+END $$;
+
+-- Grants: anon/authenticated must NOT execute; service_role MUST.
+DO $$
+DECLARE fn text; fns text[] := ARRAY[
+  'api.set_review_status(uuid,text,uuid)',
+  'api.delete_review(uuid,uuid)'
+];
+BEGIN
+  FOREACH fn IN ARRAY fns LOOP
+    IF has_function_privilege('anon', fn, 'EXECUTE') THEN
+      RAISE EXCEPTION 'FAIL: anon has EXECUTE on %', fn; END IF;
+    IF has_function_privilege('authenticated', fn, 'EXECUTE') THEN
+      RAISE EXCEPTION 'FAIL: authenticated has EXECUTE on %', fn; END IF;
+    IF NOT has_function_privilege('service_role', fn, 'EXECUTE') THEN
+      RAISE EXCEPTION 'FAIL: service_role lacks EXECUTE on %', fn; END IF;
+  END LOOP;
+END $$;
+
 \echo '--- ALL PASS ---'
 ROLLBACK;

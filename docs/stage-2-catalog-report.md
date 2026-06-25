@@ -160,3 +160,32 @@ the user, plus three open Supabase performance advisors. Both fixed:
   `error_code`). Vitest: **248 passed**. `get_advisors` re-run: the three perf
   advisors are gone; remaining items are the two intentional INFO
   `rls_enabled_no_policy` (RPC-only tables) and the deferred leaked-password WARN.
+
+## 10. Stage 2 Pass 3a — review moderation + rating sync (2026-06-25)
+
+The catalog schema shipped a `product_reviews` table and denormalized
+`products.rating` / `review_count`, but the snapshot was never synced and admin
+moderation was a mock. Migration `20260625140000` closes both:
+
+- **Sync trigger** — `AFTER INSERT/UPDATE/DELETE ON product_reviews` recomputes
+  `rating = round(avg(approved),1)` + `review_count = count(approved)` for the
+  affected product (one-time backfill included). Touches only rating/review_count,
+  so the `products.stock` write-guard is respected. Correct for moderation,
+  seeding, and future customer submissions alike.
+- **Moderation RPCs** (service-role EXECUTE only): `api.set_review_status`
+  (idempotent — re-applying the same status is a no-op success) and
+  `api.delete_review`. Active-staff check, stable snake_case codes
+  (`actor_not_authorized` / `review_not_found` / `invalid_status`), canonical
+  `review.status_changed` / `review.deleted` audit in the same transaction.
+- **TS/UI**: `reviews-admin.server.ts` (`ReviewError`, `fetchAdminReviews`,
+  `setReviewStatus`, `deleteReview`) + `reviews-admin.api.ts` behind
+  `guardAdminWrite("reviews.manage")`; `admin.reviews.tsx` rewritten to real data
+  (pending-first queue, status filter + counts, approve/reject/restore/delete,
+  granular errors). `reviewErrorMessage` is in the isomorphic schema module.
+- **Verification**: rolled-back SQL proof (pending=0 → approve→4.0/1 →
+  approve→3.0/2 → delete→4.0/1; `invalid_status` / `review_not_found` codes) +
+  `pass2_db.test.sql` §12 (sync on approve/reject/delete, codes, grants) +
+  8 new Vitest specs. Full `check` green (**256 tests**). 21 migrations; ledger
+  matches; no advisor regression.
+- **Deferred (Pass 3b):** persisting _customer_ review submissions (authenticated
+  write path + anti-abuse) — the trigger foundation already supports it.
