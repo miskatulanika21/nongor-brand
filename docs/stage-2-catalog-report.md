@@ -283,3 +283,39 @@ Migration `20260626140000` makes them a database read/write.
   regression.
 - **Deferred (Pass 3e):** Storage media library; retire the legacy `PRODUCTS`
   array.
+
+## 14. Stage 2 Pass 3e — Storage-backed media library (2026-06-26)
+
+The admin media library was mock (assets fabricated from `PRODUCTS` + ephemeral
+object URLs). Migration `20260626150000` makes it real.
+
+- **Storage:** a `product-media` bucket (public read, 5 MB limit, image mime
+  allowlist) created via `storage.buckets`. There are deliberately **no storage
+  RLS write policies** — uploads are authorised by a one-time signed token, deletes
+  by the service role.
+- **`public.media_assets`** — the catalogue (`storage_path` unique, `public_url`,
+  `file_name`, `content_type`, `size_bytes`, `width/height`, `created_by`). RLS
+  deny-all (RPC-only).
+- **RPCs (service-role + active-staff):** `api.register_media(...)` (idempotent
+  **upsert** on `storage_path`, `media.uploaded` audit), `api.delete_media(id,
+actor)` (returns `storage_path` so the repo can drop the object; `media.deleted`
+  audit), `api.list_media(actor)` (newest-first jsonb with a **product-usage
+  count** via a LEFT JOIN of `product_media` on URL).
+- **Upload flow (no binary through the app server):** `requestMediaUpload`
+  (service-role) validates type/size and mints a signed upload URL for a generated
+  `YYYY/MM/<id>-<name>` path; the browser PUTs the file straight to Storage (the
+  bucket enforces size + mime); `registerMedia` records the row. `media.schema.ts`
+  is the isomorphic module (`mediaStoragePath`, `validateMediaFile`, row mapping);
+  `media.server.ts` holds the service-role repo (`MediaError`); `media.api.ts`
+  guards every write with `guardAdminWrite("media.manage")`.
+  `admin.media-library.tsx` is now a real DB-backed grid/list with true upload and
+  delete-with-confirm.
+- **Verification:** rolled-back SQL proof + `pass2_db.test.sql` §16 (bucket exists
+  - public; register/upsert/non-image/bad-actor; usage count; delete + audit +
+    `media_not_found`; grants) + 11 Vitest specs (`mediaStoragePath`,
+    `validateMediaFile`, error map, row mapping). Full `check` green (**291 tests**).
+    25 migrations; ledger matches; no advisor regression. The one path CI cannot
+    exercise is the actual browser file PUT to Storage — the bucket config (size +
+    mime) is the server-side guarantee.
+- **Deferred (Pass 3f):** attach library media to a product's gallery (the product
+  editor has no gallery UI yet); retire the legacy `PRODUCTS` array.

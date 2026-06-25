@@ -791,5 +791,86 @@ DO $$ BEGIN
     RAISE EXCEPTION 'FAIL: service_role lacks EXECUTE on save_settings'; END IF;
 END $$;
 
+-- ============================================================
+-- 16. Media library (Pass 3e)
+-- ============================================================
+-- Bucket exists and is public-read.
+DO $$ DECLARE v_public boolean; BEGIN
+  SELECT public INTO v_public FROM storage.buckets WHERE id = 'product-media';
+  IF v_public IS NULL THEN RAISE EXCEPTION 'FAIL: product-media bucket missing'; END IF;
+  IF v_public IS NOT TRUE THEN RAISE EXCEPTION 'FAIL: product-media bucket not public'; END IF;
+END $$;
+
+DO $$
+DECLARE actor uuid := '00000000-0000-0000-0000-0000000000a1';
+        row jsonb; mid uuid; got text; path text; lst jsonb; cnt int; pid uuid;
+BEGIN
+  -- register (insert) + audit
+  row := api.register_media('t/p1.png', 'https://x/t/p1.png', 'p1.png', 'image/png', 1000, 640, 480, actor);
+  mid := (row->>'id')::uuid;
+  IF row->>'file_name' <> 'p1.png' THEN RAISE EXCEPTION 'FAIL: register file_name'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.audit_logs WHERE action = 'media.uploaded' AND target_id = mid::text) THEN
+    RAISE EXCEPTION 'FAIL: media.uploaded audit missing'; END IF;
+
+  -- idempotent upsert on the same path (no duplicate; metadata updated)
+  row := api.register_media('t/p1.png', 'https://x/t/p1.png', 'renamed.png', 'image/png', 2000, 640, 480, actor);
+  SELECT count(*) INTO cnt FROM public.media_assets WHERE storage_path = 't/p1.png';
+  IF cnt <> 1 THEN RAISE EXCEPTION 'FAIL: upsert created duplicate (%)', cnt; END IF;
+  IF row->>'file_name' <> 'renamed.png' THEN RAISE EXCEPTION 'FAIL: upsert did not update'; END IF;
+
+  -- non-image rejected
+  BEGIN PERFORM api.register_media('t/x.txt', 'u', 'x.txt', 'text/plain', 5, NULL, NULL, actor);
+        RAISE EXCEPTION 'FAIL: non-image accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'invalid_media_type' THEN RAISE EXCEPTION 'FAIL: type code=%', got; END IF;
+  END;
+
+  -- bad actor rejected
+  BEGIN PERFORM api.register_media('t/y.png', 'u', 'y.png', 'image/png', 5, NULL, NULL, gen_random_uuid());
+        RAISE EXCEPTION 'FAIL: bad actor accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'actor_not_authorized' THEN RAISE EXCEPTION 'FAIL: register actor code=%', got; END IF;
+  END;
+
+  -- list_media reports a real product-usage count
+  SELECT id INTO pid FROM public.products LIMIT 1;
+  INSERT INTO public.product_media (product_id, url) VALUES (pid, 'https://x/t/p1.png');
+  lst := api.list_media(actor);
+  SELECT (e->>'usage_count')::int INTO cnt FROM jsonb_array_elements(lst) e WHERE e->>'id' = mid::text;
+  IF cnt IS DISTINCT FROM 1 THEN RAISE EXCEPTION 'FAIL: usage_count=% (want 1)', cnt; END IF;
+
+  -- delete returns the path, removes the row, audits
+  path := api.delete_media(mid, actor);
+  IF path <> 't/p1.png' THEN RAISE EXCEPTION 'FAIL: delete path=%', path; END IF;
+  IF EXISTS (SELECT 1 FROM public.media_assets WHERE id = mid) THEN RAISE EXCEPTION 'FAIL: row not deleted'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.audit_logs WHERE action = 'media.deleted' AND target_id = mid::text) THEN
+    RAISE EXCEPTION 'FAIL: media.deleted audit missing'; END IF;
+
+  -- delete missing -> media_not_found
+  BEGIN PERFORM api.delete_media(gen_random_uuid(), actor);
+        RAISE EXCEPTION 'FAIL: missing delete accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'media_not_found' THEN RAISE EXCEPTION 'FAIL: missing code=%', got; END IF;
+  END;
+END $$;
+
+-- Grants: all media RPCs are service-role only.
+DO $$
+DECLARE fn text; fns text[] := ARRAY[
+  'api.register_media(text,text,text,text,integer,integer,integer,uuid)',
+  'api.delete_media(uuid,uuid)',
+  'api.list_media(uuid)'
+];
+BEGIN
+  FOREACH fn IN ARRAY fns LOOP
+    IF has_function_privilege('anon', fn, 'EXECUTE') THEN
+      RAISE EXCEPTION 'FAIL: anon has EXECUTE on %', fn; END IF;
+    IF has_function_privilege('authenticated', fn, 'EXECUTE') THEN
+      RAISE EXCEPTION 'FAIL: authenticated has EXECUTE on %', fn; END IF;
+    IF NOT has_function_privilege('service_role', fn, 'EXECUTE') THEN
+      RAISE EXCEPTION 'FAIL: service_role lacks EXECUTE on %', fn; END IF;
+  END LOOP;
+END $$;
+
 \echo '--- ALL PASS ---'
 ROLLBACK;

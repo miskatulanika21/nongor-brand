@@ -10,8 +10,9 @@ perf advisors cleared + movement-FK covering index. **Stage 2 Pass 3a: review
 moderation + rating/review_count sync; Pass 3b: authenticated customer review
 submission (persisted + moderated); Pass 3c: DB-backed catalog facets & counts
 (shop filter sidebar); Pass 3d: DB-backed site settings (announcement bar live +
-audited admin settings).** 24 migrations applied to the live project; remote
-ledger matches the 24 repo files._
+audited admin settings); Pass 3e: Storage-backed media library (real uploads via
+signed URLs).** 25 migrations applied to the live project; remote ledger matches
+the 25 repo files._
 
 State legend: **(1) code complete · (2) migration applied · (3) deployed
 verification complete · (4) operator action pending.**
@@ -28,7 +29,8 @@ verification complete · (4) operator action pending.**
 | 2 (Pass 3b)  | **Authenticated customer review submission** (persisted + moderated)     | **Implemented + live + CI-green**                                        |
 | 2 (Pass 3c)  | **DB-backed catalog facets & counts** (shop filter sidebar)              | **Implemented + live + CI-green**                                        |
 | 2 (Pass 3d)  | **DB-backed site settings** (announcement bar live; audited admin form)  | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3e+) | Media library (Storage); delete legacy `PRODUCTS` array                  | Not started                                                              |
+| 2 (Pass 3e)  | **Storage-backed media library** (real uploads via signed URLs)          | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3f+) | Attach library media to product galleries; delete legacy `PRODUCTS`      | Not started                                                              |
 | 3            | Server-authoritative checkout, orders, payments                          | Not started                                                              |
 | 4            | Customer accounts / addresses / measurements                             | Not started (localStorage)                                               |
 | 5            | Courier adapters, shipments, webhooks, outbox                            | Not started                                                              |
@@ -37,8 +39,8 @@ verification complete · (4) operator action pending.**
 
 ## Migrations (live project xomjxtmhkglhuiccekld)
 
-**24 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
-ledger matches the 24 repo files exactly (versions + names), in order:
+**25 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
+ledger matches the 25 repo files exactly (versions + names), in order:
 
 ```
 …143927 create_private_schema            …623000000 advisor_hardening
@@ -54,6 +56,7 @@ ledger matches the 24 repo files exactly (versions + names), in order:
 …622130000 owner_safety_advisory_lock    …626120000 review_submission
                                           …626130000 catalog_facets
                                           …626140000 site_settings
+                                          …626150000 media_library
 ```
 
 Note: `apply_migration` (MCP) stamps its own version, so after every MCP apply the
@@ -197,6 +200,31 @@ normal removal is **Archive**. Privileged GET handlers set `private, no-store`.
   projection; checkout pricing still reads `checkout-ui.ts` until Stage 3 consumes
   them. Verified by rolled-back SQL proof + `pass2_db.test.sql` §15 + Vitest.
 
+## Stage 2 Pass 3e — Storage-backed media library (done, live)
+
+- A real Supabase Storage bucket `product-media` (public read, 5 MB limit, image
+  mime allowlist) + a `public.media_assets` catalogue (RLS deny-all, RPC-only).
+- **Upload is a signed-URL flow** (the binary never passes through the app
+  server): `requestMediaUpload` (service-role) mints a one-time signed upload URL
+  scoped to a generated path; the browser PUTs the file straight to Storage (the
+  bucket enforces size + mime); `registerMedia` then records the row via
+  `api.register_media` (idempotent upsert on path, `media.uploaded` audit).
+  Deletes go through `api.delete_media` (row + `media.deleted` audit) then a
+  best-effort Storage object removal. `api.list_media` returns assets newest-first
+  with a **real product-usage count** (LEFT JOIN `product_media` on URL).
+- **App:** `media.schema.ts` (isomorphic types, `mediaStoragePath`,
+  `validateMediaFile`, row mapping); `media.server.ts` (service-role signed-URL +
+  RPCs, `MediaError`); `media.api.ts` (`listMedia` via `requirePermission`;
+  `requestMediaUpload`/`registerMedia`/`removeMedia` via
+  `guardAdminWrite("media.manage")`). `admin.media-library.tsx` is now a real
+  DB-backed grid/list with true upload + delete (was a `PRODUCTS`-derived mock).
+- **Deferred (Pass 3f):** attach library media to a product's gallery (the product
+  editor has no gallery UI yet); retire the legacy `PRODUCTS` array.
+- Verified by rolled-back SQL proof + `pass2_db.test.sql` §16 (bucket public,
+  register/upsert/delete/audit, usage count, grants) + Vitest. The one path CI
+  cannot exercise is the actual browser file PUT to Storage (the bucket config is
+  the server-side guarantee for size/mime).
+
 ## Real vs mock (data flow)
 
 **Real / persistent (DB-backed):** auth, staff RBAC (`staff_profiles`), audit logs;
@@ -204,19 +232,20 @@ public catalog read (`product_*`); **admin product/category writes**; **inventor
 (ledger + stock)**; **review moderation + product rating/review_count**;
 **customer review submission** (authenticated → pending → moderated); **shop
 filter facets + category counts** (`api.catalog_facets()`); **site settings +
-announcement bar** (`api.get_public_settings` / `save_settings`).
+announcement bar** (`api.get_public_settings` / `save_settings`); \*\*media library
 
-**Still mock / localStorage (later passes):** media library; the legacy
-`PRODUCTS` array (still exported for the admin dashboard / media-library preview
-and the Stage 3/5 order mocks, until those passes remove it); orders, cart,
+- Storage uploads\*\* (`product-media` bucket / `media_assets`).
+
+**Still mock / localStorage (later passes):** the legacy `PRODUCTS` array (still
+exported for the admin dashboard and the Stage 3/5 order mocks, until those passes
+remove it); product gallery editing (no admin UI yet — Pass 3f); orders, cart,
 wishlist, checkout, coupons; payments; customer profiles/addresses/measurements;
-courier; banners, CMS, contact, newsletter, reports. (Settings persistence is now
-real; delivery/contact values are surfaced for Stage 3 to consume.)
+courier; banners, CMS, contact, newsletter, reports.
 
 ## CI (honest)
 
 `ci.yml` runs (genuinely): frozen Bun install, typecheck, lint, format, test, build,
-**migrate-from-empty** (boots a local Supabase, applies all 24 migrations to a blank
+**migrate-from-empty** (boots a local Supabase, applies all 25 migrations to a blank
 DB), and **DB integration tests** (`pass2_db.test.sql` — stock write-guard,
 set_inventory validation, ledger immutability, FK RESTRICT, first-variant
 conservation, owner-only purge, reorder validation, bulk idempotency, actor-deletion
@@ -224,8 +253,9 @@ restriction, grant verification, post-migration schema proof, the merged RLS pol
 
 - FK index, stable error-code assertions, review moderation + rating sync,
   customer submission → pending → approve → rating, catalog-facet counts +
-  visibility filtering, and site-settings public/admin projection + audit +
-  single-row invariant + grants). The **linked deployed-DB lint step runs** in CI (using `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, and `SUPABASE_DB_PASSWORD` repository secrets). This lints the deployed live database structure against recommendations.
+  visibility filtering, site-settings public/admin projection + audit +
+  single-row invariant + grants, and media-library bucket + register/upsert/
+  delete/audit + usage count + grants). The **linked deployed-DB lint step runs** in CI (using `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, and `SUPABASE_DB_PASSWORD` repository secrets). This lints the deployed live database structure against recommendations.
 
 ## Outstanding follow-ups
 
@@ -235,5 +265,6 @@ restriction, grant verification, post-migration schema proof, the merged RLS pol
 4. DB integration tests are automated in CI (`pass2_db.test.sql`); a genuine
    two-connection concurrency test (`concurrency.test.sh`) also runs in the
    `migrations-local` job. True multi-session advisory-lock races are verified.
-5. Stage 2 Pass 3e+: media library (Storage), remove the legacy `PRODUCTS`
-   array (catalog facets/counts landed in Pass 3c; site settings in Pass 3d).
+5. Stage 2 Pass 3f+: attach library media to product galleries; remove the legacy
+   `PRODUCTS` array (facets/counts landed in Pass 3c; site settings in Pass 3d;
+   the Storage media library in Pass 3e).
