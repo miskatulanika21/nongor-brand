@@ -100,3 +100,23 @@ export async function deleteReview(id: string, actorId: string): Promise<{ produ
   const r = data as { product_id: string };
   return { productId: r.product_id };
 }
+
+/**
+ * Customer submission (Pass 3b). Called by the customer server function AFTER it
+ * has verified the authenticated session; `userId` is that verified user. The
+ * review lands as `pending` for moderation (never affects the public rating).
+ */
+export async function submitReview(
+  input: { code: string; authorName: string; rating: number; body: string },
+  userId: string,
+): Promise<void> {
+  const admin = createAdminSupabaseClient();
+  const { error } = await admin.schema("api").rpc("submit_review", {
+    p_code: input.code,
+    p_author_name: input.authorName,
+    p_rating: input.rating,
+    p_body: input.body,
+    p_user_id: userId,
+  });
+  if (error) throwReviewError(error);
+}

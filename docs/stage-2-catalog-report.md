@@ -187,5 +187,29 @@ moderation was a mock. Migration `20260625140000` closes both:
   `pass2_db.test.sql` §12 (sync on approve/reject/delete, codes, grants) +
   8 new Vitest specs. Full `check` green (**256 tests**). 21 migrations; ledger
   matches; no advisor regression.
-- **Deferred (Pass 3b):** persisting _customer_ review submissions (authenticated
-  write path + anti-abuse) — the trigger foundation already supports it.
+
+## 11. Stage 2 Pass 3b — customer review submission (2026-06-26)
+
+Closes the loop opened by Pass 3a: a **logged-in** customer can now submit a
+review (migration `20260626120000`).
+
+- **Schema:** `product_reviews.user_id uuid REFERENCES auth.users ON DELETE SET
+NULL` + partial unique index `(product_id, user_id) WHERE user_id IS NOT NULL`
+  → one review per customer per product. Existing/seeded rows stay `user_id` NULL.
+- **`api.submit_review`** (SECURITY DEFINER, service-role only): verifies the
+  user, requires the product be **publicly visible** (active + active category,
+  mirroring the public RLS), bounds-checks rating 1–5 / name ≤80 / body ≤2000,
+  dedupes, inserts as **`pending`**, writes a `review.submitted` audit. Stable
+  codes (`product_not_visible`/`already_reviewed`/`invalid_rating`/`invalid_author`/
+  `invalid_body`). The rating-sync trigger leaves the public rating untouched
+  until moderation.
+- **App:** `submitReview` customer server fn — CSRF + **authenticated session
+  required** (`requiresAuth` otherwise) + `reviewSubmit` per-IP/account rate
+  limit. `reviewSubmitSchema` is isomorphic. Product-page form persists (was
+  ephemeral local-only).
+- **Verification:** rolled-back SQL proof (submit→pending leaves rating 0/0;
+  dedupe; draft-not-visible; bad rating; approve→5.0/1) + `pass2_db.test.sql` §13
+  - 5 Vitest specs. Full `check` green (**261 tests**). 22 migrations; ledger
+    matches; no advisor regression.
+- **Deferred (Pass 3c):** Storage media library; DB-backed category facets/counts;
+  settings; retire the legacy `PRODUCTS` array.
