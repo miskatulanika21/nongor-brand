@@ -159,3 +159,39 @@ export function inventoryErrorMessage(code: string | undefined | null): string {
   if (!code) return "An unknown error occurred.";
   return INVENTORY_ERROR_MESSAGES[code] ?? "Could not complete the change. Please try again.";
 }
+
+// ---- Reviews (isomorphic) ---------------------------------------------------
+
+export const REVIEW_STATUSES = ["pending", "approved", "rejected"] as const;
+export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
+
+/** Moderate a single review (set its status). */
+export const reviewModerateSchema = z.object({
+  id: z.string().uuid(),
+  status: z.enum(REVIEW_STATUSES),
+});
+export type ReviewModerate = z.infer<typeof reviewModerateSchema>;
+
+/** Hard-delete a single review. */
+export const reviewDeleteSchema = z.object({ id: z.string().uuid() });
+export type ReviewDelete = z.infer<typeof reviewDeleteSchema>;
+
+/**
+ * Stable codes raised by the review moderation RPCs (api.set_review_status /
+ * api.delete_review), same convention as the inventory codes. Isomorphic so the
+ * admin UI can map a thrown code to a message client-side.
+ */
+export const REVIEW_ERROR_MESSAGES: Record<string, string> = {
+  actor_not_authorized: "Not authorized.",
+  review_not_found: "That review no longer exists. Refresh and try again.",
+  invalid_status: "Invalid review status.",
+  internal_error: "Could not complete the change. Please try again.",
+};
+
+export const KNOWN_REVIEW_ERROR_CODES = new Set(Object.keys(REVIEW_ERROR_MESSAGES));
+
+/** Map a review RPC error code to a safe, user-facing message. */
+export function reviewErrorMessage(code: string | undefined | null): string {
+  if (!code) return "An unknown error occurred.";
+  return REVIEW_ERROR_MESSAGES[code] ?? "Could not complete the change. Please try again.";
+}

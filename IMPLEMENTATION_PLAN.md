@@ -77,9 +77,14 @@ once the admin write path is DB-backed.
       shows granular per-item reasons) + **perf advisor cleanup** (merged
       `staff_profiles` SELECT policies → `staff_select_self_or_admin`;
       `idx_movements_actor`). Migrations `20260625120000`, `20260625130000`.
-- [ ] Pass 3+ — reviews moderation + rating/review_count maintenance; Storage
-      media library; DB-backed category counts & color/fabric facets; settings;
-      retire the `PRODUCTS` array.
+- [x] Pass 3a (2026-06-25) — **review moderation + rating/review_count sync**:
+      trigger keeps the product snapshot == aggregate of approved reviews;
+      `api.set_review_status` / `api.delete_review` (service-role, stable codes,
+      canonical audit); `admin.reviews.tsx` DB-backed (was mock). Migration
+      `20260625140000`.
+- [ ] Pass 3b+ — persist customer review _submission_; Storage media library;
+      DB-backed category counts & color/fabric facets; settings; retire the
+      `PRODUCTS` array.
 
 **Exit:** admin changes persist and drive the storefront; no mock array for
 catalog; permissions enforced server-side. (Pass 3+ outstanding.)
