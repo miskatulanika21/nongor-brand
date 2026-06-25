@@ -384,5 +384,99 @@ BEGIN
   END LOOP;
 END $$;
 
+-- 10h. staff_profiles SELECT policy was merged (advisor cleanup) and the old
+--      duplicate permissive policies are gone.
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy
+     WHERE polrelid = 'public.staff_profiles'::regclass AND polname = 'staff_select_self_or_admin'
+  ) THEN
+    RAISE EXCEPTION 'FAIL: merged policy staff_select_self_or_admin missing';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_policy
+     WHERE polrelid = 'public.staff_profiles'::regclass
+       AND polname IN ('staff_read_own', 'admin_read_all_staff')
+  ) THEN
+    RAISE EXCEPTION 'FAIL: old duplicate SELECT policies were not dropped';
+  END IF;
+END $$;
+
+-- 10i. Covering index for the movement-history actor FK exists.
+DO $$ BEGIN
+  IF to_regclass('public.idx_movements_actor') IS NULL THEN
+    RAISE EXCEPTION 'FAIL: idx_movements_actor index missing';
+  END IF;
+END $$;
+
+-- ============================================================
+-- 11. Stable inventory error CODES (message_text == snake_case code)
+-- ============================================================
+-- Every inventory RPC raises a STABLE code as the exception MESSAGE (human text
+-- lives in DETAIL). PostgREST surfaces message as error.message, which the TS
+-- layer maps to a safe string. These assertions lock the contract in the DB.
+DO $$
+DECLARE got text;
+BEGIN
+  -- null actor
+  BEGIN PERFORM api.set_inventory('p-sized', 'M', 1, 'x', NULL, NULL);
+        RAISE EXCEPTION 'FAIL: no raise (null actor)';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'actor_not_authorized' THEN RAISE EXCEPTION 'FAIL: null actor code=%', got; END IF;
+  END;
+  -- negative quantity
+  BEGIN PERFORM api.set_inventory('p-sized', 'M', -1, 'x', NULL, '00000000-0000-0000-0000-0000000000a1');
+        RAISE EXCEPTION 'FAIL: no raise (neg qty)';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'invalid_quantity' THEN RAISE EXCEPTION 'FAIL: neg qty code=%', got; END IF;
+  END;
+  -- empty reason
+  BEGIN PERFORM api.set_inventory('p-sized', 'M', 7, '   ', NULL, '00000000-0000-0000-0000-0000000000a1');
+        RAISE EXCEPTION 'FAIL: no raise (empty reason)';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'invalid_reason' THEN RAISE EXCEPTION 'FAIL: empty reason code=%', got; END IF;
+  END;
+  -- unknown product
+  BEGIN PERFORM api.set_inventory('ghost', NULL, 1, 'x', NULL, '00000000-0000-0000-0000-0000000000a1');
+        RAISE EXCEPTION 'FAIL: no raise (ghost)';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'product_not_found' THEN RAISE EXCEPTION 'FAIL: ghost code=%', got; END IF;
+  END;
+  -- sized product, missing size
+  BEGIN PERFORM api.set_inventory('p-sized', NULL, 1, 'x', NULL, '00000000-0000-0000-0000-0000000000a1');
+        RAISE EXCEPTION 'FAIL: no raise (size required)';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'variant_required' THEN RAISE EXCEPTION 'FAIL: size required code=%', got; END IF;
+  END;
+  -- sized product, unknown size
+  BEGIN PERFORM api.set_inventory('p-sized', 'XXL', 1, 'x', NULL, '00000000-0000-0000-0000-0000000000a1');
+        RAISE EXCEPTION 'FAIL: no raise (unknown size)';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'variant_not_found' THEN RAISE EXCEPTION 'FAIL: unknown size code=%', got; END IF;
+  END;
+END $$;
+
+-- 11b. Bulk per-item failure forwards the inner stable code as error_code.
+DO $$ DECLARE v_code text; BEGIN
+  SELECT api.bulk_set_inventory(
+    '[{"code":"ghost","size":null,"quantity":1,"reason":"x"}]'::jsonb,
+    '00000000-0000-0000-0000-0000000000a1', 'opk-err') -> 'results' -> 0 ->> 'error_code'
+  INTO v_code;
+  IF v_code <> 'product_not_found' THEN
+    RAISE EXCEPTION 'FAIL: bulk per-item error_code=% (expected product_not_found)', v_code;
+  END IF;
+END $$;
+
+-- 11c. Reused op-key with a different payload raises the stable code.
+DO $$ DECLARE got text; BEGIN
+  BEGIN PERFORM api.bulk_set_inventory(
+    '[{"code":"p-sized","size":"M","quantity":3,"reason":"bulk"}]'::jsonb,
+    '00000000-0000-0000-0000-0000000000a1', 'opk-1');
+        RAISE EXCEPTION 'FAIL: no raise (op-key reuse)';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'idempotency_key_reused' THEN RAISE EXCEPTION 'FAIL: op-key reuse code=%', got; END IF;
+  END;
+END $$;
+
 \echo '--- ALL PASS ---'
 ROLLBACK;

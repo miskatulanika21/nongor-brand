@@ -116,3 +116,46 @@ export const categoryReorderSchema = z
   .max(500);
 
 export type CategoryReorder = z.infer<typeof categoryReorderSchema>;
+
+// ---- Inventory error codes (isomorphic) -------------------------------------
+
+/**
+ * Stable, machine-readable error codes raised by the inventory RPCs
+ * (api.set_inventory / add_product_variant / remove_product_variant /
+ * bulk_set_inventory). The database raises the CODE as the exception message
+ * (human-readable context lives in the exception DETAIL), so both the single-op
+ * path (thrown PostgREST error) and the bulk path (per-item `error_code`) map
+ * through ONE table here. This module is isomorphic (no server-only imports) so
+ * the admin UI can translate per-item bulk failures client-side too.
+ */
+export const INVENTORY_ERROR_MESSAGES: Record<string, string> = {
+  product_not_found: "Product not found.",
+  variant_not_found: "That size variant does not exist.",
+  variant_required: "This product uses size variants; specify a size.",
+  variant_not_allowed: "This product has no size variants; omit the size.",
+  invalid_quantity: "Invalid quantity.",
+  invalid_reason: "A valid reason is required.",
+  note_too_long: "Note is too long (max 500 characters).",
+  no_change: "Quantity is already at this value.",
+  duplicate_target: "Duplicate product/size target in batch.",
+  idempotency_key_reused: "This operation key was already used with a different request.",
+  actor_not_authorized: "Not authorized.",
+  batch_too_large: "Batch size exceeds the maximum (100).",
+  batch_empty: "Batch must contain at least one item.",
+  op_key_required: "An operation key is required.",
+  items_invalid: "Invalid batch payload.",
+  variant_not_empty: "Set the variant stock to 0 before removing it.",
+  size_already_exists: "That size already exists.",
+  invalid_size: "Invalid size label.",
+  has_inventory_history: "Cannot purge a product with inventory history.",
+  internal_error: "Could not complete the change. Please try again.",
+};
+
+/** The set of codes the database is allowed to surface (defensive allow-list). */
+export const KNOWN_INVENTORY_ERROR_CODES = new Set(Object.keys(INVENTORY_ERROR_MESSAGES));
+
+/** Map an inventory RPC error code to a safe, user-facing message. */
+export function inventoryErrorMessage(code: string | undefined | null): string {
+  if (!code) return "An unknown error occurred.";
+  return INVENTORY_ERROR_MESSAGES[code] ?? "Could not complete the change. Please try again.";
+}

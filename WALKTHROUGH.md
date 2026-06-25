@@ -112,13 +112,14 @@ All admin catalog mutations share one guard: `guardAdminWrite(permission, op)`
 `.github/workflows/ci.yml` runs on push to `main` and all PRs: Bun (pinned
 1.3.14) frozen install → typecheck → lint → format:check → test → build (all
 mandatory). A `migrations-local` job applies every migration to a fresh LOCAL
-Supabase DB (Docker, no creds) — the authoritative migrate-from-empty check. A
-separate advisory job runs `supabase db lint --linked` only when
-`SUPABASE_ACCESS_TOKEN` + `SUPABASE_PROJECT_ID` + `SUPABASE_DB_PASSWORD` are
-configured; otherwise it skips with a visible notice (it lints the DEPLOYED DB
-and does not validate pending migrations). **Currently those secrets are NOT set,
-so the linked-lint step SKIPS on every run** — job "success" with that step
-skipped is not a passing lint.
+Supabase DB (Docker, no creds) — the authoritative migrate-from-empty check —
+then runs the DB integration tests (`pass2_db.test.sql`) and the two-connection
+concurrency test (`concurrency.test.sh`). A separate job runs
+`supabase db lint --linked` against the DEPLOYED DB using the
+`SUPABASE_ACCESS_TOKEN` + `SUPABASE_PROJECT_ID` + `SUPABASE_DB_PASSWORD`
+repository secrets (now configured); it skips with a visible notice only if a
+secret is missing. Note it lints the deployed DB and does not validate pending
+migrations — that is the `migrations-local` job's role.
 
 ## Still mock / localStorage (later stages)
 

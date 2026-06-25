@@ -134,3 +134,29 @@ the admin write path is DB-backed. `orders.ts`/`order-ui.ts` stay on mock data
 - Data/schema: the catalog tables are additive and isolated; to fully remove,
   `drop table` the five catalog tables (CASCADE) and delete the
   `20260622000000` history row. Migration 8 is independent and should remain.
+
+## 9. Addendum — 2026-06-25 follow-up patch
+
+A post-Pass-2 review found that granular inventory error messages never reached
+the user, plus three open Supabase performance advisors. Both fixed:
+
+- **Stable inventory error codes** (migration `20260625120000`): every inventory
+  RPC (`set_inventory`, `add_product_variant`, `remove_product_variant`,
+  `bulk_set_inventory`) now raises a machine-readable snake_case CODE as the
+  exception message, with the human sentence in `DETAIL`. The single-op TS path
+  throws `InventoryError(code)`; the bulk path forwards the inner code as
+  `error_code` (the previous fragile `SQLERRM ILIKE` mapping is gone). The
+  code→message table (`inventoryErrorMessage`) moved to the isomorphic
+  `catalog-admin.schema.ts`, so the admin UI surfaces per-item bulk failure
+  reasons client-side. Before this, every single-op failure collapsed to a
+  generic "Could not complete the change."
+- **Advisor cleanup** (migration `20260625130000`): merged the two permissive
+  `staff_profiles` SELECT policies into one `staff_select_self_or_admin` with
+  sub-select-wrapped auth calls (clears `auth_rls_initplan` +
+  `multiple_permissive_policies`); added `idx_movements_actor` (clears
+  `unindexed_foreign_keys`).
+- **Verification**: `pass2_db.test.sql` §10h/§10i/§11 assert the new policy, the
+  index, and `message_text == code` for the inventory RPCs (incl. bulk per-item
+  `error_code`). Vitest: **248 passed**. `get_advisors` re-run: the three perf
+  advisors are gone; remaining items are the two intentional INFO
+  `rls_enabled_no_policy` (RPC-only tables) and the deferred leaked-password WARN.

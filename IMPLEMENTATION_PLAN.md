@@ -71,6 +71,12 @@ once the admin write path is DB-backed.
       (FOR UPDATE lock, actor/active-staff, sized/non-sized, zero-delta, bounds);
       `products.stock` write-guard; FK RESTRICT; bounded idempotent
       `api.bulk_set_inventory`. All verified via rolled-back SQL proofs.
+- [x] Pass 2 follow-up (2026-06-25) — **stable inventory error codes** (RPCs raise
+      snake_case code as message + human DETAIL; `InventoryError` single-op path;
+      bulk forwards `error_code`; isomorphic `inventoryErrorMessage` so the UI
+      shows granular per-item reasons) + **perf advisor cleanup** (merged
+      `staff_profiles` SELECT policies → `staff_select_self_or_admin`;
+      `idx_movements_actor`). Migrations `20260625120000`, `20260625130000`.
 - [ ] Pass 3+ — reviews moderation + rating/review_count maintenance; Storage
       media library; DB-backed category counts & color/fabric facets; settings;
       retire the `PRODUCTS` array.

@@ -16,6 +16,12 @@ import type {
   CategoryReorder,
   ProductStatus,
 } from "@/lib/catalog-admin.schema";
+import { KNOWN_INVENTORY_ERROR_CODES } from "@/lib/catalog-admin.schema";
+
+// Re-export the isomorphic mapper so existing server-side importers keep working;
+// the canonical definition now lives in the (client-safe) schema module so the
+// admin UI can translate per-item bulk failures too.
+export { inventoryErrorMessage } from "@/lib/catalog-admin.schema";
 
 /**
  * Stable, immutable, opaque product code (the storefront/cart id). Generated
@@ -384,7 +390,7 @@ export async function adjustInventory(params: {
     p_note: params.note,
     p_actor_id: params.actorId,
   });
-  if (error) fromPgError(error, "Failed to adjust inventory");
+  if (error) throwInventoryError(error);
   const result = data as { total?: number } | null;
   return { total: result?.total ?? params.quantity };
 }
@@ -412,28 +418,27 @@ export interface BulkInventoryResult {
   results: BulkInventoryItemResult[];
 }
 
-/** Map a bulk RPC error_code to a safe user-facing message. */
-export function inventoryErrorMessage(code: string | undefined): string {
-  if (!code) return "An unknown error occurred.";
-  const messages: Record<string, string> = {
-    product_not_found: "Product not found.",
-    variant_not_found: "That size variant does not exist.",
-    variant_required: "This product uses size variants; specify a size.",
-    variant_not_allowed: "This product has no size variants; omit the size.",
-    invalid_quantity: "Invalid quantity.",
-    invalid_reason: "A valid reason is required.",
-    no_change: "Quantity is already at this value.",
-    duplicate_target: "Duplicate product/size target in batch.",
-    idempotency_key_reused: "This operation key was already used with a different request.",
-    actor_not_authorized: "Not authorized.",
-    batch_too_large: "Batch size exceeds the maximum (100).",
-    batch_empty: "Batch must contain at least one item.",
-    variant_not_empty: "Set the variant stock to 0 before removing it.",
-    size_already_exists: "That size already exists.",
-    invalid_size: "Invalid size label.",
-    has_inventory_history: "Cannot purge a product with inventory history.",
-  };
-  return messages[code] ?? "Could not complete the change. Please try again.";
+/**
+ * Error thrown by the inventory RPC wrappers, carrying a STABLE machine code
+ * (see INVENTORY_ERROR_MESSAGES). The API layer maps `.code` to a safe message
+ * via inventoryErrorMessage — no raw SQL text ever reaches the client.
+ */
+export class InventoryError extends Error {
+  constructor(public readonly code: string) {
+    super(code);
+    this.name = "InventoryError";
+  }
+}
+
+/**
+ * Convert a PostgREST error from an inventory RPC into an InventoryError. The
+ * RPCs raise the stable code AS the exception message; we accept it only if it
+ * is a known code, otherwise collapse to `internal_error` so an unexpected raise
+ * can never leak raw SQL context to the user.
+ */
+function throwInventoryError(error: { code?: string; message?: string }): never {
+  const raw = (error.message ?? "").trim();
+  throw new InventoryError(KNOWN_INVENTORY_ERROR_CODES.has(raw) ? raw : "internal_error");
 }
 
 /**
@@ -453,7 +458,7 @@ export async function bulkSetInventory(
     p_actor_id: actorId,
     p_op_key: opKey,
   });
-  if (error) fromPgError(error, "Bulk inventory update failed");
+  if (error) throwInventoryError(error);
   const raw = data as {
     op_key: string;
     replayed: boolean;
@@ -503,7 +508,7 @@ export async function addProductVariant(
     p_size: size,
     p_actor_id: actorId,
   });
-  if (error) fromPgError(error, "Failed to add variant");
+  if (error) throwInventoryError(error);
   const r = data as { code: string; size: string; initial?: number };
   return { code: r.code, size: r.size, initial: r.initial };
 }
@@ -520,7 +525,7 @@ export async function removeProductVariant(
     p_size: size,
     p_actor_id: actorId,
   });
-  if (error) fromPgError(error, "Failed to remove variant");
+  if (error) throwInventoryError(error);
   const r = data as { code: string; size: string; total?: number };
   return { code: r.code, size: r.size, total: r.total };
 }

@@ -9,6 +9,7 @@ import {
   removeVariant,
 } from "@/lib/catalog-admin.api";
 import type { InventoryItem, InventoryMovement } from "@/lib/server/catalog-admin.server";
+import { inventoryErrorMessage } from "@/lib/catalog-admin.schema";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -115,12 +116,19 @@ function Inventory() {
     });
     setBusy(false);
     if (res.success) {
-      const note = res.result.failed
-        ? ` · ${res.result.failed} unchanged/failed`
-        : skipped
-          ? ` · ${skipped} variant product(s) skipped`
-          : "";
-      toast.success(`${res.result.ok} product(s) set to 0${note}.`);
+      const failedItems = res.result.results.filter((r) => !r.success);
+      if (failedItems.length) {
+        // Surface the distinct DB reasons instead of a bare "unchanged/failed".
+        const reasons = Array.from(
+          new Set(failedItems.map((r) => inventoryErrorMessage(r.errorCode))),
+        );
+        toast.warning(
+          `${res.result.ok} set to 0 · ${failedItems.length} unchanged/failed: ${reasons.join(" ")}`,
+        );
+      } else {
+        const note = skipped ? ` · ${skipped} variant product(s) skipped` : "";
+        toast.success(`${res.result.ok} product(s) set to 0${note}.`);
+      }
     } else {
       toast.error(res.error);
     }

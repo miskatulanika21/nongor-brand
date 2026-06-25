@@ -3,10 +3,12 @@
 Authoritative record of verified project state. Code and live-environment
 behavior are the source of truth; this file is updated after every stage.
 
-_Last updated: 2026-06-23 — Stage 1.5 operationally closed; Stage 2 public read
+_Last updated: 2026-06-25 — Stage 1.5 operationally closed; Stage 2 public read
 (Pass 1) + admin product/category/inventory writes (Pass 2) implemented, hardened
-and CI-green. 18 migrations applied to the live project; remote ledger matches the
-18 repo files._
+and CI-green. Follow-up patch: stable inventory error codes (granular messages now
+reach the UI on both single-op and bulk paths) + staff_profiles RLS perf advisors
+cleared + movement-FK covering index. 20 migrations applied to the live project;
+remote ledger matches the 20 repo files._
 
 State legend: **(1) code complete · (2) migration applied · (3) deployed
 verification complete · (4) operator action pending.**
@@ -28,19 +30,20 @@ verification complete · (4) operator action pending.**
 
 ## Migrations (live project xomjxtmhkglhuiccekld)
 
-**18 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
-ledger matches the 18 repo files exactly (versions + names), in order:
+**20 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
+ledger matches the 20 repo files exactly (versions + names), in order:
 
 ```
-…143927 create_private_schema            …622120000 stage_1_5_security_closure
-…143948 create_staff_profiles            …622130000 owner_safety_advisory_lock
-…144004 create_current_staff_role_fn     …623000000 advisor_hardening
-…144019 create_audit_logs                …623100000 vendor_rls_auto_enable
-…144036 create_provision_admin_function  …623200000 inventory_movements
-…150547 fix_staff_profiles_rls_recursion …623210000 inventory_hardening
-…165800 harden_security_definer_functions…623220000 bulk_set_inventory
-…621090000 staff_provisioning_and_owner_safety   …623230000 catalog_write_rpcs
-…622000000 catalog_schema                …623240000 pass2_closure
+…143927 create_private_schema            …622130000 owner_safety_advisory_lock
+…143948 create_staff_profiles            …623000000 advisor_hardening
+…144004 create_current_staff_role_fn     …623100000 vendor_rls_auto_enable
+…144019 create_audit_logs                …623200000 inventory_movements
+…144036 create_provision_admin_function  …623210000 inventory_hardening
+…150547 fix_staff_profiles_rls_recursion …623220000 bulk_set_inventory
+…165800 harden_security_definer_functions…623230000 catalog_write_rpcs
+…621090000 staff_provisioning_and_owner_safety   …623240000 pass2_closure
+…622000000 catalog_schema                …625120000 inventory_stable_error_codes
+…622120000 stage_1_5_security_closure    …625130000 staff_rls_perf_and_fk_index
 ```
 
 Note: `apply_migration` (MCP) stamps its own version, so after every MCP apply the
@@ -57,6 +60,15 @@ back). Always confirm with `supabase migration list`.
 - Security advisors: cleared except `auth_leaked_password_protection` (Auth
   dashboard toggle — enable before broader auth use). `rls_auto_enable`/`ensure_rls`
   vendored into a migration.
+- Performance advisors (2026-06-25): `auth_rls_initplan` and
+  `multiple_permissive_policies` on `staff_profiles` cleared by merging the two
+  permissive SELECT policies into one (`staff_select_self_or_admin`) with
+  `(select auth.uid())` / `(select private.current_staff_role())`;
+  `unindexed_foreign_keys` cleared by `idx_movements_actor`. Remaining advisors:
+  two INFO `rls_enabled_no_policy` on `inventory_bulk_ops` /
+  `product_inventory_movements` — **intentional**: these are written only by
+  SECURITY DEFINER RPCs, so deny-all-with-no-policy is the correct posture; and
+  INFO `unused_index` (no production traffic yet).
 - Deferred (owner): credential rotation (go-live); leaked-password protection toggle.
 
 ## Stage 2 Pass 2 — admin write path (done, hardened)
@@ -79,6 +91,14 @@ validated by isomorphic zod schemas that mirror the DB CHECKs, and audited.
 - Bulk: `api.bulk_set_inventory` — bounded 1..100, idempotent (op_key replay), one
   auth + one rate-limit charge, structured partial-success; replaces the old
   client `Promise.all`.
+- **Stable error codes (2026-06-25 patch):** every inventory RPC raises a
+  machine-readable snake_case CODE as the exception message (human context in
+  DETAIL). The single-op path throws `InventoryError(code)`; the bulk path
+  forwards the inner code as `error_code` (no more fragile `SQLERRM ILIKE`
+  matching). `inventoryErrorMessage()` lives in the isomorphic
+  `catalog-admin.schema.ts`, so the admin UI now surfaces granular per-item bulk
+  reasons too — previously every failure collapsed to a generic message.
+  Asserted by `pass2_db.test.sql` §11 (message_text == code) + Vitest.
 
 **Product/category writes:** transactional canonical audit via `api.save_product`,
 `api.set_product_status`, `api.save_category`, `api.set_category_active`,
@@ -102,11 +122,13 @@ newsletter, reports, settings.
 ## CI (honest)
 
 `ci.yml` runs (genuinely): frozen Bun install, typecheck, lint, format, test, build,
-**migrate-from-empty** (boots a local Supabase, applies all 18 migrations to a blank
+**migrate-from-empty** (boots a local Supabase, applies all 20 migrations to a blank
 DB), and **DB integration tests** (`pass2_db.test.sql` — stock write-guard,
 set_inventory validation, ledger immutability, FK RESTRICT, first-variant
 conservation, owner-only purge, reorder validation, bulk idempotency, actor-deletion
-restriction, grant verification, and post-migration-18 schema proof). The **linked deployed-DB lint step runs** in CI (using `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, and `SUPABASE_DB_PASSWORD` repository secrets). This lints the deployed live database structure against recommendations.
+restriction, grant verification, post-migration schema proof, the merged RLS policy
+
+- FK index, and stable error-code assertions). The **linked deployed-DB lint step runs** in CI (using `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, and `SUPABASE_DB_PASSWORD` repository secrets). This lints the deployed live database structure against recommendations.
 
 ## Outstanding follow-ups
 
