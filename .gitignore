@@ -25,6 +25,9 @@ dist-ssr
 coverage
 playwright-report
 test-results
+blob-report
+# Playwright saved auth/storage state — contains session tokens, never commit
+e2e/.auth/
 
 # Wrangler / Cloudflare
 .wrangler/
