@@ -10,6 +10,7 @@
  */
 import { createServerSupabaseClient } from "./supabase.server";
 import { toCard, toProduct, type ProductCardRow, type ProductDetailRow } from "@/lib/catalog-map";
+import { normalizeFacets, type CatalogFacets } from "@/lib/catalog-facets";
 import type { Product } from "@/lib/products";
 
 export class CatalogQueryError extends Error {
@@ -65,6 +66,19 @@ export async function fetchProductCardsByCodes(codes: string[]): Promise<Product
     .order("sort_order", { ascending: true });
   if (error) throw new CatalogQueryError("Failed to load wishlist products", error.message);
   return ((data ?? []) as unknown as ProductCardRow[]).map(toCard);
+}
+
+/**
+ * Catalog filter facets (category counts + distinct colours/fabrics/occasions),
+ * computed in the database over the publicly-visible catalog via
+ * `api.catalog_facets()`. The anon client respects RLS; the function's own
+ * predicate guarantees the same visible set regardless.
+ */
+export async function fetchCatalogFacets(): Promise<CatalogFacets> {
+  const sb = createServerSupabaseClient();
+  const { data, error } = await sb.schema("api").rpc("catalog_facets");
+  if (error) throw new CatalogQueryError("Failed to load catalog facets", error.message);
+  return normalizeFacets(data);
 }
 
 /** Full product detail by slug. Returns null when not found / not public. */

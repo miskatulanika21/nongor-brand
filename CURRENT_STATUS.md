@@ -3,38 +3,40 @@
 Authoritative record of verified project state. Code and live-environment
 behavior are the source of truth; this file is updated after every stage.
 
-_Last updated: 2026-06-25 — Stage 1.5 operationally closed; Stage 2 public read
+_Last updated: 2026-06-26 — Stage 1.5 operationally closed; Stage 2 public read
 (Pass 1) + admin product/category/inventory writes (Pass 2) implemented, hardened
 and CI-green. Follow-up patch: stable inventory error codes + staff_profiles RLS
 perf advisors cleared + movement-FK covering index. **Stage 2 Pass 3a: review
 moderation + rating/review_count sync; Pass 3b: authenticated customer review
-submission (persisted + moderated).** 22 migrations applied to the live project;
-remote ledger matches the 22 repo files._
+submission (persisted + moderated); Pass 3c: DB-backed catalog facets & counts
+(shop filter sidebar).** 23 migrations applied to the live project; remote ledger
+matches the 23 repo files._
 
 State legend: **(1) code complete · (2) migration applied · (3) deployed
 verification complete · (4) operator action pending.**
 
 ## Stage status
 
-| Stage        | Scope                                                                               | Status                                                                   |
-| ------------ | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| 1            | Auth, RBAC, CSRF, headers, rate limit, MFA scaffold, audit, owner-safety            | Implemented                                                              |
-| 1.5          | Security closure (4 bugs + A–E + follow-up hardening)                               | **Operationally closed** (migrations applied; `api` exposed; proofs run) |
-| 2 (Pass 1)   | DB-backed **public catalog read** path                                              | Implemented + live                                                       |
-| 2 (Pass 2)   | Admin **product / category / inventory** writes (DB-backed + hardened)              | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3a)  | **Reviews moderation + rating/review_count sync** (DB-backed)                       | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3b)  | **Authenticated customer review submission** (persisted + moderated)                | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3c+) | Media library (Storage); category facets/counts; settings; delete legacy `PRODUCTS` | Not started                                                              |
-| 3            | Server-authoritative checkout, orders, payments                                     | Not started                                                              |
-| 4            | Customer accounts / addresses / measurements                                        | Not started (localStorage)                                               |
-| 5            | Courier adapters, shipments, webhooks, outbox                                       | Not started                                                              |
-| 6            | Banners, CMS, contact, newsletter, reports, settings                                | Not started (mock)                                                       |
-| 7            | Hardening, perf/a11y, CI/CD, backups                                                | Not started                                                              |
+| Stage        | Scope                                                                    | Status                                                                   |
+| ------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| 1            | Auth, RBAC, CSRF, headers, rate limit, MFA scaffold, audit, owner-safety | Implemented                                                              |
+| 1.5          | Security closure (4 bugs + A–E + follow-up hardening)                    | **Operationally closed** (migrations applied; `api` exposed; proofs run) |
+| 2 (Pass 1)   | DB-backed **public catalog read** path                                   | Implemented + live                                                       |
+| 2 (Pass 2)   | Admin **product / category / inventory** writes (DB-backed + hardened)   | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3a)  | **Reviews moderation + rating/review_count sync** (DB-backed)            | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3b)  | **Authenticated customer review submission** (persisted + moderated)     | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3c)  | **DB-backed catalog facets & counts** (shop filter sidebar)              | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3d+) | Media library (Storage); settings; delete legacy `PRODUCTS` array        | Not started                                                              |
+| 3            | Server-authoritative checkout, orders, payments                          | Not started                                                              |
+| 4            | Customer accounts / addresses / measurements                             | Not started (localStorage)                                               |
+| 5            | Courier adapters, shipments, webhooks, outbox                            | Not started                                                              |
+| 6            | Banners, CMS, contact, newsletter, reports, settings                     | Not started (mock)                                                       |
+| 7            | Hardening, perf/a11y, CI/CD, backups                                     | Not started                                                              |
 
 ## Migrations (live project xomjxtmhkglhuiccekld)
 
-**22 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
-ledger matches the 22 repo files exactly (versions + names), in order:
+**23 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
+ledger matches the 23 repo files exactly (versions + names), in order:
 
 ```
 …143927 create_private_schema            …623000000 advisor_hardening
@@ -48,6 +50,7 @@ ledger matches the 22 repo files exactly (versions + names), in order:
 …622000000 catalog_schema                …625130000 staff_rls_perf_and_fk_index
 …622120000 stage_1_5_security_closure    …625140000 reviews_moderation_and_rating_sync
 …622130000 owner_safety_advisory_lock    …626120000 review_submission
+                                          …626130000 catalog_facets
 ```
 
 Note: `apply_migration` (MCP) stamps its own version, so after every MCP apply the
@@ -142,30 +145,55 @@ normal removal is **Archive**. Privileged GET handlers set `private, no-store`.
   untouched until an admin approves. Product-page form persists (was ephemeral).
 - Verified by rolled-back SQL proof + `pass2_db.test.sql` §13 + Vitest.
 
+## Stage 2 Pass 3c — DB-backed catalog facets & counts (done, live)
+
+- The shop filter sidebar (category counts, colours, fabrics, occasions) was
+  derived from the legacy mock `PRODUCTS` array, so it drifted from reality once
+  an admin added or archived a product. It is now a **database read**.
+- **`api.catalog_facets()`** (`STABLE`, `SECURITY DEFINER`, `search_path=''`):
+  aggregates over the **publicly-visible** catalog (explicit `status='active'` +
+  active-category predicate, so it returns the same set under anon-RLS and under
+  the superuser psql CI role). Returns jsonb: per-DB-category `{slug,name,count}`
+  plus `colors`/`fabrics`/`occasions` as `{value,count}` ordered by frequency.
+  `REVOKE…FROM public; GRANT EXECUTE TO anon, authenticated, service_role` — it is
+  a public read, unlike the service-role-only write RPCs.
+- **App:** `fetchCatalogFacets` (`catalog.server.ts`) → `getCatalogFacets` server
+  fn; `_site.shop.tsx` loads cards + facets in parallel and renders DB facets.
+  `catalog-facets.ts` holds the isomorphic type + defensive `normalizeFacets`
+  (a malformed payload degrades to an empty facet set, never crashes the loader).
+  `rollupCategoryCounts` (in `categories.ts`) collapses the three cosmetics
+  product types into the single "Cosmetics" facet. The hard-coded
+  `COLORS`/`FABRICS`/`OCCASIONS` arrays and the `PRODUCTS`-derived `categoryCount`
+  were removed.
+- Verified by rolled-back SQL proof + `pass2_db.test.sql` §14 (counts == visible;
+  draft + inactive-category rows excluded; grants) + Vitest (268 total).
+
 ## Real vs mock (data flow)
 
 **Real / persistent (DB-backed):** auth, staff RBAC (`staff_profiles`), audit logs;
 public catalog read (`product_*`); **admin product/category writes**; **inventory
 (ledger + stock)**; **review moderation + product rating/review_count**;
-**customer review submission** (authenticated → pending → moderated).
+**customer review submission** (authenticated → pending → moderated); **shop
+filter facets + category counts** (`api.catalog_facets()`).
 
-**Still mock / localStorage (later passes):** media library; category
-facets/counts (`categories.ts`) + legacy `PRODUCTS` array (still exported until a
-later pass removes it); orders, cart, wishlist, checkout, coupons; payments;
-customer profiles/addresses/measurements; courier; banners, CMS, contact,
-newsletter, reports, settings.
+**Still mock / localStorage (later passes):** media library; the legacy
+`PRODUCTS` array (still exported for the admin dashboard / media-library preview
+and the Stage 3/5 order mocks, until those passes remove it); orders, cart,
+wishlist, checkout, coupons; payments; customer profiles/addresses/measurements;
+courier; banners, CMS, contact, newsletter, reports, settings.
 
 ## CI (honest)
 
 `ci.yml` runs (genuinely): frozen Bun install, typecheck, lint, format, test, build,
-**migrate-from-empty** (boots a local Supabase, applies all 22 migrations to a blank
+**migrate-from-empty** (boots a local Supabase, applies all 23 migrations to a blank
 DB), and **DB integration tests** (`pass2_db.test.sql` — stock write-guard,
 set_inventory validation, ledger immutability, FK RESTRICT, first-variant
 conservation, owner-only purge, reorder validation, bulk idempotency, actor-deletion
 restriction, grant verification, post-migration schema proof, the merged RLS policy
 
-- FK index, stable error-code assertions, review moderation + rating sync, and
-  customer submission → pending → approve → rating). The **linked deployed-DB lint step runs** in CI (using `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, and `SUPABASE_DB_PASSWORD` repository secrets). This lints the deployed live database structure against recommendations.
+- FK index, stable error-code assertions, review moderation + rating sync,
+  customer submission → pending → approve → rating, and catalog-facet counts +
+  visibility filtering). The **linked deployed-DB lint step runs** in CI (using `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, and `SUPABASE_DB_PASSWORD` repository secrets). This lints the deployed live database structure against recommendations.
 
 ## Outstanding follow-ups
 
@@ -175,5 +203,5 @@ restriction, grant verification, post-migration schema proof, the merged RLS pol
 4. DB integration tests are automated in CI (`pass2_db.test.sql`); a genuine
    two-connection concurrency test (`concurrency.test.sh`) also runs in the
    `migrations-local` job. True multi-session advisory-lock races are verified.
-5. Stage 2 Pass 3c+: media library (Storage), category facets/counts, settings,
-   remove legacy `PRODUCTS` array.
+5. Stage 2 Pass 3d+: media library (Storage), settings, remove the legacy
+   `PRODUCTS` array (catalog facets/counts landed in Pass 3c).

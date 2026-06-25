@@ -87,11 +87,16 @@ once the admin write path is DB-backed.
       (service-role, visibility + bounds + dedupe, inserts pending, audit);
       `submitReview` server fn (auth-required + rate-limited); product-page form
       persists. Migration `20260626120000`.
-- [ ] Pass 3c+ — Storage media library; DB-backed category counts & color/fabric
-      facets; settings; retire the `PRODUCTS` array.
+- [x] Pass 3c (2026-06-26) — **DB-backed catalog facets & counts**: `api.catalog_facets()`
+      (STABLE, SECURITY DEFINER, explicit visible-only predicate, anon/authenticated
+      EXECUTE) returns per-category counts + distinct colours/fabrics/occasions;
+      `getCatalogFacets` server fn; `_site.shop.tsx` sidebar renders DB facets;
+      `rollupCategoryCounts` collapses cosmetics types; removed hard-coded
+      `COLORS/FABRICS/OCCASIONS` + `categoryCount`. Migration `20260626130000`.
+- [ ] Pass 3d+ — Storage media library; settings; retire the `PRODUCTS` array.
 
 **Exit:** admin changes persist and drive the storefront; no mock array for
-catalog; permissions enforced server-side. (Pass 3+ outstanding.)
+catalog; permissions enforced server-side. (Pass 3d+ outstanding.)
 
 ## Stage 3 — Checkout & orders
 

@@ -659,5 +659,62 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- ============================================================
+-- 14. Catalog facets (Pass 3c)
+-- ============================================================
+-- Isolated fixtures with sentinel facet values (no collision with earlier rows):
+-- one active facet category + one inactive; 3 active + 1 draft + 1 in the
+-- inactive category. Only the 3 active-in-active-category rows are "visible".
+INSERT INTO public.product_categories (slug, name, sort_order, is_active) VALUES
+  ('cat-facet', 'Facet Cat', 50, true),
+  ('cat-facet-off', 'Facet Off', 51, false);
+
+INSERT INTO public.products (code, slug, name, category_id, price, status, color, fabric, occasion)
+  SELECT 'fct-1','fct-1','F1', id, 100, 'active', 'FacetTeal',  'FacetLinen', 'FacetEid'   FROM public.product_categories WHERE slug='cat-facet';
+INSERT INTO public.products (code, slug, name, category_id, price, status, color, fabric, occasion)
+  SELECT 'fct-2','fct-2','F2', id, 100, 'active', 'FacetTeal',  'FacetSilk',  'FacetEid'   FROM public.product_categories WHERE slug='cat-facet';
+INSERT INTO public.products (code, slug, name, category_id, price, status, color, fabric, occasion)
+  SELECT 'fct-3','fct-3','F3', id, 100, 'active', 'FacetCoral', 'FacetLinen', 'FacetParty' FROM public.product_categories WHERE slug='cat-facet';
+INSERT INTO public.products (code, slug, name, category_id, price, status, color, fabric, occasion)
+  SELECT 'fct-d','fct-d','FD', id, 100, 'draft',  'FacetTeal',  'FacetLinen', 'FacetEid'   FROM public.product_categories WHERE slug='cat-facet';
+INSERT INTO public.products (code, slug, name, category_id, price, status, color, fabric, occasion)
+  SELECT 'fct-off','fct-off','FO', id, 100, 'active', 'FacetTeal', 'FacetLinen', 'FacetEid' FROM public.product_categories WHERE slug='cat-facet-off';
+
+DO $$
+DECLARE f jsonb; v int;
+BEGIN
+  f := api.catalog_facets();
+
+  -- active facet category reports exactly its 3 active products
+  SELECT (c->>'count')::int INTO v FROM jsonb_array_elements(f->'categories') c WHERE c->>'slug'='cat-facet';
+  IF v IS DISTINCT FROM 3 THEN RAISE EXCEPTION 'FAIL: cat-facet count=% (want 3)', v; END IF;
+
+  -- inactive category never appears
+  SELECT count(*) INTO v FROM jsonb_array_elements(f->'categories') c WHERE c->>'slug'='cat-facet-off';
+  IF v <> 0 THEN RAISE EXCEPTION 'FAIL: inactive category leaked into facets'; END IF;
+
+  -- colour 'FacetTeal' = 2 visible (draft + inactive-category rows excluded)
+  SELECT (x->>'count')::int INTO v FROM jsonb_array_elements(f->'colors') x WHERE x->>'value'='FacetTeal';
+  IF v IS DISTINCT FROM 2 THEN RAISE EXCEPTION 'FAIL: FacetTeal count=% (want 2)', v; END IF;
+
+  -- fabric 'FacetLinen' = 2 visible (fct-1, fct-3)
+  SELECT (x->>'count')::int INTO v FROM jsonb_array_elements(f->'fabrics') x WHERE x->>'value'='FacetLinen';
+  IF v IS DISTINCT FROM 2 THEN RAISE EXCEPTION 'FAIL: FacetLinen count=% (want 2)', v; END IF;
+
+  -- occasion 'FacetEid' = 2 visible (fct-1, fct-2)
+  SELECT (x->>'count')::int INTO v FROM jsonb_array_elements(f->'occasions') x WHERE x->>'value'='FacetEid';
+  IF v IS DISTINCT FROM 2 THEN RAISE EXCEPTION 'FAIL: FacetEid count=% (want 2)', v; END IF;
+END $$;
+
+-- Grants: catalog_facets is a public read — anon/authenticated/service_role execute.
+DO $$ BEGIN
+  IF NOT has_function_privilege('anon', 'api.catalog_facets()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL: anon lacks EXECUTE on catalog_facets'; END IF;
+  IF NOT has_function_privilege('authenticated', 'api.catalog_facets()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL: authenticated lacks EXECUTE on catalog_facets'; END IF;
+  IF NOT has_function_privilege('service_role', 'api.catalog_facets()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL: service_role lacks EXECUTE on catalog_facets'; END IF;
+END $$;
+
 \echo '--- ALL PASS ---'
 ROLLBACK;
