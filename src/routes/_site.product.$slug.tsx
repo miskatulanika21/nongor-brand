@@ -4,6 +4,7 @@ import sizeChart from "@/assets/size-chart.webp";
 import { NotFoundPage } from "@/components/NotFoundPage";
 import { READY_SIZES, GIRLS_SIZES, type Product } from "@/lib/products";
 import { getProductDetail, listProductCards } from "@/lib/catalog.api";
+import { submitReview } from "@/lib/reviews.api";
 import { formatBDT, discountPct, BRAND } from "@/lib/brand";
 import { useStore } from "@/lib/store";
 import { ProductGrid } from "@/components/ProductGrid";
@@ -685,7 +686,7 @@ function ProductPage() {
               </div>
             </div>
 
-            <ReviewForm onSubmit={(r) => setLocalReviews((prev) => [r, ...prev])} />
+            <ReviewForm code={product.id} />
             {displayedReviews.map((r: ReviewItem) => (
               <div key={r.id} className="rounded-xl border border-border bg-card p-5">
                 <div className="flex items-center justify-between">
@@ -1072,32 +1073,35 @@ function HowToMeasure({ url }: { url: string }) {
   );
 }
 
-function ReviewForm({ onSubmit }: { onSubmit: (r: ReviewItem) => void }) {
+function ReviewForm({ code }: { code: string }) {
   const [name, setName] = useState("");
   const [rating, setRating] = useState(0);
   const [hover, setHover] = useState(0);
   const [text, setText] = useState("");
   const [done, setDone] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !rating || !text.trim()) {
       toast.error("Please add your name, a rating and a review");
       return;
     }
-    onSubmit({
-      id: `local-${Date.now()}`,
-      name: name.trim(),
-      rating,
-      date: new Date().toISOString().slice(0, 10),
-      text: text.trim(),
+    setSubmitting(true);
+    const res = await submitReview({
+      data: { code, authorName: name.trim(), rating, body: text.trim() },
     });
-    toast.success("Thanks for your review!");
-    setName("");
-    setRating(0);
-    setHover(0);
-    setText("");
-    setDone(true);
+    setSubmitting(false);
+    if (res.success) {
+      toast.success("Thanks! Your review was submitted and is awaiting approval.");
+      setName("");
+      setRating(0);
+      setHover(0);
+      setText("");
+      setDone(true);
+    } else {
+      toast.error(res.error);
+    }
   };
 
   return (
@@ -1108,7 +1112,8 @@ function ReviewForm({ onSubmit }: { onSubmit: (r: ReviewItem) => void }) {
       <h3 className="font-display text-xl text-foreground">Write a review</h3>
       {done && (
         <p className="flex items-center gap-1.5 rounded-lg bg-success/10 px-3 py-2 text-sm text-success">
-          <Check className="h-4 w-4" /> Your review was added to this session. Thank you!
+          <Check className="h-4 w-4" /> Your review was submitted and will appear once approved.
+          Thank you!
         </p>
       )}
       <div className="grid gap-3 sm:grid-cols-2">
@@ -1157,10 +1162,11 @@ function ReviewForm({ onSubmit }: { onSubmit: (r: ReviewItem) => void }) {
         />
       </div>
       <p className="text-xs text-muted-foreground">
-        Reviews submitted here are shown for this browsing session. Verified-purchase badges are not
-        available yet.
+        You must be signed in to review. Submitted reviews are published after approval.
       </p>
-      <Button type="submit">Submit review</Button>
+      <Button type="submit" disabled={submitting}>
+        {submitting ? "Submitting…" : "Submit review"}
+      </Button>
     </form>
   );
 }

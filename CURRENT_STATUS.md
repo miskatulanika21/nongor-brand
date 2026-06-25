@@ -7,32 +7,34 @@ _Last updated: 2026-06-25 — Stage 1.5 operationally closed; Stage 2 public rea
 (Pass 1) + admin product/category/inventory writes (Pass 2) implemented, hardened
 and CI-green. Follow-up patch: stable inventory error codes + staff_profiles RLS
 perf advisors cleared + movement-FK covering index. **Stage 2 Pass 3a: review
-moderation + automatic rating/review_count sync (DB-backed, server-authoritative).**
-21 migrations applied to the live project; remote ledger matches the 21 repo files._
+moderation + rating/review_count sync; Pass 3b: authenticated customer review
+submission (persisted + moderated).** 22 migrations applied to the live project;
+remote ledger matches the 22 repo files._
 
 State legend: **(1) code complete · (2) migration applied · (3) deployed
 verification complete · (4) operator action pending.**
 
 ## Stage status
 
-| Stage        | Scope                                                                                                            | Status                                                                   |
-| ------------ | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| 1            | Auth, RBAC, CSRF, headers, rate limit, MFA scaffold, audit, owner-safety                                         | Implemented                                                              |
-| 1.5          | Security closure (4 bugs + A–E + follow-up hardening)                                                            | **Operationally closed** (migrations applied; `api` exposed; proofs run) |
-| 2 (Pass 1)   | DB-backed **public catalog read** path                                                                           | Implemented + live                                                       |
-| 2 (Pass 2)   | Admin **product / category / inventory** writes (DB-backed + hardened)                                           | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3a)  | **Reviews moderation + rating/review_count sync** (DB-backed)                                                    | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3b+) | Customer review submission (persist); media library (Storage); facets/counts; settings; delete legacy `PRODUCTS` | Not started                                                              |
-| 3            | Server-authoritative checkout, orders, payments                                                                  | Not started                                                              |
-| 4            | Customer accounts / addresses / measurements                                                                     | Not started (localStorage)                                               |
-| 5            | Courier adapters, shipments, webhooks, outbox                                                                    | Not started                                                              |
-| 6            | Banners, CMS, contact, newsletter, reports, settings                                                             | Not started (mock)                                                       |
-| 7            | Hardening, perf/a11y, CI/CD, backups                                                                             | Not started                                                              |
+| Stage        | Scope                                                                               | Status                                                                   |
+| ------------ | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| 1            | Auth, RBAC, CSRF, headers, rate limit, MFA scaffold, audit, owner-safety            | Implemented                                                              |
+| 1.5          | Security closure (4 bugs + A–E + follow-up hardening)                               | **Operationally closed** (migrations applied; `api` exposed; proofs run) |
+| 2 (Pass 1)   | DB-backed **public catalog read** path                                              | Implemented + live                                                       |
+| 2 (Pass 2)   | Admin **product / category / inventory** writes (DB-backed + hardened)              | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3a)  | **Reviews moderation + rating/review_count sync** (DB-backed)                       | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3b)  | **Authenticated customer review submission** (persisted + moderated)                | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3c+) | Media library (Storage); category facets/counts; settings; delete legacy `PRODUCTS` | Not started                                                              |
+| 3            | Server-authoritative checkout, orders, payments                                     | Not started                                                              |
+| 4            | Customer accounts / addresses / measurements                                        | Not started (localStorage)                                               |
+| 5            | Courier adapters, shipments, webhooks, outbox                                       | Not started                                                              |
+| 6            | Banners, CMS, contact, newsletter, reports, settings                                | Not started (mock)                                                       |
+| 7            | Hardening, perf/a11y, CI/CD, backups                                                | Not started                                                              |
 
 ## Migrations (live project xomjxtmhkglhuiccekld)
 
-**21 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
-ledger matches the 21 repo files exactly (versions + names), in order:
+**22 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
+ledger matches the 22 repo files exactly (versions + names), in order:
 
 ```
 …143927 create_private_schema            …623000000 advisor_hardening
@@ -45,7 +47,7 @@ ledger matches the 21 repo files exactly (versions + names), in order:
 …621090000 staff_provisioning_and_owner_safety   …625120000 inventory_stable_error_codes
 …622000000 catalog_schema                …625130000 staff_rls_perf_and_fk_index
 …622120000 stage_1_5_security_closure    …625140000 reviews_moderation_and_rating_sync
-…622130000 owner_safety_advisory_lock
+…622130000 owner_safety_advisory_lock    …626120000 review_submission
 ```
 
 Note: `apply_migration` (MCP) stamps its own version, so after every MCP apply the
@@ -125,29 +127,45 @@ normal removal is **Archive**. Privileged GET handlers set `private, no-store`.
   `guardAdminWrite("reviews.manage")`, granular error toasts. `reviewErrorMessage`
   lives in the isomorphic schema module.
 
+## Stage 2 Pass 3b — customer review submission (done, live)
+
+- **Authenticated only.** `submitReview` (customer server fn) enforces CSRF +
+  a verified signed-in session (`getAuthenticatedIdentity`, else `requiresAuth`)
+  - per-IP/account `reviewSubmit` rate limit, then calls `api.submit_review`.
+- **`api.submit_review`** (SECURITY DEFINER, service-role only): verifies the
+  user, requires the product be **publicly visible**, bounds-checks input,
+  enforces **one review per user per product** (`product_reviews.user_id` +
+  partial unique index), inserts as **`pending`**, writes a `review.submitted`
+  audit. New stable codes: `product_not_visible`/`already_reviewed`/
+  `invalid_rating`/`invalid_author`/`invalid_body`.
+- Submitted reviews flow into the Pass 3a moderation queue; the public rating is
+  untouched until an admin approves. Product-page form persists (was ephemeral).
+- Verified by rolled-back SQL proof + `pass2_db.test.sql` §13 + Vitest.
+
 ## Real vs mock (data flow)
 
 **Real / persistent (DB-backed):** auth, staff RBAC (`staff_profiles`), audit logs;
 public catalog read (`product_*`); **admin product/category writes**; **inventory
-(ledger + stock)**; **review moderation + product rating/review_count**.
+(ledger + stock)**; **review moderation + product rating/review_count**;
+**customer review submission** (authenticated → pending → moderated).
 
-**Still mock / localStorage (later passes):** customer review _submission_ (the
-product-page form is still ephemeral — moderation/sync of existing rows is live);
-media library; category facets/counts (`categories.ts`) + legacy `PRODUCTS` array
-(still exported until a later pass removes it); orders, cart, wishlist, checkout,
-coupons; payments; customer profiles/addresses/measurements; courier; banners, CMS,
-contact, newsletter, reports, settings.
+**Still mock / localStorage (later passes):** media library; category
+facets/counts (`categories.ts`) + legacy `PRODUCTS` array (still exported until a
+later pass removes it); orders, cart, wishlist, checkout, coupons; payments;
+customer profiles/addresses/measurements; courier; banners, CMS, contact,
+newsletter, reports, settings.
 
 ## CI (honest)
 
 `ci.yml` runs (genuinely): frozen Bun install, typecheck, lint, format, test, build,
-**migrate-from-empty** (boots a local Supabase, applies all 21 migrations to a blank
+**migrate-from-empty** (boots a local Supabase, applies all 22 migrations to a blank
 DB), and **DB integration tests** (`pass2_db.test.sql` — stock write-guard,
 set_inventory validation, ledger immutability, FK RESTRICT, first-variant
 conservation, owner-only purge, reorder validation, bulk idempotency, actor-deletion
 restriction, grant verification, post-migration schema proof, the merged RLS policy
 
-- FK index, stable error-code assertions, and review moderation + rating sync). The **linked deployed-DB lint step runs** in CI (using `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, and `SUPABASE_DB_PASSWORD` repository secrets). This lints the deployed live database structure against recommendations.
+- FK index, stable error-code assertions, review moderation + rating sync, and
+  customer submission → pending → approve → rating). The **linked deployed-DB lint step runs** in CI (using `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, and `SUPABASE_DB_PASSWORD` repository secrets). This lints the deployed live database structure against recommendations.
 
 ## Outstanding follow-ups
 
@@ -157,5 +175,5 @@ restriction, grant verification, post-migration schema proof, the merged RLS pol
 4. DB integration tests are automated in CI (`pass2_db.test.sql`); a genuine
    two-connection concurrency test (`concurrency.test.sh`) also runs in the
    `migrations-local` job. True multi-session advisory-lock races are verified.
-5. Stage 2 Pass 3b+: persist customer review submission; media (Storage),
-   facets/counts, settings, remove `PRODUCTS`.
+5. Stage 2 Pass 3c+: media library (Storage), category facets/counts, settings,
+   remove legacy `PRODUCTS` array.

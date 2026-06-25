@@ -177,6 +177,19 @@ export const reviewDeleteSchema = z.object({ id: z.string().uuid() });
 export type ReviewDelete = z.infer<typeof reviewDeleteSchema>;
 
 /**
+ * Customer review submission (Pass 3b). Isomorphic — validates the product-page
+ * form on the client and the server function on the server. Bounds mirror the
+ * api.submit_review DB checks. `code` is the stable product code (Product.id).
+ */
+export const reviewSubmitSchema = z.object({
+  code: z.string().trim().min(1).max(64),
+  authorName: z.string().trim().min(1, "Your name is required.").max(80),
+  rating: z.number().int().min(1, "Select a rating.").max(5),
+  body: z.string().trim().min(1, "Please write a few words.").max(2000),
+});
+export type ReviewSubmit = z.infer<typeof reviewSubmitSchema>;
+
+/**
  * Stable codes raised by the review moderation RPCs (api.set_review_status /
  * api.delete_review), same convention as the inventory codes. Isomorphic so the
  * admin UI can map a thrown code to a message client-side.
@@ -185,6 +198,12 @@ export const REVIEW_ERROR_MESSAGES: Record<string, string> = {
   actor_not_authorized: "Not authorized.",
   review_not_found: "That review no longer exists. Refresh and try again.",
   invalid_status: "Invalid review status.",
+  // Customer submission (Pass 3b)
+  product_not_visible: "This product is not available for review.",
+  already_reviewed: "You have already reviewed this product.",
+  invalid_rating: "Please choose a rating from 1 to 5.",
+  invalid_author: "Please enter your name (up to 80 characters).",
+  invalid_body: "Please write a review (up to 2000 characters).",
   internal_error: "Could not complete the change. Please try again.",
 };
 

@@ -583,5 +583,81 @@ BEGIN
   END LOOP;
 END $$;
 
+-- ============================================================
+-- 13. Customer review submission (Pass 3b)
+-- ============================================================
+-- Customer accounts (auth users without a staff_profiles row).
+INSERT INTO auth.users (id) VALUES
+  ('00000000-0000-0000-0000-0000000000c9'),
+  ('00000000-0000-0000-0000-0000000000ca');
+
+-- One active (reviewable) and one draft (not reviewable) product in active cat-a.
+INSERT INTO public.products (code, slug, name, category_id, price, status)
+  SELECT 'p-sub-a', 'p-sub-a', 'Submittable', id, 100, 'active' FROM public.product_categories WHERE slug = 'cat-a';
+INSERT INTO public.products (code, slug, name, category_id, price, status)
+  SELECT 'p-sub-d', 'p-sub-d', 'Draft', id, 100, 'draft' FROM public.product_categories WHERE slug = 'cat-a';
+
+-- Happy path: submit lands as pending and does NOT change the public rating.
+DO $$ DECLARE v_rating numeric; v_count int; v_pending int; BEGIN
+  PERFORM api.submit_review('p-sub-a', 'Customer C9', 5, 'Beautiful work', '00000000-0000-0000-0000-0000000000c9');
+  SELECT rating, review_count INTO v_rating, v_count FROM public.products WHERE code = 'p-sub-a';
+  IF v_rating <> 0 OR v_count <> 0 THEN
+    RAISE EXCEPTION 'FAIL: pending submission changed rating (r=%, c=%)', v_rating, v_count;
+  END IF;
+  SELECT count(*) INTO v_pending FROM public.product_reviews pr JOIN public.products p ON p.id = pr.product_id
+    WHERE p.code = 'p-sub-a' AND pr.status = 'pending' AND pr.user_id = '00000000-0000-0000-0000-0000000000c9';
+  IF v_pending <> 1 THEN RAISE EXCEPTION 'FAIL: pending review not stored (%)', v_pending; END IF;
+END $$;
+
+-- Stable error codes.
+DO $$ DECLARE got text; BEGIN
+  -- duplicate (same user + product)
+  BEGIN PERFORM api.submit_review('p-sub-a', 'Customer C9', 4, 'again', '00000000-0000-0000-0000-0000000000c9');
+        RAISE EXCEPTION 'FAIL: no raise (duplicate review)';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'already_reviewed' THEN RAISE EXCEPTION 'FAIL: duplicate code=%', got; END IF;
+  END;
+  -- draft product is not reviewable
+  BEGIN PERFORM api.submit_review('p-sub-d', 'Customer CA', 5, 'hi', '00000000-0000-0000-0000-0000000000ca');
+        RAISE EXCEPTION 'FAIL: no raise (draft product)';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'product_not_visible' THEN RAISE EXCEPTION 'FAIL: draft code=%', got; END IF;
+  END;
+  -- invalid rating (valid user so the rating check is reached)
+  BEGIN PERFORM api.submit_review('p-sub-a', 'Customer CA', 9, 'hi', '00000000-0000-0000-0000-0000000000ca');
+        RAISE EXCEPTION 'FAIL: no raise (bad rating)';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'invalid_rating' THEN RAISE EXCEPTION 'FAIL: bad rating code=%', got; END IF;
+  END;
+  -- not signed in (null user)
+  BEGIN PERFORM api.submit_review('p-sub-a', 'X', 5, 'hi', NULL);
+        RAISE EXCEPTION 'FAIL: no raise (null user)';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'actor_not_authorized' THEN RAISE EXCEPTION 'FAIL: null user code=%', got; END IF;
+  END;
+END $$;
+
+-- Approving the submitted review flows into the public rating (5.0 / 1).
+DO $$ DECLARE v_rid uuid; v_rating numeric; v_count int; BEGIN
+  SELECT pr.id INTO v_rid FROM public.product_reviews pr JOIN public.products p ON p.id = pr.product_id
+    WHERE p.code = 'p-sub-a' AND pr.user_id = '00000000-0000-0000-0000-0000000000c9';
+  PERFORM api.set_review_status(v_rid, 'approved', '00000000-0000-0000-0000-0000000000a1');
+  SELECT rating, review_count INTO v_rating, v_count FROM public.products WHERE code = 'p-sub-a';
+  IF v_rating <> 5.0 OR v_count <> 1 THEN
+    RAISE EXCEPTION 'FAIL: after approving submission rating=%, count=%', v_rating, v_count;
+  END IF;
+END $$;
+
+-- Grants: submit_review is service-role only.
+DO $$ BEGIN
+  IF has_function_privilege('anon', 'api.submit_review(text,text,integer,text,uuid)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'api.submit_review(text,text,integer,text,uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL: submit_review executable by anon/authenticated';
+  END IF;
+  IF NOT has_function_privilege('service_role', 'api.submit_review(text,text,integer,text,uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL: service_role lacks EXECUTE on submit_review';
+  END IF;
+END $$;
+
 \echo '--- ALL PASS ---'
 ROLLBACK;

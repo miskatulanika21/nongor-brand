@@ -3,6 +3,7 @@ import {
   REVIEW_STATUSES,
   reviewModerateSchema,
   reviewDeleteSchema,
+  reviewSubmitSchema,
   reviewErrorMessage,
   REVIEW_ERROR_MESSAGES,
 } from "@/lib/catalog-admin.schema";
@@ -54,6 +55,39 @@ describe("reviewErrorMessage", () => {
       expect(msg).not.toContain("SQLERRM");
       expect(msg).not.toContain("violates");
     }
+  });
+});
+
+describe("customer review submission (Pass 3b)", () => {
+  const base = { code: "p1", authorName: "Tahmina A.", rating: 5, body: "Lovely fabric." };
+
+  it("accepts a well-formed submission", () => {
+    expect(reviewSubmitSchema.safeParse(base).success).toBe(true);
+  });
+
+  it("rejects out-of-range rating, empty name/body, oversize body", () => {
+    expect(reviewSubmitSchema.safeParse({ ...base, rating: 0 }).success).toBe(false);
+    expect(reviewSubmitSchema.safeParse({ ...base, rating: 6 }).success).toBe(false);
+    expect(reviewSubmitSchema.safeParse({ ...base, authorName: "" }).success).toBe(false);
+    expect(reviewSubmitSchema.safeParse({ ...base, body: "" }).success).toBe(false);
+    expect(reviewSubmitSchema.safeParse({ ...base, body: "x".repeat(2001) }).success).toBe(false);
+  });
+
+  it("maps the submission error codes to safe messages", () => {
+    expect(reviewErrorMessage("product_not_visible")).toContain("not available");
+    expect(reviewErrorMessage("already_reviewed")).toContain("already reviewed");
+    expect(reviewErrorMessage("invalid_rating")).toContain("1 to 5");
+  });
+
+  it("exposes a submitReview server function", async () => {
+    const api = await import("@/lib/reviews.api");
+    expect(typeof api.submitReview).toBe("function");
+  });
+
+  it("defines a reviewSubmit rate-limit policy", async () => {
+    const { RATE_LIMITS } = await import("@/lib/server/rate-limit.server");
+    expect(RATE_LIMITS.reviewSubmit).toBeDefined();
+    expect(RATE_LIMITS.reviewSubmit.limit).toBeGreaterThan(0);
   });
 });
 

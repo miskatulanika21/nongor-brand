@@ -82,9 +82,13 @@ once the admin write path is DB-backed.
       `api.set_review_status` / `api.delete_review` (service-role, stable codes,
       canonical audit); `admin.reviews.tsx` DB-backed (was mock). Migration
       `20260625140000`.
-- [ ] Pass 3b+ — persist customer review _submission_; Storage media library;
-      DB-backed category counts & color/fabric facets; settings; retire the
-      `PRODUCTS` array.
+- [x] Pass 3b (2026-06-26) — **authenticated customer review submission**:
+      `product_reviews.user_id` + one-per-user-per-product; `api.submit_review`
+      (service-role, visibility + bounds + dedupe, inserts pending, audit);
+      `submitReview` server fn (auth-required + rate-limited); product-page form
+      persists. Migration `20260626120000`.
+- [ ] Pass 3c+ — Storage media library; DB-backed category counts & color/fabric
+      facets; settings; retire the `PRODUCTS` array.
 
 **Exit:** admin changes persist and drive the storefront; no mock array for
 catalog; permissions enforced server-side. (Pass 3+ outstanding.)

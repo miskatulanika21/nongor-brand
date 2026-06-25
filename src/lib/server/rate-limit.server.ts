@@ -50,6 +50,8 @@ export const RATE_LIMITS = {
   staffProvision: { limit: 10, windowSec: 60 * 10 },
   /** Catalog admin writes (products, categories) — higher volume than auth ops. */
   catalogWrite: { limit: 120, windowSec: 60 * 5 },
+  /** Customer review submission — limit spam from a single IP/account. */
+  reviewSubmit: { limit: 5, windowSec: 60 * 10 },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 export type RateLimitAction = keyof typeof RATE_LIMITS;
