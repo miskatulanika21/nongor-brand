@@ -9,8 +9,9 @@ and CI-green. Follow-up patch: stable inventory error codes + staff_profiles RLS
 perf advisors cleared + movement-FK covering index. **Stage 2 Pass 3a: review
 moderation + rating/review_count sync; Pass 3b: authenticated customer review
 submission (persisted + moderated); Pass 3c: DB-backed catalog facets & counts
-(shop filter sidebar).** 23 migrations applied to the live project; remote ledger
-matches the 23 repo files._
+(shop filter sidebar); Pass 3d: DB-backed site settings (announcement bar live +
+audited admin settings).** 24 migrations applied to the live project; remote
+ledger matches the 24 repo files._
 
 State legend: **(1) code complete · (2) migration applied · (3) deployed
 verification complete · (4) operator action pending.**
@@ -26,7 +27,8 @@ verification complete · (4) operator action pending.**
 | 2 (Pass 3a)  | **Reviews moderation + rating/review_count sync** (DB-backed)            | **Implemented + live + CI-green**                                        |
 | 2 (Pass 3b)  | **Authenticated customer review submission** (persisted + moderated)     | **Implemented + live + CI-green**                                        |
 | 2 (Pass 3c)  | **DB-backed catalog facets & counts** (shop filter sidebar)              | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3d+) | Media library (Storage); settings; delete legacy `PRODUCTS` array        | Not started                                                              |
+| 2 (Pass 3d)  | **DB-backed site settings** (announcement bar live; audited admin form)  | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3e+) | Media library (Storage); delete legacy `PRODUCTS` array                  | Not started                                                              |
 | 3            | Server-authoritative checkout, orders, payments                          | Not started                                                              |
 | 4            | Customer accounts / addresses / measurements                             | Not started (localStorage)                                               |
 | 5            | Courier adapters, shipments, webhooks, outbox                            | Not started                                                              |
@@ -35,8 +37,8 @@ verification complete · (4) operator action pending.**
 
 ## Migrations (live project xomjxtmhkglhuiccekld)
 
-**23 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
-ledger matches the 23 repo files exactly (versions + names), in order:
+**24 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
+ledger matches the 24 repo files exactly (versions + names), in order:
 
 ```
 …143927 create_private_schema            …623000000 advisor_hardening
@@ -51,6 +53,7 @@ ledger matches the 23 repo files exactly (versions + names), in order:
 …622120000 stage_1_5_security_closure    …625140000 reviews_moderation_and_rating_sync
 …622130000 owner_safety_advisory_lock    …626120000 review_submission
                                           …626130000 catalog_facets
+                                          …626140000 site_settings
 ```
 
 Note: `apply_migration` (MCP) stamps its own version, so after every MCP apply the
@@ -168,32 +171,61 @@ normal removal is **Archive**. Privileged GET handlers set `private, no-store`.
 - Verified by rolled-back SQL proof + `pass2_db.test.sql` §14 (counts == visible;
   draft + inactive-category rows excluded; grants) + Vitest (268 total).
 
+## Stage 2 Pass 3d — DB-backed site settings (done, live)
+
+- Single-row `public.site_settings` (RLS deny-all, RPC-only — same posture as the
+  inventory tables) with bounded CHECKs covering store/announcement/delivery/
+  contact/policies and **admin-only** payment fields. Three RPCs:
+  - `api.get_public_settings()` — anon/authenticated, jsonb **without** payment
+    secrets (drives the storefront).
+  - `api.get_admin_settings(actor)` — service-role + active-staff, full row.
+  - `api.save_settings(patch, actor)` — service-role + active-staff,
+    **CASE-presence patch** (so a nullable field can be cleared), table CHECKs
+    enforce bounds (a raw out-of-bounds call → 23514 → `invalid_settings`),
+    canonical `settings.updated` audit (records the changed keys) in-txn.
+- **Storefront:** the header announcement bar is now DB-driven — `_site`
+  `beforeLoad` reads `get_public_settings` (in parallel with the session summary)
+  and passes an `AnnouncementState` (`hidden` / `custom` / `fallback`) to
+  `SiteHeader`. On a read failure or empty text it keeps the static line, so the
+  bar never vanishes on a transient error.
+- **Admin:** `admin.settings.tsx` is now a real DB-backed, persisting form (Store /
+  Payment / Delivery / Contact / Announcement / Policies) behind
+  `guardAdminWrite("settings.manage")`; payment fields are admin-only.
+  `settings.schema.ts` is the isomorphic type/validation/normalisation module.
+- `brand.ts` remains the static default (deeply embedded in SSR meta / JSON-LD).
+  Delivery/contact/policy values persist + audit + appear in the public
+  projection; checkout pricing still reads `checkout-ui.ts` until Stage 3 consumes
+  them. Verified by rolled-back SQL proof + `pass2_db.test.sql` §15 + Vitest.
+
 ## Real vs mock (data flow)
 
 **Real / persistent (DB-backed):** auth, staff RBAC (`staff_profiles`), audit logs;
 public catalog read (`product_*`); **admin product/category writes**; **inventory
 (ledger + stock)**; **review moderation + product rating/review_count**;
 **customer review submission** (authenticated → pending → moderated); **shop
-filter facets + category counts** (`api.catalog_facets()`).
+filter facets + category counts** (`api.catalog_facets()`); **site settings +
+announcement bar** (`api.get_public_settings` / `save_settings`).
 
 **Still mock / localStorage (later passes):** media library; the legacy
 `PRODUCTS` array (still exported for the admin dashboard / media-library preview
 and the Stage 3/5 order mocks, until those passes remove it); orders, cart,
 wishlist, checkout, coupons; payments; customer profiles/addresses/measurements;
-courier; banners, CMS, contact, newsletter, reports, settings.
+courier; banners, CMS, contact, newsletter, reports. (Settings persistence is now
+real; delivery/contact values are surfaced for Stage 3 to consume.)
 
 ## CI (honest)
 
 `ci.yml` runs (genuinely): frozen Bun install, typecheck, lint, format, test, build,
-**migrate-from-empty** (boots a local Supabase, applies all 23 migrations to a blank
+**migrate-from-empty** (boots a local Supabase, applies all 24 migrations to a blank
 DB), and **DB integration tests** (`pass2_db.test.sql` — stock write-guard,
 set_inventory validation, ledger immutability, FK RESTRICT, first-variant
 conservation, owner-only purge, reorder validation, bulk idempotency, actor-deletion
 restriction, grant verification, post-migration schema proof, the merged RLS policy
 
 - FK index, stable error-code assertions, review moderation + rating sync,
-  customer submission → pending → approve → rating, and catalog-facet counts +
-  visibility filtering). The **linked deployed-DB lint step runs** in CI (using `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, and `SUPABASE_DB_PASSWORD` repository secrets). This lints the deployed live database structure against recommendations.
+  customer submission → pending → approve → rating, catalog-facet counts +
+  visibility filtering, and site-settings public/admin projection + audit +
+  single-row invariant + grants). The **linked deployed-DB lint step runs** in CI (using `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, and `SUPABASE_DB_PASSWORD` repository secrets). This lints the deployed live database structure against recommendations.
 
 ## Outstanding follow-ups
 
@@ -203,5 +235,5 @@ restriction, grant verification, post-migration schema proof, the merged RLS pol
 4. DB integration tests are automated in CI (`pass2_db.test.sql`); a genuine
    two-connection concurrency test (`concurrency.test.sh`) also runs in the
    `migrations-local` job. True multi-session advisory-lock races are verified.
-5. Stage 2 Pass 3d+: media library (Storage), settings, remove the legacy
-   `PRODUCTS` array (catalog facets/counts landed in Pass 3c).
+5. Stage 2 Pass 3e+: media library (Storage), remove the legacy `PRODUCTS`
+   array (catalog facets/counts landed in Pass 3c; site settings in Pass 3d).
