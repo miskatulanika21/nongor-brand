@@ -93,10 +93,16 @@ once the admin write path is DB-backed.
       `getCatalogFacets` server fn; `_site.shop.tsx` sidebar renders DB facets;
       `rollupCategoryCounts` collapses cosmetics types; removed hard-coded
       `COLORS/FABRICS/OCCASIONS` + `categoryCount`. Migration `20260626130000`.
-- [ ] Pass 3d+ — Storage media library; settings; retire the `PRODUCTS` array.
+- [x] Pass 3d (2026-06-26) — **DB-backed site settings**: single-row
+      `site_settings` (RPC-only) + `api.get_public_settings` (anon, no secrets) /
+      `api.get_admin_settings` / `api.save_settings` (service-role + active-staff,
+      CASE-presence patch, audited); storefront announcement bar reads the DB
+      (`_site` beforeLoad → `SiteHeader`); `admin.settings.tsx` persists via
+      `guardAdminWrite("settings.manage")`. Migration `20260626140000`.
+- [ ] Pass 3e+ — Storage media library; retire the `PRODUCTS` array.
 
 **Exit:** admin changes persist and drive the storefront; no mock array for
-catalog; permissions enforced server-side. (Pass 3d+ outstanding.)
+catalog; permissions enforced server-side. (Pass 3e+ outstanding.)
 
 ## Stage 3 — Checkout & orders
 

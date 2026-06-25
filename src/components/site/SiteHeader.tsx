@@ -31,6 +31,7 @@ import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { BRAND, formatBDT, whatsappConfigured } from "@/lib/brand";
 import { FREE_DELIVERY_THRESHOLD } from "@/lib/checkout-ui";
+import type { AnnouncementState } from "@/lib/settings.schema";
 import { PRODUCT_CATEGORIES } from "@/lib/categories";
 import { useIsLoggedIn } from "@/lib/auth-state";
 
@@ -54,12 +55,19 @@ const TOP_NAV: TopNavItem[] = [
 
 const ANNOUNCE_KEY = "nongorr.announce.dismissed";
 
-export function SiteHeader({ sessionSummary }: { sessionSummary?: SessionSummary }) {
+export function SiteHeader({
+  sessionSummary,
+  announcement,
+}: {
+  sessionSummary?: SessionSummary;
+  announcement?: AnnouncementState;
+}) {
   const { cartCount, wishlist } = useStore();
   const [open, setOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [announceOpen, setAnnounceOpen] = useState(true);
+  const annState: AnnouncementState = announcement ?? { mode: "fallback" };
   const headerRef = useRef<HTMLElement | null>(null);
 
   // Use session summary if provided, otherwise fall back to the client-side hook
@@ -139,11 +147,23 @@ export function SiteHeader({ sessionSummary }: { sessionSummary?: SessionSummary
           : "border-border/50 bg-background/70 backdrop-blur-md",
       )}
     >
-      {announceOpen && (
+      {announceOpen && annState.mode !== "hidden" && (
         <div className="relative bg-gradient-hero text-primary-foreground">
           <p className="animate-fade-in px-9 py-1.5 text-center text-[0.68rem] font-medium leading-tight tracking-wide sm:text-xs">
-            ✦ Free delivery over {formatBDT(FREE_DELIVERY_THRESHOLD)} · Custom-size kurti available
-            ✦
+            {annState.mode === "custom" ? (
+              annState.link ? (
+                <a href={annState.link} className="underline-offset-2 hover:underline">
+                  {annState.text}
+                </a>
+              ) : (
+                annState.text
+              )
+            ) : (
+              <>
+                ✦ Free delivery over {formatBDT(FREE_DELIVERY_THRESHOLD)} · Custom-size kurti
+                available ✦
+              </>
+            )}
           </p>
           <button
             type="button"

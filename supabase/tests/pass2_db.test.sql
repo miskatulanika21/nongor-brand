@@ -716,5 +716,80 @@ DO $$ BEGIN
     RAISE EXCEPTION 'FAIL: service_role lacks EXECUTE on catalog_facets'; END IF;
 END $$;
 
+-- ============================================================
+-- 15. Site settings (Pass 3d)
+-- ============================================================
+DO $$
+DECLARE pub jsonb; adm jsonb; got text; v_keys jsonb;
+BEGIN
+  -- public read excludes payment secrets
+  pub := api.get_public_settings();
+  IF pub ? 'bkash_number' OR pub ? 'nagad_number' OR pub ? 'payment_instructions' THEN
+    RAISE EXCEPTION 'FAIL: public settings leaked a payment field';
+  END IF;
+  IF NOT (pub ? 'announcement_text') THEN RAISE EXCEPTION 'FAIL: public missing announcement_text'; END IF;
+
+  -- admin read rejects a non-staff actor
+  BEGIN PERFORM api.get_admin_settings(gen_random_uuid());
+        RAISE EXCEPTION 'FAIL: admin read allowed non-staff';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'actor_not_authorized' THEN RAISE EXCEPTION 'FAIL: admin read code=%', got; END IF;
+  END;
+
+  -- save (owner a1): set announcement + a payment secret + a fee; clear tagline
+  PERFORM api.save_settings(jsonb_build_object(
+    'announcement_text', 'Test bar', 'announcement_enabled', true,
+    'bkash_number', '01711111111', 'delivery_fee_dhaka', 95, 'tagline', null
+  ), '00000000-0000-0000-0000-0000000000a1');
+
+  adm := api.get_admin_settings('00000000-0000-0000-0000-0000000000a1');
+  IF adm->>'bkash_number' <> '01711111111' THEN RAISE EXCEPTION 'FAIL: bkash not saved'; END IF;
+  IF (adm->>'delivery_fee_dhaka')::int <> 95 THEN RAISE EXCEPTION 'FAIL: dhaka fee not saved'; END IF;
+  IF adm->>'tagline' IS NOT NULL THEN RAISE EXCEPTION 'FAIL: tagline not cleared'; END IF;
+
+  pub := api.get_public_settings();
+  IF pub->>'announcement_text' <> 'Test bar' THEN RAISE EXCEPTION 'FAIL: public announcement not updated'; END IF;
+  IF pub ? 'bkash_number' THEN RAISE EXCEPTION 'FAIL: public leaked bkash after save'; END IF;
+
+  -- audit row recorded the changed keys
+  SELECT metadata->'keys' INTO v_keys FROM public.audit_logs
+    WHERE action = 'settings.updated' ORDER BY created_at DESC LIMIT 1;
+  IF v_keys IS NULL OR NOT (v_keys @> '["bkash_number"]'::jsonb) THEN
+    RAISE EXCEPTION 'FAIL: settings audit keys missing (%)', v_keys; END IF;
+
+  -- save rejects a non-staff actor
+  BEGIN PERFORM api.save_settings(jsonb_build_object('store_name', 'X'), gen_random_uuid());
+        RAISE EXCEPTION 'FAIL: save allowed non-staff';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'actor_not_authorized' THEN RAISE EXCEPTION 'FAIL: save code=%', got; END IF;
+  END;
+
+  -- out-of-bounds value rejected by the table CHECK constraint
+  BEGIN PERFORM api.save_settings(jsonb_build_object('delivery_fee_dhaka', -1), '00000000-0000-0000-0000-0000000000a1');
+        RAISE EXCEPTION 'FAIL: negative fee not rejected';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+END $$;
+
+-- Single-row invariant: id must be 1.
+DO $$ DECLARE ok boolean := false; BEGIN
+  BEGIN INSERT INTO public.site_settings (id) VALUES (2);
+  EXCEPTION WHEN OTHERS THEN ok := true; END;
+  IF NOT ok THEN RAISE EXCEPTION 'FAIL: site_settings allowed a second row'; END IF;
+END $$;
+
+-- Grants: public read open to anon/authenticated; admin read + save service-role only.
+DO $$ BEGIN
+  IF NOT has_function_privilege('anon', 'api.get_public_settings()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL: anon lacks EXECUTE on get_public_settings'; END IF;
+  IF has_function_privilege('anon', 'api.save_settings(jsonb,uuid)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'api.save_settings(jsonb,uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL: save_settings executable by anon/authenticated'; END IF;
+  IF has_function_privilege('anon', 'api.get_admin_settings(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL: get_admin_settings executable by anon'; END IF;
+  IF NOT has_function_privilege('service_role', 'api.save_settings(jsonb,uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL: service_role lacks EXECUTE on save_settings'; END IF;
+END $$;
+
 \echo '--- ALL PASS ---'
 ROLLBACK;

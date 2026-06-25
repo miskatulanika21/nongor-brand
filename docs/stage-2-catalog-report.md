@@ -247,3 +247,39 @@ catalog. Migration `20260626130000` makes it a database read.
 - **Deferred (Pass 3d):** Storage media library; settings; retire the legacy
   `PRODUCTS` array (still bound to the admin dashboard / media-library preview and
   the Stage 3/5 order mocks).
+
+## 13. Stage 2 Pass 3d — DB-backed site settings (2026-06-26)
+
+The admin Settings page and the storefront announcement bar were mock/static.
+Migration `20260626140000` makes them a database read/write.
+
+- **`public.site_settings`** — a single-row table (`id smallint PK CHECK (id = 1)`,
+  seeded) with bounded CHECK constraints covering store / announcement / delivery
+  / contact / policies and **admin-only** payment fields (`bkash_number`,
+  `nagad_number`, `payment_instructions`). RLS is enabled with **no policies**
+  (deny-all): every access is via a SECURITY DEFINER `api.*` RPC, the same posture
+  as the inventory tables.
+- **RPCs:** `api.get_public_settings()` (anon/authenticated; jsonb projection that
+  **omits** the payment fields); `api.get_admin_settings(actor)` (service-role +
+  active-staff; full row); `api.save_settings(patch, actor)` (service-role +
+  active-staff; a **CASE-presence** patch so only supplied keys change and a
+  present-null clears a nullable column; bounds enforced by the table CHECKs — a
+  raw out-of-bounds call surfaces as `23514` → `invalid_settings`; canonical
+  `settings.updated` audit recording the changed keys, in the same transaction).
+- **App:** `settings.schema.ts` (isomorphic types + `settingsSaveSchema` mirroring
+  the CHECKs, normalisation, and `announcementState`); `settings.server.ts`
+  (`fetchPublicSettings` via the anon client, `fetchAdminSettings`/`saveSettings`
+  via the service-role client, `SettingsError`); `settings.api.ts`
+  (`getPublicSettings`, `loadAdminSettings`, `saveSettings` behind
+  `guardAdminWrite("settings.manage")`). The storefront announcement bar reads the
+  DB (`_site` `beforeLoad` → `SiteHeader`, with a static fallback so it never
+  vanishes on a transient failure); `admin.settings.tsx` is a real persisting
+  form. `brand.ts` stays the static default for the deeply-embedded SSR
+  meta/JSON-LD.
+- **Verification:** rolled-back SQL proof (public projection excludes payment;
+  non-staff rejected; save updates + clears + audits; bounds enforced; grants) +
+  `pass2_db.test.sql` §15 (same, plus the single-row invariant) + 12 Vitest specs.
+  Full `check` green (**280 tests**). 24 migrations; ledger matches; no advisor
+  regression.
+- **Deferred (Pass 3e):** Storage media library; retire the legacy `PRODUCTS`
+  array.

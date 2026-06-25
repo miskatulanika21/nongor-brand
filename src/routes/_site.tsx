@@ -8,6 +8,8 @@ import { MessageCircle } from "lucide-react";
 import { BRAND, whatsappConfigured } from "@/lib/brand";
 import { NotFoundPage } from "@/components/NotFoundPage";
 import { getSessionSummary } from "@/lib/auth.api";
+import { getPublicSettings } from "@/lib/settings.api";
+import { announcementState, type AnnouncementState } from "@/lib/settings.schema";
 
 export const Route = createFileRoute("/_site")({
   component: SiteLayout,
@@ -21,24 +23,32 @@ export const Route = createFileRoute("/_site")({
     ],
   }),
   beforeLoad: async () => {
-    // Load session summary for header/menu role display.
-    // This is NOT authorization — just UI hints.
-    const sessionSummary = await getSessionSummary();
-    return { sessionSummary };
+    // Load session summary for header/menu role display (NOT authorization —
+    // just UI hints) and the DB-backed announcement bar, in parallel.
+    const [sessionSummary, settings] = await Promise.all([
+      getSessionSummary(),
+      getPublicSettings(),
+    ]);
+    return { sessionSummary, announcement: announcementState(settings) };
   },
 });
 
 function SiteLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isAuthRoute = pathname === "/login";
-  const { sessionSummary } = useRouteContext({ from: "/_site" }) as {
+  const { sessionSummary, announcement } = useRouteContext({ from: "/_site" }) as {
     sessionSummary: { isAuthenticated: boolean; designation: string; hasAdminAccess: boolean };
+    announcement: AnnouncementState;
   };
 
   return (
     <StoreProvider>
       <div className="flex min-h-screen flex-col">
-        {isAuthRoute ? <AuthHeader /> : <SiteHeader sessionSummary={sessionSummary} />}
+        {isAuthRoute ? (
+          <AuthHeader />
+        ) : (
+          <SiteHeader sessionSummary={sessionSummary} announcement={announcement} />
+        )}
         <main className="flex-1">
           <Outlet />
         </main>
