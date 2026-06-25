@@ -90,6 +90,17 @@ async function messageFromError(e: unknown): Promise<string> {
   return "Could not complete the change. Please try again.";
 }
 
+/**
+ * Map an inventory RPC failure to a safe, granular message. InventoryError
+ * carries a stable code raised by the DB; everything else collapses to generic.
+ */
+async function messageFromInventoryError(e: unknown): Promise<string> {
+  const { InventoryError } = await import("@/lib/server/catalog-admin.server");
+  const { inventoryErrorMessage } = await import("@/lib/catalog-admin.schema");
+  if (e instanceof InventoryError) return inventoryErrorMessage(e.code);
+  return "Could not complete the change. Please try again.";
+}
+
 // ---- Product writes ---------------------------------------------------------
 
 export const saveProduct = createServerFn({ method: "POST" })
@@ -255,7 +266,7 @@ export const adjustInventory = createServerFn({ method: "POST" })
       });
       return { success: true as const, total: res.total };
     } catch (e) {
-      return { success: false as const, error: await messageFromError(e) };
+      return { success: false as const, error: await messageFromInventoryError(e) };
     }
   });
 
@@ -273,7 +284,7 @@ export const bulkAdjustInventory = createServerFn({ method: "POST" })
       const result = await repo.bulkSetInventory(data.items, g.actorId, data.opKey);
       return { success: true as const, result };
     } catch (e) {
-      return { success: false as const, error: await messageFromError(e) };
+      return { success: false as const, error: await messageFromInventoryError(e) };
     }
   });
 
@@ -296,7 +307,7 @@ export const addVariant = createServerFn({ method: "POST" })
       const result = await repo.addProductVariant(data.code, data.size, g.actorId);
       return { success: true as const, result };
     } catch (e) {
-      return { success: false as const, error: await messageFromError(e) };
+      return { success: false as const, error: await messageFromInventoryError(e) };
     }
   });
 
@@ -317,7 +328,7 @@ export const removeVariant = createServerFn({ method: "POST" })
       const result = await repo.removeProductVariant(data.code, data.size, g.actorId);
       return { success: true as const, result };
     } catch (e) {
-      return { success: false as const, error: await messageFromError(e) };
+      return { success: false as const, error: await messageFromInventoryError(e) };
     }
   });
 

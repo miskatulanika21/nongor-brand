@@ -125,7 +125,7 @@ psql "$DB_URL" -t -A -c \
     echo "FAIL: conflicting payload was not rejected"
     PASS=false
   } || {
-    if grep -qi "already used" /tmp/conc_conflict.txt; then
+    if grep -qiE "idempotency_key_reused|already used" /tmp/conc_conflict.txt; then
       echo "correctly rejected: payload conflict detected"
     else
       echo "rejected, but unexpected error message:"

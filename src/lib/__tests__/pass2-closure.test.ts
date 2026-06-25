@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { inventoryAdjustSchema, bulkInventorySchema } from "@/lib/catalog-admin.schema";
+import {
+  bulkInventorySchema,
+  inventoryErrorMessage,
+  INVENTORY_ERROR_MESSAGES,
+} from "@/lib/catalog-admin.schema";
 
 /**
  * Stage 2 Pass-2 closure tests: inventory integrity contracts.
@@ -41,8 +45,7 @@ describe("variant add/remove input validation", () => {
 // ---------- BulkInventoryResult uses errorCode, not error ----------------------
 
 describe("BulkInventoryResult contract", () => {
-  it("inventoryErrorMessage maps known codes", async () => {
-    const { inventoryErrorMessage } = await import("@/lib/server/catalog-admin.server");
+  it("inventoryErrorMessage maps known codes", () => {
     expect(inventoryErrorMessage("product_not_found")).toBe("Product not found.");
     expect(inventoryErrorMessage("variant_not_empty")).toBe(
       "Set the variant stock to 0 before removing it.",
@@ -50,42 +53,43 @@ describe("BulkInventoryResult contract", () => {
     expect(inventoryErrorMessage("idempotency_key_reused")).toContain("already used");
   });
 
-  it("inventoryErrorMessage returns generic for unknown codes", async () => {
-    const { inventoryErrorMessage } = await import("@/lib/server/catalog-admin.server");
+  it("maps the codes newly added for single-op + bulk top-level errors", () => {
+    expect(inventoryErrorMessage("note_too_long")).toContain("Note is too long");
+    expect(inventoryErrorMessage("op_key_required")).toContain("operation key");
+    expect(inventoryErrorMessage("items_invalid")).toBe("Invalid batch payload.");
+  });
+
+  it("inventoryErrorMessage returns generic for unknown codes", () => {
     expect(inventoryErrorMessage("unknown_code_xyz")).toContain("try again");
   });
 
-  it("inventoryErrorMessage handles undefined", async () => {
-    const { inventoryErrorMessage } = await import("@/lib/server/catalog-admin.server");
+  it("inventoryErrorMessage handles undefined / null", () => {
     expect(inventoryErrorMessage(undefined)).toContain("unknown error");
+    expect(inventoryErrorMessage(null)).toContain("unknown error");
+  });
+
+  it("is exported from the (client-safe) schema module — usable in the admin UI", () => {
+    expect(typeof inventoryErrorMessage).toBe("function");
+  });
+});
+
+// ---------- InventoryError carries a stable code -------------------------------
+
+describe("InventoryError", () => {
+  it("exposes a .code mapped by inventoryErrorMessage", async () => {
+    const { InventoryError } = await import("@/lib/server/catalog-admin.server");
+    const e = new InventoryError("variant_not_found");
+    expect(e).toBeInstanceOf(Error);
+    expect(e.code).toBe("variant_not_found");
+    expect(inventoryErrorMessage(e.code)).toBe("That size variant does not exist.");
   });
 });
 
 // ---------- No raw SQL error exposure ------------------------------------------
 
 describe("no raw SQL error exposure", () => {
-  it("inventoryErrorMessage never returns SQLERRM content", async () => {
-    const { inventoryErrorMessage } = await import("@/lib/server/catalog-admin.server");
-    // Every known code should return a human message, not a raw error
-    const codes = [
-      "product_not_found",
-      "variant_not_found",
-      "variant_required",
-      "variant_not_allowed",
-      "invalid_quantity",
-      "invalid_reason",
-      "no_change",
-      "duplicate_target",
-      "idempotency_key_reused",
-      "actor_not_authorized",
-      "batch_too_large",
-      "batch_empty",
-      "variant_not_empty",
-      "size_already_exists",
-      "invalid_size",
-      "internal_error",
-    ];
-    for (const code of codes) {
+  it("every known code returns a safe human message, never raw SQL", () => {
+    for (const code of Object.keys(INVENTORY_ERROR_MESSAGES)) {
       const msg = inventoryErrorMessage(code);
       expect(msg).toBeTruthy();
       expect(msg).not.toContain("SQLERRM");
