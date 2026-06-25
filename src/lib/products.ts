@@ -385,16 +385,10 @@ export const CATEGORIES = [
   { name: "Serum", slug: "serum", count: 1 },
 ];
 
-export const COLORS = ["Maroon", "Ivory", "Emerald", "Sage", "Rose", "Blush", "Beige"];
-export const FABRICS = [
-  "Handloom Cotton",
-  "Cotton Lawn",
-  "Cotton",
-  "Handwoven Jamdani",
-  "Lawn Cotton",
-  "Viscose",
-];
-export const OCCASIONS = ["Festive", "Eid", "Casual", "Wedding", "Party"];
+// NOTE: the shop filter facets (colours / fabrics / occasions / category counts)
+// are DB-backed as of Stage 2 Pass 3c — see `api.catalog_facets()` and
+// `src/lib/catalog-facets.ts`. The previous hard-coded COLORS/FABRICS/OCCASIONS
+// arrays were removed so the sidebar can never drift from the live catalog.
 
 export function getProduct(slug: string): Product | undefined {
   return PRODUCTS.find((p) => p.slug === slug);

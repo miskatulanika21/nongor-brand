@@ -9,6 +9,7 @@
  *   - listProductCards     → grids / filters / search / home (lean cards)
  *   - getProductDetail     → product detail page (full record)
  *   - getProductCardsByCodes → wishlist resolution by legacy code
+ *   - getCatalogFacets     → shop filter sidebar (DB-computed facets/counts)
  */
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
@@ -16,6 +17,11 @@ import { z } from "zod";
 export const listProductCards = createServerFn({ method: "GET" }).handler(async () => {
   const { fetchProductCards } = await import("@/lib/server/catalog.server");
   return fetchProductCards();
+});
+
+export const getCatalogFacets = createServerFn({ method: "GET" }).handler(async () => {
+  const { fetchCatalogFacets } = await import("@/lib/server/catalog.server");
+  return fetchCatalogFacets();
 });
 
 export const getProductDetail = createServerFn({ method: "GET" })

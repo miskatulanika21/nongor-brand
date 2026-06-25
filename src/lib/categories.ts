@@ -1,9 +1,12 @@
-import { PRODUCTS, type Product, type ProductType } from "@/lib/products";
+import type { Product, ProductType } from "@/lib/products";
+import type { CatalogFacets } from "@/lib/catalog-facets";
 
 /**
  * Single UI mapping layer for customer-facing categories.
- * NOTE: product data (PRODUCTS / product.type) is the source of truth and is
- * never mutated here — this only maps display categories/filters onto it.
+ * NOTE: product data (product.type) is the source of truth and is never mutated
+ * here — this only maps display categories/filters onto it. Category counts come
+ * from the database via `api.catalog_facets()` (see `rollupCategoryCounts`), not
+ * from any in-memory product array.
  */
 
 export type CategorySlug = "kurti" | "saree" | "three-piece" | "girls-dress" | "cosmetics";
@@ -65,19 +68,35 @@ export function matchesFilter(p: Product, filter: string): boolean {
   return true;
 }
 
-/** Live count of products in a customer-facing category. */
-export function categoryCount(category: string): number {
-  return PRODUCTS.filter((p) => matchesCategory(p, category)).length;
-}
-
-/** Primary categories with computed counts, for filter sidebars. */
-export const CATEGORY_FILTERS: { name: string; slug: CategorySlug; count: number }[] = [
-  { name: "Kurti", slug: "kurti", count: categoryCount("kurti") },
-  { name: "Saree", slug: "saree", count: categoryCount("saree") },
-  { name: "Three Piece", slug: "three-piece", count: categoryCount("three-piece") },
-  { name: "Girls Dress", slug: "girls-dress", count: categoryCount("girls-dress") },
-  { name: "Cosmetics", slug: "cosmetics", count: categoryCount("cosmetics") },
+/** Customer-facing primary categories (slug + label) for filter sidebars. */
+export const CATEGORY_FILTERS: { name: string; slug: CategorySlug }[] = [
+  { name: "Kurti", slug: "kurti" },
+  { name: "Saree", slug: "saree" },
+  { name: "Three Piece", slug: "three-piece" },
+  { name: "Girls Dress", slug: "girls-dress" },
+  { name: "Cosmetics", slug: "cosmetics" },
 ];
+
+/**
+ * Roll the physical DB category counts from `api.catalog_facets()` up onto the
+ * five customer-facing categories. The three cosmetics product types
+ * (cosmetics / makeup / serum) collapse into the single "Cosmetics" facet, so
+ * their counts are summed. Categories with no visible products report 0.
+ */
+export function rollupCategoryCounts(facets: CatalogFacets): Record<CategorySlug, number> {
+  const counts: Record<CategorySlug, number> = {
+    kurti: 0,
+    saree: 0,
+    "three-piece": 0,
+    "girls-dress": 0,
+    cosmetics: 0,
+  };
+  for (const c of facets.categories) {
+    const slug = COSMETIC_TYPES.includes(c.slug as ProductType) ? "cosmetics" : c.slug;
+    if (slug in counts) counts[slug as CategorySlug] += c.count;
+  }
+  return counts;
+}
 
 /**
  * Physical product categories only (no discovery filters). Derived from the

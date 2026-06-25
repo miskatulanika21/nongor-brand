@@ -1,9 +1,10 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { COLORS, FABRICS, OCCASIONS } from "@/lib/products";
-import { listProductCards } from "@/lib/catalog.api";
+import { listProductCards, getCatalogFacets } from "@/lib/catalog.api";
+import { facetValues } from "@/lib/catalog-facets";
 import {
   CATEGORY_FILTERS,
+  rollupCategoryCounts,
   matchesCategory,
   matchesFilter,
   categoryLabel,
@@ -90,7 +91,10 @@ export const Route = createFileRoute("/_site/shop")({
       },
     ],
   }),
-  loader: () => listProductCards(),
+  loader: async () => {
+    const [products, facets] = await Promise.all([listProductCards(), getCatalogFacets()]);
+    return { products, facets };
+  },
   component: Shop,
 });
 
@@ -99,7 +103,11 @@ function toggle<T>(arr: T[], v: T): T[] {
 }
 
 function Shop() {
-  const products = Route.useLoaderData();
+  const { products, facets } = Route.useLoaderData();
+  const categoryCounts = useMemo(() => rollupCategoryCounts(facets), [facets]);
+  const colorOptions = useMemo(() => facetValues(facets.colors), [facets]);
+  const fabricOptions = useMemo(() => facetValues(facets.fabrics), [facets]);
+  const occasionOptions = useMemo(() => facetValues(facets.occasions), [facets]);
   const search = Route.useSearch();
   const category = search.category ?? "";
   const q = search.q ?? "";
@@ -316,7 +324,7 @@ function Shop() {
                 checked={cats.includes(c.slug)}
                 onChange={() => setCats(toggle(cats, c.slug))}
                 label={`${c.name}`}
-                sub={c.count}
+                sub={categoryCounts[c.slug]}
               />
             ))}
           </AccordionContent>
@@ -338,7 +346,7 @@ function Shop() {
         <AccordionItem value="color">
           <AccordionTrigger className="text-sm font-medium">Color</AccordionTrigger>
           <AccordionContent className="space-y-2.5">
-            {COLORS.map((c) => (
+            {colorOptions.map((c) => (
               <Row
                 key={c}
                 id={`col-${c}`}
@@ -353,7 +361,7 @@ function Shop() {
         <AccordionItem value="fabric">
           <AccordionTrigger className="text-sm font-medium">Fabric / Material</AccordionTrigger>
           <AccordionContent className="space-y-2.5">
-            {FABRICS.map((f) => (
+            {fabricOptions.map((f) => (
               <Row
                 key={f}
                 id={`f-${f}`}
@@ -368,7 +376,7 @@ function Shop() {
         <AccordionItem value="occasion">
           <AccordionTrigger className="text-sm font-medium">Occasion</AccordionTrigger>
           <AccordionContent className="space-y-2.5">
-            {OCCASIONS.map((o) => (
+            {occasionOptions.map((o) => (
               <Row
                 key={o}
                 id={`o-${o}`}

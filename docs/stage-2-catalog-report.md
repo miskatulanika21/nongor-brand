@@ -213,3 +213,37 @@ NULL` + partial unique index `(product_id, user_id) WHERE user_id IS NOT NULL`
     matches; no advisor regression.
 - **Deferred (Pass 3c):** Storage media library; DB-backed category facets/counts;
   settings; retire the legacy `PRODUCTS` array.
+
+## 12. Stage 2 Pass 3c — DB-backed catalog facets & counts (2026-06-26)
+
+The shop filter sidebar (category counts, colours, fabrics, occasions) was
+computed from the legacy mock `PRODUCTS` array and so drifted from the live
+catalog. Migration `20260626130000` makes it a database read.
+
+- **`api.catalog_facets()`** (`STABLE`, `SECURITY DEFINER`, `search_path=''`):
+  aggregates over the **publicly-visible** catalog (`status='active'` AND the
+  product's category is active — the predicate is explicit, so the result is
+  identical whether the caller is anon under RLS or the superuser psql CI role
+  that bypasses it). Returns jsonb: `categories` as per-DB-category
+  `{slug,name,count}` (only those with visible products), and `colors`/`fabrics`/
+  `occasions` as `{value,count}` ordered by frequency then value. It is a public
+  read: `REVOKE…FROM public; GRANT EXECUTE TO anon, authenticated, service_role`
+  (contrast the service-role-only write RPCs).
+- **App:** `fetchCatalogFacets` (`catalog.server.ts`, anon client →
+  `.schema("api").rpc("catalog_facets")`) + `getCatalogFacets` server fn;
+  `_site.shop.tsx` loads cards + facets in parallel and renders the DB facets.
+  `catalog-facets.ts` is the isomorphic module — `CatalogFacets` type +
+  `normalizeFacets` (defensive: a malformed jsonb payload degrades to an empty
+  facet set, never crashes the loader) + `facetValues`. `rollupCategoryCounts`
+  (in `categories.ts`) collapses the three cosmetics product types
+  (cosmetics/makeup/serum) into the single customer-facing "Cosmetics" facet.
+  The hard-coded `COLORS`/`FABRICS`/`OCCASIONS` arrays and the `PRODUCTS`-derived
+  `categoryCount` were removed.
+- **Verification:** rolled-back SQL proof (live counts: kurti 3 / total 10;
+  colours 8, fabrics 7, occasions 5) + `pass2_db.test.sql` §14 (active facet
+  category counts only its visible products, draft + inactive-category rows
+  excluded, colour/fabric/occasion counts, grants) + 7 Vitest specs. Full `check`
+  green (**268 tests**). 23 migrations; ledger matches; no advisor regression.
+- **Deferred (Pass 3d):** Storage media library; settings; retire the legacy
+  `PRODUCTS` array (still bound to the admin dashboard / media-library preview and
+  the Stage 3/5 order mocks).
