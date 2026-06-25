@@ -1,33 +1,12 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  AdminHeader,
-  PreviewNotice,
-  MockBadge,
-  ViewToggle,
-  createPreviewId,
-} from "@/components/admin/AdminUI";
-import { PRODUCTS } from "@/lib/products";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { useState } from "react";
+import { AdminHeader, ViewToggle } from "@/components/admin/AdminUI";
+import { listMedia, requestMediaUpload, registerMedia, removeMedia } from "@/lib/media.api";
+import { validateMediaFile, MEDIA_BUCKET, type MediaAsset } from "@/lib/media.schema";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-  SheetFooter,
-} from "@/components/ui/sheet";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,193 +17,163 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { LayoutGrid, List, Search, Upload, Trash2, X } from "lucide-react";
+import { LayoutGrid, List, Search, Upload, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/admin/media-library")({
   head: () => ({ meta: [{ title: "Media Library · Nongorr Admin" }] }),
+  loader: () => listMedia(),
   component: MediaLibraryAdmin,
 });
 
-interface MediaAsset {
-  id: string;
-  url: string;
-  name: string;
-  source: "catalog" | "local";
-  usedBy: string[];
-  fileSize?: string;
-  fileType?: string;
-  dimensions?: string;
+/** Read an image's natural dimensions client-side (best-effort). */
+function readDimensions(file: File): Promise<{ width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => {
+      resolve(null);
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  });
 }
 
-function buildAssets(): MediaAsset[] {
-  const urls = Array.from(new Set(PRODUCTS.flatMap((p) => [p.image, ...(p.gallery ?? [])])));
-  return urls.map((url, i) => ({
-    id: `catalog-${i}`,
-    url,
-    name: url.split("/").pop()?.split("?")[0] ?? `asset-${i}`,
-    source: "catalog",
-    usedBy: PRODUCTS.filter((p) => p.image === url || (p.gallery ?? []).includes(url)).map(
-      (p) => p.name,
-    ),
-  }));
+function formatSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
 function MediaLibraryAdmin() {
-  const [assets, setAssets] = useState<MediaAsset[]>(buildAssets);
+  const res = Route.useLoaderData();
+  const router = useRouter();
+  const media: MediaAsset[] = res.success ? res.media : [];
+
   const [view, setView] = useState<"grid" | "list">("grid");
   const [q, setQ] = useState("");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [uploadOpen, setUploadOpen] = useState(false);
-  const [confirmBulk, setConfirmBulk] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<MediaAsset | null>(null);
 
-  // Track local object URLs for cleanup.
-  const localUrls = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    const urls = localUrls.current;
-    return () => {
-      urls.forEach((u) => URL.revokeObjectURL(u));
-    };
-  }, []);
+  const visible = media.filter((a) => !q || a.fileName.toLowerCase().includes(q.toLowerCase()));
 
-  const visible = assets.filter((a) => {
-    if (q && !a.name.toLowerCase().includes(q.toLowerCase())) return false;
-    if (typeFilter === "catalog" && a.source !== "catalog") return false;
-    if (typeFilter === "local" && a.source !== "local") return false;
-    return true;
-  });
-  const visibleIds = new Set(visible.map((a) => a.id));
-  const selectedVisible = [...selected].filter((id) => visibleIds.has(id));
-
-  const toggle = (id: string) =>
-    setSelected((s) => {
-      const next = new Set(s);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  const toggleAll = () => {
-    if (selectedVisible.length === visible.length) setSelected(new Set());
-    else setSelected(new Set(visible.map((a) => a.id)));
-  };
-
-  const addLocal = (file: File) => {
-    if (!file.type.startsWith("image/")) {
-      toast.error("Images only.");
+  async function handleFile(file: File) {
+    const check = validateMediaFile({ name: file.name, type: file.type, size: file.size });
+    if (!check.ok) {
+      toast.error(check.error);
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Max file size is 5 MB.");
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    localUrls.current.add(url);
-    setAssets((a) => [
-      {
-        id: createPreviewId(),
-        url,
-        name: file.name,
-        source: "local",
-        usedBy: [],
-        fileSize: `${(file.size / 1024).toFixed(0)} KB`,
-        fileType: file.type,
-        dimensions: "Reading…",
-      },
-      ...a,
-    ]);
-    // Read dimensions client-side.
-    const img = new Image();
-    img.onload = () => {
-      setAssets((a) =>
-        a.map((x) =>
-          x.url === url ? { ...x, dimensions: `${img.naturalWidth}×${img.naturalHeight}` } : x,
-        ),
-      );
-    };
-    img.src = url;
-    toast("Added to this local media preview.");
-  };
-
-  const removeAsset = (asset: MediaAsset) => {
-    if (asset.source === "local") {
-      URL.revokeObjectURL(asset.url);
-      localUrls.current.delete(asset.url);
-    }
-    setAssets((a) => a.filter((x) => x.id !== asset.id));
-    toast("Removed from this local media preview. Products using this asset are unchanged.");
-  };
-
-  const bulkRemove = () => {
-    const targets = assets.filter((a) => selectedVisible.includes(a.id));
-    targets.forEach((t) => {
-      if (t.source === "local") {
-        URL.revokeObjectURL(t.url);
-        localUrls.current.delete(t.url);
+    setUploading(true);
+    try {
+      const dims = await readDimensions(file);
+      const ticketRes = await requestMediaUpload({
+        data: { name: file.name, type: file.type, size: file.size },
+      });
+      if (!ticketRes.success) {
+        toast.error(ticketRes.error);
+        return;
       }
-    });
-    setAssets((a) => a.filter((x) => !selectedVisible.includes(x.id)));
-    setSelected(new Set());
-    setConfirmBulk(false);
-    toast("Removed from this local media preview. Products using these assets are unchanged.");
-  };
+      const { path, token, publicUrl } = ticketRes.ticket;
+
+      const sb = getSupabaseBrowserClient();
+      const { error: upErr } = await sb.storage
+        .from(MEDIA_BUCKET)
+        .uploadToSignedUrl(path, token, file, { contentType: file.type });
+      if (upErr) {
+        toast.error("The upload could not be completed. Please try again.");
+        return;
+      }
+
+      const reg = await registerMedia({
+        data: {
+          path,
+          publicUrl,
+          fileName: file.name,
+          contentType: file.type,
+          sizeBytes: file.size,
+          width: dims?.width ?? null,
+          height: dims?.height ?? null,
+        },
+      });
+      if (!reg.success) {
+        toast.error(reg.error);
+        return;
+      }
+      toast.success("Image uploaded.");
+      router.invalidate();
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function confirmDelete() {
+    const target = pendingDelete;
+    if (!target) return;
+    setPendingDelete(null);
+    const result = await removeMedia({ data: { id: target.id } });
+    if (result.success) {
+      toast.success("Media deleted.");
+      router.invalidate();
+    } else {
+      toast.error(result.error);
+    }
+  }
 
   return (
     <div>
       <AdminHeader
         title="Media Library"
-        description="Browse demo media — local preview only."
+        description="Upload and manage product images. Files are stored in Supabase Storage."
         action={
-          <Button onClick={() => setUploadOpen(true)}>
-            <Upload className="h-4 w-4" /> Upload (preview)
+          <Button asChild disabled={uploading}>
+            <label className="cursor-pointer">
+              <Upload className="h-4 w-4" /> {uploading ? "Uploading…" : "Upload image"}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={uploading}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleFile(f);
+                  e.target.value = "";
+                }}
+              />
+            </label>
           </Button>
         }
       />
-      <PreviewNotice className="mb-5" />
+
+      {!res.success && (
+        <div className="mb-4 rounded-xl border border-destructive/40 bg-destructive/5 p-3 text-sm text-muted-foreground">
+          {res.error}
+        </div>
+      )}
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search media…"
-              className="w-52 pl-9"
-              aria-label="Search media"
-            />
-          </div>
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="w-[150px]" aria-label="Filter by source">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All sources</SelectItem>
-              <SelectItem value="catalog">Bundled assets</SelectItem>
-              <SelectItem value="local">Local preview</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox
-              checked={visible.length > 0 && selectedVisible.length === visible.length}
-              onCheckedChange={toggleAll}
-              aria-label="Select all visible media"
-            />
-            Select all
-          </label>
-          <ViewToggle
-            value={view}
-            onValueChange={setView}
-            label="Media view"
-            options={[
-              { value: "grid", label: "Grid", icon: LayoutGrid },
-              { value: "list", label: "List", icon: List },
-            ]}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search media…"
+            className="w-52 pl-9"
+            aria-label="Search media"
           />
         </div>
+        <ViewToggle
+          value={view}
+          onValueChange={setView}
+          label="Media view"
+          options={[
+            { value: "grid", label: "Grid", icon: LayoutGrid },
+            { value: "list", label: "List", icon: List },
+          ]}
+        />
       </div>
 
       {view === "grid" ? (
@@ -232,35 +181,26 @@ function MediaLibraryAdmin() {
           {visible.map((a) => (
             <div
               key={a.id}
-              className={cn(
-                "group relative overflow-hidden rounded-xl border bg-card",
-                selected.has(a.id) ? "border-primary" : "border-border",
-              )}
+              className="group relative overflow-hidden rounded-xl border border-border bg-card"
             >
-              <Checkbox
-                className="absolute left-2 top-2 z-10 bg-background"
-                checked={selected.has(a.id)}
-                onCheckedChange={() => toggle(a.id)}
-                aria-label={`Select ${a.name}`}
-              />
-              <img src={a.url} alt={a.name} className="h-32 w-full object-cover" />
+              <img src={a.publicUrl} alt={a.fileName} className="h-32 w-full object-cover" />
               <div className="p-2">
-                <p className="truncate text-xs font-medium text-foreground" title={a.name}>
-                  {a.name}
+                <p className="truncate text-xs font-medium text-foreground" title={a.fileName}>
+                  {a.fileName}
                 </p>
                 <p className="text-[0.65rem] text-muted-foreground">
-                  {a.usedBy.length} use{a.usedBy.length === 1 ? "" : "s"}
+                  {a.usageCount} use{a.usageCount === 1 ? "" : "s"} · {formatSize(a.sizeBytes)}
                 </p>
                 <div className="mt-1 flex items-center justify-between">
                   <Badge variant="outline" className="text-[0.6rem]">
-                    {a.source === "catalog" ? "Bundled" : "Local"}
+                    {a.width && a.height ? `${a.width}×${a.height}` : "Image"}
                   </Badge>
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7"
-                    aria-label={`Remove ${a.name}`}
-                    onClick={() => removeAsset(a)}
+                    aria-label={`Delete ${a.fileName}`}
+                    onClick={() => setPendingDelete(a)}
                   >
                     <Trash2 className="h-3.5 w-3.5 text-destructive" />
                   </Button>
@@ -273,30 +213,24 @@ function MediaLibraryAdmin() {
         <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
           {visible.map((a) => (
             <div key={a.id} className="flex flex-wrap items-center gap-3 p-3">
-              <Checkbox
-                checked={selected.has(a.id)}
-                onCheckedChange={() => toggle(a.id)}
-                aria-label={`Select ${a.name}`}
-              />
-              <img src={a.url} alt={a.name} className="h-12 w-12 rounded object-cover" />
+              <img src={a.publicUrl} alt={a.fileName} className="h-12 w-12 rounded object-cover" />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-foreground">{a.name}</p>
+                <p className="truncate text-sm font-medium text-foreground">{a.fileName}</p>
                 <p className="text-xs text-muted-foreground">
-                  {a.source === "catalog"
-                    ? "Dimensions: Not available in current frontend · File size: Not available in current frontend · Source: Bundled product asset"
-                    : `${a.dimensions ?? "—"} · ${a.fileSize ?? "—"} · ${a.fileType ?? "—"} · Local preview file`}
+                  {a.width && a.height ? `${a.width}×${a.height} · ` : ""}
+                  {formatSize(a.sizeBytes)} · {a.contentType}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {a.usedBy.length > 0
-                    ? `Used by: ${a.usedBy.join(", ")}`
+                  {a.usageCount > 0
+                    ? `Used by ${a.usageCount} product${a.usageCount === 1 ? "" : "s"}`
                     : "Not referenced by any product"}
                 </p>
               </div>
               <Button
                 variant="ghost"
                 size="icon"
-                aria-label={`Remove ${a.name}`}
-                onClick={() => removeAsset(a)}
+                aria-label={`Delete ${a.fileName}`}
+                onClick={() => setPendingDelete(a)}
               >
                 <Trash2 className="h-4 w-4 text-destructive" />
               </Button>
@@ -307,87 +241,29 @@ function MediaLibraryAdmin() {
 
       {visible.length === 0 && (
         <p className="mt-6 text-center text-sm text-muted-foreground">
-          No media matches your filters.
+          {media.length === 0
+            ? "No media yet. Upload your first image to get started."
+            : "No media matches your search."}
         </p>
       )}
 
-      {selectedVisible.length > 0 && (
-        <div className="admin-bulk-bar mt-4 flex items-center justify-between rounded-xl border border-border bg-card p-3 shadow-soft">
-          <span className="flex items-center gap-2 text-sm">
-            <MockBadge /> {selectedVisible.length} selected
-          </span>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              className="text-destructive"
-              onClick={() => setConfirmBulk(true)}
-            >
-              Remove from preview
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
-              Clear
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Upload drawer */}
-      <Sheet open={uploadOpen} onOpenChange={setUploadOpen}>
-        <SheetContent side="right" className="w-full sm:max-w-md">
-          <SheetHeader>
-            <SheetTitle>Upload media (preview)</SheetTitle>
-            <SheetDescription>
-              Local preview only · Files are not uploaded to any storage and reset on reload.
-            </SheetDescription>
-          </SheetHeader>
-          <div className="py-4">
-            <Label
-              htmlFor="media-upload"
-              className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground hover:border-primary"
-            >
-              <Upload className="h-6 w-6" />
-              Choose an image (max 5 MB)
-              <input
-                id="media-upload"
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) addLocal(f);
-                  e.target.value = "";
-                }}
-              />
-            </Label>
-            <p className="mt-3 text-xs text-muted-foreground">
-              Replace/delete affect only the route-local preview list.
-            </p>
-          </div>
-          <SheetFooter>
-            <Button variant="outline" onClick={() => setUploadOpen(false)}>
-              <X className="h-4 w-4" /> Close
-            </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-
-      <AlertDialog open={confirmBulk} onOpenChange={setConfirmBulk}>
+      <AlertDialog open={!!pendingDelete} onOpenChange={(o) => !o && setPendingDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove selected media?</AlertDialogTitle>
+            <AlertDialogTitle>Delete this image?</AlertDialogTitle>
             <AlertDialogDescription>
-              This removes {selectedVisible.length} item(s) from the local preview list only. This
-              demo does not update products using these assets.
+              {pendingDelete?.usageCount
+                ? `This image is used by ${pendingDelete.usageCount} product(s). Deleting it removes the file from storage; those products will lose this image.`
+                : "This permanently removes the file from storage. This cannot be undone."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={bulkRemove}
+              onClick={confirmDelete}
             >
-              Remove
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

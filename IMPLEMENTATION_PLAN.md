@@ -99,10 +99,16 @@ once the admin write path is DB-backed.
       CASE-presence patch, audited); storefront announcement bar reads the DB
       (`_site` beforeLoad → `SiteHeader`); `admin.settings.tsx` persists via
       `guardAdminWrite("settings.manage")`. Migration `20260626140000`.
-- [ ] Pass 3e+ — Storage media library; retire the `PRODUCTS` array.
+- [x] Pass 3e (2026-06-26) — **Storage-backed media library**: `product-media`
+      public bucket + `media_assets` (RPC-only); signed-URL upload flow
+      (`requestMediaUpload` → browser PUT → `register_media`), `api.delete_media`
+      / `api.list_media` (usage counts), audited; `admin.media-library.tsx`
+      rewritten DB-backed. Migration `20260626150000`.
+- [ ] Pass 3f+ — attach library media to product galleries; retire the `PRODUCTS`
+      array.
 
 **Exit:** admin changes persist and drive the storefront; no mock array for
-catalog; permissions enforced server-side. (Pass 3e+ outstanding.)
+catalog; permissions enforced server-side. (Pass 3f+ outstanding.)
 
 ## Stage 3 — Checkout & orders
 
