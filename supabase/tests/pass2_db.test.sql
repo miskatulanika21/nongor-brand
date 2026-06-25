@@ -500,7 +500,7 @@ END $$;
 
 -- Approve A (4) -> rating 4.0, count 1
 DO $$ DECLARE v_rid uuid; v_rating numeric; v_count int; BEGIN
-  SELECT id INTO v_rid FROM public.product_reviews r JOIN public.products p ON p.id = r.product_id
+  SELECT r.id INTO v_rid FROM public.product_reviews r JOIN public.products p ON p.id = r.product_id
     WHERE p.code = 'p-rev' AND r.author_name = 'Reviewer A';
   PERFORM api.set_review_status(v_rid, 'approved', '00000000-0000-0000-0000-0000000000a1');
   SELECT rating, review_count INTO v_rating, v_count FROM public.products WHERE code = 'p-rev';
@@ -511,7 +511,7 @@ END $$;
 
 -- Approve B (2) -> rating 3.0, count 2
 DO $$ DECLARE v_rid uuid; v_rating numeric; v_count int; BEGIN
-  SELECT id INTO v_rid FROM public.product_reviews r JOIN public.products p ON p.id = r.product_id
+  SELECT r.id INTO v_rid FROM public.product_reviews r JOIN public.products p ON p.id = r.product_id
     WHERE p.code = 'p-rev' AND r.author_name = 'Reviewer B';
   PERFORM api.set_review_status(v_rid, 'approved', '00000000-0000-0000-0000-0000000000a1');
   SELECT rating, review_count INTO v_rating, v_count FROM public.products WHERE code = 'p-rev';
@@ -522,7 +522,7 @@ END $$;
 
 -- Reject B -> back to rating 4.0, count 1
 DO $$ DECLARE v_rid uuid; v_rating numeric; v_count int; BEGIN
-  SELECT id INTO v_rid FROM public.product_reviews r JOIN public.products p ON p.id = r.product_id
+  SELECT r.id INTO v_rid FROM public.product_reviews r JOIN public.products p ON p.id = r.product_id
     WHERE p.code = 'p-rev' AND r.author_name = 'Reviewer B';
   PERFORM api.set_review_status(v_rid, 'rejected', '00000000-0000-0000-0000-0000000000a1');
   SELECT rating, review_count INTO v_rating, v_count FROM public.products WHERE code = 'p-rev';
@@ -533,7 +533,7 @@ END $$;
 
 -- Delete A -> no approved reviews -> rating 0, count 0
 DO $$ DECLARE v_rid uuid; v_rating numeric; v_count int; BEGIN
-  SELECT id INTO v_rid FROM public.product_reviews r JOIN public.products p ON p.id = r.product_id
+  SELECT r.id INTO v_rid FROM public.product_reviews r JOIN public.products p ON p.id = r.product_id
     WHERE p.code = 'p-rev' AND r.author_name = 'Reviewer A';
   PERFORM api.delete_review(v_rid, '00000000-0000-0000-0000-0000000000a1');
   SELECT rating, review_count INTO v_rating, v_count FROM public.products WHERE code = 'p-rev';
@@ -544,7 +544,7 @@ END $$;
 
 -- Stable error codes (message_text == code)
 DO $$ DECLARE v_rid uuid; got text; BEGIN
-  SELECT id INTO v_rid FROM public.product_reviews r JOIN public.products p ON p.id = r.product_id
+  SELECT r.id INTO v_rid FROM public.product_reviews r JOIN public.products p ON p.id = r.product_id
     WHERE p.code = 'p-rev' AND r.author_name = 'Reviewer B';
   -- invalid status
   BEGIN PERFORM api.set_review_status(v_rid, 'bogus', '00000000-0000-0000-0000-0000000000a1');
