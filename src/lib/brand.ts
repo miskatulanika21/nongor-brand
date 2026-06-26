@@ -22,9 +22,9 @@ export const BRAND = {
   name: "Nongorr",
   tagline: "Anchored in tradition, styled for you",
 
-  // Contact (placeholder / demo values — see *_Configured flags below)
-  phone: "+880 1700-000000",
-  whatsapp: "8801700000000",
+  // Contact
+  phone: "+880 1616-510037",
+  whatsapp: "8801616510037",
   email: "hello@nongorr.com",
   bkashNumber: "01700-000000",
 
@@ -32,8 +32,8 @@ export const BRAND = {
   address: "Online boutique · Bangladesh",
 
   // Social
-  instagram: "https://instagram.com/nongorr",
-  facebook: "https://facebook.com/nongorr",
+  instagram: "https://www.instagram.com/nongorr_/",
+  facebook: "https://www.facebook.com/nongorclothingbd/",
 
   // Site / locale
   siteUrl: "https://nongorr.com",
