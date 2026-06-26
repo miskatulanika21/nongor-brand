@@ -879,14 +879,19 @@ DO $$
 DECLARE actor uuid := '00000000-0000-0000-0000-0000000000a1';
         res jsonb; got text; cnt int; pid uuid; big jsonb;
 BEGIN
-  SELECT id INTO pid FROM public.products WHERE code = 'p-clean';
+  -- Self-contained product: §6 purges 'p-clean', so seed a dedicated one here
+  -- rather than depending on a product an earlier section may have removed.
+  INSERT INTO public.products (code, slug, name, category_id, price)
+    SELECT 'p-gallery', 'p-gallery', 'Gallery', id, 100
+    FROM public.product_categories WHERE slug = 'cat-a';
+  SELECT id INTO pid FROM public.products WHERE code = 'p-gallery';
   -- Two library assets to attach.
   PERFORM api.register_media('g/a.png', 'https://x/g/a.png', 'a.png', 'image/png', 100, NULL, NULL, actor);
   PERFORM api.register_media('g/b.png', 'https://x/g/b.png', 'b.png', 'image/png', 100, NULL, NULL, actor);
 
   -- Replace from library: sort_order follows array order; first becomes primary
   -- when none is flagged; audit written.
-  res := api.set_product_media('p-clean', jsonb_build_array(
+  res := api.set_product_media('p-gallery', jsonb_build_array(
            jsonb_build_object('url', 'https://x/g/a.png', 'alt', 'A'),
            jsonb_build_object('url', 'https://x/g/b.png')), actor);
   IF jsonb_array_length(res) <> 2 THEN RAISE EXCEPTION 'FAIL: gallery len=%', jsonb_array_length(res); END IF;
@@ -900,11 +905,11 @@ BEGIN
              WHERE product_id = pid AND url = 'https://x/g/b.png' AND is_primary) THEN
     RAISE EXCEPTION 'FAIL: second image should not be primary'; END IF;
   IF NOT EXISTS (SELECT 1 FROM public.audit_logs
-                 WHERE action = 'product.media_changed' AND target_id = 'p-clean') THEN
+                 WHERE action = 'product.media_changed' AND target_id = 'p-gallery') THEN
     RAISE EXCEPTION 'FAIL: media_changed audit missing'; END IF;
 
   -- Explicit primary on the second image is respected (exactly one primary).
-  res := api.set_product_media('p-clean', jsonb_build_array(
+  res := api.set_product_media('p-gallery', jsonb_build_array(
            jsonb_build_object('url', 'https://x/g/a.png'),
            jsonb_build_object('url', 'https://x/g/b.png', 'is_primary', true)), actor);
   IF NOT EXISTS (SELECT 1 FROM public.product_media
@@ -917,13 +922,13 @@ BEGIN
   -- resubmitted. Seed a legacy row, then include its URL alongside a library one.
   INSERT INTO public.product_media (product_id, url, kind, sort_order)
     VALUES (pid, 'https://legacy/seed.jpg', 'image', 9);
-  res := api.set_product_media('p-clean', jsonb_build_array(
+  res := api.set_product_media('p-gallery', jsonb_build_array(
            jsonb_build_object('url', 'https://legacy/seed.jpg'),
            jsonb_build_object('url', 'https://x/g/a.png')), actor);
   IF jsonb_array_length(res) <> 2 THEN RAISE EXCEPTION 'FAIL: legacy resubmit len=%', jsonb_array_length(res); END IF;
 
   -- Library-only for NEW images: an unknown, non-library URL is rejected.
-  BEGIN PERFORM api.set_product_media('p-clean', jsonb_build_array(
+  BEGIN PERFORM api.set_product_media('p-gallery', jsonb_build_array(
           jsonb_build_object('url', 'https://evil/new.png')), actor);
         RAISE EXCEPTION 'FAIL: non-library url accepted';
   EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
@@ -931,7 +936,7 @@ BEGIN
   END;
 
   -- Two primaries rejected.
-  BEGIN PERFORM api.set_product_media('p-clean', jsonb_build_array(
+  BEGIN PERFORM api.set_product_media('p-gallery', jsonb_build_array(
           jsonb_build_object('url', 'https://x/g/a.png', 'is_primary', true),
           jsonb_build_object('url', 'https://x/g/b.png', 'is_primary', true)), actor);
         RAISE EXCEPTION 'FAIL: two primaries accepted';
@@ -942,14 +947,14 @@ BEGIN
   -- Bounds: more than 12 images rejected.
   SELECT jsonb_agg(jsonb_build_object('url', 'https://x/g/a.png')) INTO big
   FROM generate_series(1, 13);
-  BEGIN PERFORM api.set_product_media('p-clean', big, actor);
+  BEGIN PERFORM api.set_product_media('p-gallery', big, actor);
         RAISE EXCEPTION 'FAIL: 13 images accepted';
   EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
     IF got <> 'invalid_gallery' THEN RAISE EXCEPTION 'FAIL: bounds code=%', got; END IF;
   END;
 
   -- Bad actor rejected.
-  BEGIN PERFORM api.set_product_media('p-clean', '[]'::jsonb, gen_random_uuid());
+  BEGIN PERFORM api.set_product_media('p-gallery', '[]'::jsonb, gen_random_uuid());
         RAISE EXCEPTION 'FAIL: bad actor accepted';
   EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
     IF got <> 'actor_not_authorized' THEN RAISE EXCEPTION 'FAIL: actor code=%', got; END IF;
@@ -963,7 +968,7 @@ BEGIN
   END;
 
   -- Empty array clears the gallery.
-  res := api.set_product_media('p-clean', '[]'::jsonb, actor);
+  res := api.set_product_media('p-gallery', '[]'::jsonb, actor);
   IF res <> '[]'::jsonb THEN RAISE EXCEPTION 'FAIL: empty result=%', res; END IF;
   SELECT count(*) INTO cnt FROM public.product_media WHERE product_id = pid;
   IF cnt <> 0 THEN RAISE EXCEPTION 'FAIL: gallery not cleared (%)', cnt; END IF;
