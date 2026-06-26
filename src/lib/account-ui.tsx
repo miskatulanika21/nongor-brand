@@ -74,9 +74,35 @@ export const FIT_PREFERENCES: FitPreference[] = ["Fitted", "Regular", "Relaxed"]
 
 // ---- Storage keys -----------------------------------------------------------
 
+// Base keys. Account PII is partitioned per signed-in user (see scopedKey) so two
+// customers sharing one browser can never read each other's profile, addresses or
+// measurements. The bare base keys below are LEGACY (pre-namespacing) and are
+// purged on mount — they belonged to whoever last used the browser, so they must
+// never be surfaced to the current account.
 const PROFILE_KEY = "nongorr_account_profile";
 const ADDRESSES_KEY = "nongorr_account_addresses";
 const MEASUREMENTS_KEY = "nongorr_measurement_profiles";
+const LEGACY_ACCOUNT_KEYS = [PROFILE_KEY, ADDRESSES_KEY, MEASUREMENTS_KEY];
+
+/** Per-user storage key. `scope` is the verified auth user id from the session. */
+function scopedKey(base: string, scope: string): string {
+  return `${base}::u:${scope}`;
+}
+
+/**
+ * Remove pre-namespacing unscoped account keys so one browser user's PII can
+ * never be read by a different account. Idempotent; safe to call on every mount.
+ */
+export function purgeLegacyAccountKeys(): void {
+  if (typeof window === "undefined") return;
+  for (const key of LEGACY_ACCOUNT_KEYS) {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      // ignore storage failures
+    }
+  }
+}
 
 interface StoredAccountData<T> {
   version: 1;
@@ -137,8 +163,8 @@ function safeISO(value: unknown): string {
 
 // ---- Readers (validate, never throw) ----------------------------------------
 
-export function readProfile(): AccountProfile {
-  const raw = unwrap<AccountProfile>(readRaw(PROFILE_KEY));
+export function readProfile(scope: string): AccountProfile {
+  const raw = unwrap<AccountProfile>(readRaw(scopedKey(PROFILE_KEY, scope)));
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return { ...DEFAULT_PROFILE };
   }
@@ -184,8 +210,8 @@ function normalizeDefaults(list: SavedAddress[]): SavedAddress[] {
   });
 }
 
-export function readAddresses(): SavedAddress[] {
-  const raw = unwrap<SavedAddress[]>(readRaw(ADDRESSES_KEY));
+export function readAddresses(scope: string): SavedAddress[] {
+  const raw = unwrap<SavedAddress[]>(readRaw(scopedKey(ADDRESSES_KEY, scope)));
   if (!Array.isArray(raw)) return [...DEFAULT_ADDRESSES];
   const cleaned = raw.map(normalizeAddress).filter((a): a is SavedAddress => a !== null);
   return normalizeDefaults(cleaned);
@@ -215,24 +241,24 @@ function normalizeMeasurement(raw: unknown): MeasurementProfile | null {
   };
 }
 
-export function readMeasurements(): MeasurementProfile[] {
-  const raw = unwrap<MeasurementProfile[]>(readRaw(MEASUREMENTS_KEY));
+export function readMeasurements(scope: string): MeasurementProfile[] {
+  const raw = unwrap<MeasurementProfile[]>(readRaw(scopedKey(MEASUREMENTS_KEY, scope)));
   if (!Array.isArray(raw)) return [...DEFAULT_MEASUREMENTS];
   return raw.map(normalizeMeasurement).filter((m): m is MeasurementProfile => m !== null);
 }
 
 // ---- Writers (honest success/failure) ---------------------------------------
 
-export function writeProfile(profile: AccountProfile): boolean {
-  return writeRaw(PROFILE_KEY, profile);
+export function writeProfile(scope: string, profile: AccountProfile): boolean {
+  return writeRaw(scopedKey(PROFILE_KEY, scope), profile);
 }
 
-export function writeAddresses(addresses: SavedAddress[]): boolean {
-  return writeRaw(ADDRESSES_KEY, addresses);
+export function writeAddresses(scope: string, addresses: SavedAddress[]): boolean {
+  return writeRaw(scopedKey(ADDRESSES_KEY, scope), addresses);
 }
 
-export function writeMeasurements(profiles: MeasurementProfile[]): boolean {
-  return writeRaw(MEASUREMENTS_KEY, profiles);
+export function writeMeasurements(scope: string, profiles: MeasurementProfile[]): boolean {
+  return writeRaw(scopedKey(MEASUREMENTS_KEY, scope), profiles);
 }
 
 // ---- Utilities --------------------------------------------------------------
@@ -371,9 +397,12 @@ const AccountUIContext = createContext<AccountUIContextValue | null>(null);
 
 export function AccountUIProvider({
   children,
+  scope,
   initialProfile,
 }: {
   children: ReactNode;
+  /** Verified auth user id — partitions this user's PII from any other account. */
+  scope: string;
   initialProfile?: Partial<AccountProfile>;
 }) {
   const [hydrated, setHydrated] = useState(false);
@@ -382,26 +411,30 @@ export function AccountUIProvider({
   const [measurements, setMeasurements] = useState<MeasurementProfile[]>(DEFAULT_MEASUREMENTS);
 
   useEffect(() => {
-    const localProfile = readProfile();
+    // Drop any pre-namespacing keys, then load THIS user's partition. Re-running
+    // on `scope` change resets state when a different account signs in on the
+    // same browser, so PII can never carry over.
+    purgeLegacyAccountKeys();
+    const localProfile = readProfile(scope);
     setProfile({
       ...localProfile,
       ...(initialProfile?.name ? { name: initialProfile.name } : {}),
       ...(initialProfile?.email ? { email: initialProfile.email } : {}),
     });
-    setAddresses(readAddresses());
-    setMeasurements(readMeasurements());
+    setAddresses(readAddresses(scope));
+    setMeasurements(readMeasurements(scope));
     setHydrated(true);
-  }, [initialProfile]);
+  }, [scope, initialProfile]);
 
   const saveProfile: AccountUIContextValue["saveProfile"] = (next) => {
-    const ok = writeProfile(next);
+    const ok = writeProfile(scope, next);
     if (ok) setProfile(next);
     return ok;
   };
 
   const persistAddresses = (next: SavedAddress[]): boolean => {
     const normalized = normalizeDefaults(next);
-    const ok = writeAddresses(normalized);
+    const ok = writeAddresses(scope, normalized);
     if (ok) setAddresses(normalized);
     return ok;
   };
@@ -446,7 +479,7 @@ export function AccountUIProvider({
   };
 
   const persistMeasurements = (next: MeasurementProfile[]): boolean => {
-    const ok = writeMeasurements(next);
+    const ok = writeMeasurements(scope, next);
     if (ok) setMeasurements(next);
     return ok;
   };

@@ -80,6 +80,7 @@ function AccountRoute() {
 
   return (
     <AccountUIProvider
+      scope={session.userId}
       initialProfile={{
         name: session.name || "Customer",
         email: session.email || "",
