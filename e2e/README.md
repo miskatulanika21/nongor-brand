@@ -35,6 +35,20 @@ write flows (approve a review, adjust stock, etc.) against prod. Instead:
 
 Read-only flows (browsing the storefront) are safe against any backend.
 
+## Specs
+
+- `storefront.spec.ts` — **read-only** public catalog paths (home, shop with the
+  DB-backed filter sidebar, product detail). Gated on `E2E_BASE_URL` only — no
+  admin creds, no writes — so it runs safely against any backend.
+- `admin-catalog.spec.ts` — signed-in admin smoke: the dashboard's live catalog
+  widgets plus the products / inventory / media-library / settings pages. Gated
+  on `E2E_BASE_URL` **and** `E2E_ADMIN_EMAIL` / `E2E_ADMIN_PASSWORD`.
+- `reviews-moderation.spec.ts` — admin review moderation (performs a write if a
+  pending review exists). Same admin-cred gating; use a SAFE backend.
+
+All specs `test.skip` themselves when their env vars are unset, so
+`bun run test:e2e` stays green where nothing is wired up. (E2E is not run in CI.)
+
 ## Layout
 
 - `playwright.config.ts` (repo root) — config: `testDir: ./e2e`, chromium project.
