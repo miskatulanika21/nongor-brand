@@ -3,7 +3,18 @@
 Authoritative record of verified project state. Code and live-environment
 behavior are the source of truth; this file is updated after every stage.
 
-_Last updated: 2026-06-26 — Stage 1.5 operationally closed; Stage 2 public read
+_Last updated: 2026-06-27 — **Stage 2 closed.** GPT-audit remediation continued:
+F-05 (in-use media delete guard, `media_in_use` — migration 30 applied + prod-
+proven), F-13 (resolve staff emails by id — fixes the >50-user `listUsers`
+blind spot + swallowed Auth error), F-06 (upload-intent verification — register
+only a real Storage object, record its true size/type, derive the public URL
+server-side), F-19 (storefront + admin-catalog E2E specs). Stage 2 Pass 3g: the
+admin dashboard's Low Stock / Best Sellers widgets now read the live product
+table, so the legacy `PRODUCTS` array is referenced only by the Stage 3/5 order
+mocks — its deletion is now cleanly gated on Stage 3. 30 migrations applied;
+324 Vitest + DB integration green; build clean. Prior context:_
+
+_2026-06-26 — Stage 1.5 operationally closed; Stage 2 public read
 (Pass 1) + admin product/category/inventory writes (Pass 2) implemented, hardened
 and CI-green. Follow-up patch: stable inventory error codes + staff_profiles RLS
 perf advisors cleared + movement-FK covering index. **Stage 2 Pass 3a: review
@@ -35,7 +46,8 @@ verification complete · (4) operator action pending.**
 | 2 (Pass 3d)  | **DB-backed site settings** (announcement bar live; audited admin form)  | **Implemented + live + CI-green**                                        |
 | 2 (Pass 3e)  | **Storage-backed media library** (real uploads via signed URLs)          | **Implemented + live + CI-green**                                        |
 | 2 (Pass 3f)  | **Product gallery management** (attach library media; atomic replace)    | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3g+) | Delete legacy `PRODUCTS` constant; further catalog polish                | Not started                                                              |
+| 2 (Pass 3g)  | **Admin dashboard cut off mock `PRODUCTS`** (live catalog widgets)       | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3g+) | Delete the `PRODUCTS` constant itself                                    | Gated on Stage 3 (order mocks are its only remaining consumer)           |
 | 3            | Server-authoritative checkout, orders, payments                          | Not started                                                              |
 | 4            | Customer accounts / addresses / measurements                             | Not started (localStorage)                                               |
 | 5            | Courier adapters, shipments, webhooks, outbox                            | Not started                                                              |
@@ -44,8 +56,8 @@ verification complete · (4) operator action pending.**
 
 ## Migrations (live project xomjxtmhkglhuiccekld)
 
-**29 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
-ledger matches the 29 repo files exactly (versions + names), in order:
+**30 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
+ledger matches the 30 repo files exactly (versions + names), in order:
 
 ```
 …143927 create_private_schema            …623000000 advisor_hardening
@@ -66,6 +78,7 @@ ledger matches the 29 repo files exactly (versions + names), in order:
                                           …626170000 product_gallery_hardening
                                           …626180000 staff_profiles_write_lockdown
                                           …626190000 api_schema_usage_grant
+                                          …627120000 media_delete_in_use_guard
 ```
 
 Note: `apply_migration` (MCP) stamps its own version, so after every MCP apply the
@@ -337,6 +350,10 @@ restriction, grant verification, post-migration schema proof, the merged RLS pol
 4. DB integration tests are automated in CI (`pass2_db.test.sql`); a genuine
    two-connection concurrency test (`concurrency.test.sh`) also runs in the
    `migrations-local` job. True multi-session advisory-lock races are verified.
-5. Stage 2 Pass 3g+: remove the legacy `PRODUCTS` array (facets/counts landed in
-   Pass 3c; site settings in Pass 3d; the Storage media library in Pass 3e;
-   library-backed product galleries in Pass 3f).
+5. Delete the `PRODUCTS` constant itself — now gated on Stage 3. Every Stage-2
+   surface is DB-backed (facets Pass 3c, settings 3d, media library 3e, galleries
+   3f, dashboard 3g); the only remaining consumers are the Stage 3/5 order mocks
+   (`orders.ts`, `order-ui.ts`), so the array is removed when that backend lands.
+6. GPT-audit remediation status: done — F-02, F-03, F-04, F-05, F-06, F-07, F-08,
+   F-13, F-15, F-16, F-17, F-19. Remaining: F-10 / F-11 (MFA / password hardening,
+   Stage 1 auth surface — not Stage 2) and any Stage-3-scoped items.
