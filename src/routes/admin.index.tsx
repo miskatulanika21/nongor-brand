@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AdminHeader,
   StatCard,
@@ -13,7 +13,8 @@ import {
   type AdminPreviewState,
 } from "@/components/admin/AdminUI";
 import { ORDERS, STATUS_TONE } from "@/lib/orders";
-import { PRODUCTS } from "@/lib/products";
+import { listAdminProducts } from "@/lib/catalog-admin.api";
+import type { AdminProductListItem } from "@/lib/server/catalog-admin.server";
 import { useNoticeToast } from "@/lib/auth-notices";
 import { formatBDT } from "@/lib/brand";
 import { Badge } from "@/components/ui/badge";
@@ -61,26 +62,54 @@ function Dashboard() {
   const [previewState, setPreviewState] = useState<AdminPreviewState>("loaded");
   useNoticeToast();
 
-  // Derived honestly from seed ORDERS / PRODUCTS.
+  // Order/revenue widgets are still seed demo data (Stage 3 order backend).
   const todayKey = new Date().toISOString().slice(0, 10);
   const todaysOrders = ORDERS.filter((o) => o.date === todayKey);
   const pendingPayments = ORDERS.filter((o) => o.paymentStatus === "Pending");
   const courierPending = ORDERS.filter((o) => ["Confirmed", "Processing"].includes(o.status));
   const demoRevenue = ORDERS.reduce((sum, o) => sum + o.total, 0);
 
-  const lowStock = PRODUCTS.filter((p) => p.stock <= 10);
-  const best = PRODUCTS.filter((p) => p.isBestSeller).slice(0, 4);
+  // Catalog widgets (Low Stock, Best Sellers) read the LIVE product table so
+  // they match the real admin catalog instead of the retired mock array.
+  const [catalog, setCatalog] = useState<AdminProductListItem[]>([]);
+  const [catalogStatus, setCatalogStatus] = useState<"loading" | "ready" | "error">("loading");
+
+  useEffect(() => {
+    let active = true;
+    listAdminProducts()
+      .then((r) => {
+        if (!active) return;
+        if (r.success) {
+          setCatalog(r.products);
+          setCatalogStatus("ready");
+        } else {
+          setCatalogStatus("error");
+        }
+      })
+      .catch(() => {
+        if (active) setCatalogStatus("error");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const activeProducts = catalog.filter((p) => p.status === "active");
+  const lowStock = activeProducts.filter((p) => p.stock <= 10);
+  const best = activeProducts.filter((p) => p.isBestSeller).slice(0, 4);
+  const catalogReady = catalogStatus === "ready";
 
   return (
     <div>
       <AdminHeader
         title="Dashboard"
-        description="A read-only overview built from seed demo data."
+        description="Live catalog health with seed demo order figures."
         action={<AdminStateToggle value={previewState} onValueChange={setPreviewState} />}
       />
 
       <PreviewNotice className="mb-5">
-        Local preview only · Figures are derived from seed orders and reset when this page reloads.
+        Low Stock and Best Sellers reflect the live catalog · Order, payment and revenue figures are
+        still seed demo data until the order backend lands.
       </PreviewNotice>
 
       {previewState === "loading" && (
@@ -133,10 +162,10 @@ function Dashboard() {
             />
             <StatCard
               label="Low Stock"
-              value={lowStock.length}
+              value={catalogReady ? lowStock.length : "—"}
               icon={AlertTriangle}
               tone="destructive"
-              hint="Products at or below 10"
+              hint="Active products at or below 10"
               to="/admin/inventory"
             />
             <StatCard
@@ -196,7 +225,7 @@ function Dashboard() {
             />
             <QuickAction
               label="Low stock"
-              desc={`${lowStock.length} items running low`}
+              desc={catalogReady ? `${lowStock.length} items running low` : "Checking catalog…"}
               cta="Update stock"
               to="/admin/inventory"
               icon={AlertTriangle}
@@ -263,12 +292,18 @@ function Dashboard() {
                 </Button>
               }
             >
-              {lowStock.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No low-stock products in seed data.</p>
+              {catalogStatus === "loading" ? (
+                <p className="text-sm text-muted-foreground">Loading catalog…</p>
+              ) : catalogStatus === "error" ? (
+                <p className="text-sm text-destructive">Couldn’t load products.</p>
+              ) : lowStock.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No active products are low on stock.
+                </p>
               ) : (
                 <ul className="space-y-2">
                   {lowStock.slice(0, 5).map((p) => (
-                    <li key={p.id} className="flex items-center justify-between text-sm">
+                    <li key={p.code} className="flex items-center justify-between text-sm">
                       <span className="line-clamp-1 text-foreground">{p.name}</span>
                       <Badge variant="outline" className="border-destructive/40 text-destructive">
                         {p.stock} left
@@ -329,21 +364,41 @@ function Dashboard() {
               }
             >
               <div className="space-y-2">
-                {best.map((p) => (
-                  <div
-                    key={p.id}
-                    className="flex items-center gap-3 rounded-lg p-2 hover:bg-secondary"
-                  >
-                    <img src={p.image} alt={p.name} className="h-12 w-10 rounded object-cover" />
-                    <div className="flex-1">
-                      <p className="line-clamp-1 text-sm font-medium text-foreground">{p.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {p.reviewCount} reviews · {formatBDT(p.salePrice ?? p.price)}
-                      </p>
+                {catalogStatus === "loading" ? (
+                  <p className="text-sm text-muted-foreground">Loading catalog…</p>
+                ) : catalogStatus === "error" ? (
+                  <p className="text-sm text-destructive">Couldn’t load products.</p>
+                ) : best.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No active best-sellers yet. Flag products as best-sellers to feature them here.
+                  </p>
+                ) : (
+                  best.map((p) => (
+                    <div
+                      key={p.code}
+                      className="flex items-center gap-3 rounded-lg p-2 hover:bg-secondary"
+                    >
+                      {p.image ? (
+                        <img
+                          src={p.image}
+                          alt={p.name}
+                          className="h-12 w-10 rounded object-cover"
+                        />
+                      ) : (
+                        <div className="grid h-12 w-10 place-items-center rounded bg-secondary text-muted-foreground">
+                          <Package className="h-4 w-4" />
+                        </div>
+                      )}
+                      <div className="flex-1">
+                        <p className="line-clamp-1 text-sm font-medium text-foreground">{p.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {p.reviewCount} reviews · {formatBDT(p.salePrice ?? p.price)}
+                        </p>
+                      </div>
+                      <Package className="h-4 w-4 text-muted-foreground" />
                     </div>
-                    <Package className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </AdminSectionCard>
           </div>
