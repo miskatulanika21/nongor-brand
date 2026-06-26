@@ -24,7 +24,15 @@ vi.mock("@tanstack/react-start", () => {
   };
   return { createServerFn: () => builder };
 });
-vi.mock("@tanstack/react-start/server", () => ({ setResponseHeaders: vi.fn() }));
+// getCookie returns the recovery marker by default, so these exercise the
+// recovery/invite path (no current password required). The change-password
+// (re-auth) path is covered in auth-password-change.test.ts.
+vi.mock("@tanstack/react-start/server", () => ({
+  setResponseHeaders: vi.fn(),
+  getCookie: () => "1",
+  setCookie: vi.fn(),
+  deleteCookie: vi.fn(),
+}));
 
 vi.mock("@/lib/server/supabase.server", () => ({ createServerSupabaseClient: createClientMock }));
 vi.mock("@/lib/server/identity.server", () => ({ getAuthenticatedIdentity: getIdentityMock }));

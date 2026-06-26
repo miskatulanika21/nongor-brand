@@ -155,6 +155,9 @@ const passwordUpdateWithNextSchema = z
   .object({
     password: passwordSchema,
     confirm: z.string(),
+    // Present for an authenticated change (re-auth); omitted in the recovery/
+    // invite flow, which is gated server-side by a recovery marker cookie.
+    currentPassword: z.string().max(200).optional(),
     next: z.string().max(2048).optional(),
   })
   .refine((d) => d.password === d.confirm, {

@@ -30,6 +30,8 @@ export type AuditAction =
   | "auth.login.failed" // bad credentials on a known privileged email
   | "auth.logout"
   | "auth.password_reset.completed"
+  | "auth.password_changed" // authenticated change (current password verified)
+  | "auth.password_change.denied" // change refused (e.g. wrong current password)
   | "mfa.enroll.started" // enrollment initiation (no secret/QR in metadata)
   | "mfa.enroll.denied" // enrollment initiation refused (e.g. AAL2 required)
   | "mfa.enroll.failed" // enrollment initiation errored at the provider

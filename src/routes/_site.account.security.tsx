@@ -92,6 +92,7 @@ function SecurityPage() {
 // ---- Change Password Card (functional) ----
 
 function ChangePasswordCard() {
+  const [current, setCurrent] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [show, setShow] = useState(false);
@@ -100,13 +101,16 @@ function ChangePasswordCard() {
   const [done, setDone] = useState(false);
 
   function validate(): boolean {
+    const fieldErrors: Record<string, string> = {};
+    if (!current.trim()) fieldErrors.current = "Enter your current password.";
     const result = passwordUpdateSchema.safeParse({ password, confirm });
     if (!result.success) {
-      const fieldErrors: Record<string, string> = {};
       for (const issue of result.error.issues) {
         const field = issue.path[0] as string;
         if (!fieldErrors[field]) fieldErrors[field] = issue.message;
       }
+    }
+    if (Object.keys(fieldErrors).length > 0) {
       setErrors(fieldErrors);
       return false;
     }
@@ -121,17 +125,18 @@ function ChangePasswordCard() {
 
     try {
       const result = await updatePassword({
-        data: { password, confirm },
+        data: { password, confirm, currentPassword: current },
       });
 
       if (result.success) {
         setDone(true);
+        setCurrent("");
         setPassword("");
         setConfirm("");
         toast.success("Password updated successfully!");
         setTimeout(() => setDone(false), 3000);
       } else {
-        setErrors({ password: result.error });
+        setErrors({ current: result.error });
       }
     } catch {
       setErrors({ password: "Something went wrong. Please try again." });
@@ -149,6 +154,25 @@ function ChangePasswordCard() {
         </div>
       ) : (
         <form onSubmit={onSubmit} className="space-y-3" noValidate>
+          <div className="space-y-1.5">
+            <Label className="text-sm">Current password</Label>
+            <Input
+              type={show ? "text" : "password"}
+              placeholder="Enter your current password"
+              value={current}
+              onChange={(e) => setCurrent(e.target.value)}
+              autoComplete="current-password"
+              className={cn(
+                errors.current && "border-destructive focus-visible:ring-destructive/30",
+              )}
+            />
+            {errors.current && (
+              <p className="flex items-center gap-1.5 text-xs text-destructive">
+                <AlertCircle className="h-3.5 w-3.5" /> {errors.current}
+              </p>
+            )}
+          </div>
+
           <div className="space-y-1.5">
             <Label className="text-sm">New password</Label>
             <div className="relative">
