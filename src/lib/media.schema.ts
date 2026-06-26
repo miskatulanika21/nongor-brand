@@ -72,6 +72,8 @@ export const MEDIA_ERROR_MESSAGES: Record<string, string> = {
   actor_not_authorized: "Not authorized.",
   invalid_media_type: "Only image uploads are allowed.",
   media_not_found: "That media item no longer exists.",
+  media_in_use:
+    "This image is attached to one or more products. Remove it from their galleries before deleting.",
   upload_failed: "The upload could not be completed. Please try again.",
   internal_error: "Could not complete the change. Please try again.",
 };
