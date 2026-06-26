@@ -352,4 +352,13 @@ path that connects the Pass 3e media library to products.
   non-library rejection → `invalid_media`; two-primary → `invalid_gallery`; bounds;
   bad actor; unknown product; empty clears; service-role-only grant) + Vitest gallery
   schema specs. Full `check` green (**301 tests**). 26 migrations; ledger matches.
+- **Hardening (`20260626170000_product_gallery_hardening`):** closes the gallery
+  review gaps — a `(product_id, url)` unique index + `duplicate_media` rejection
+  (G-01), a DB alt-length CHECK (≤300) + alt-text editor (G-02/G-05), a hard
+  12-image UI guard (G-03), and optimistic concurrency via `products.gallery_revision`
+  - a `p_expected_revision` arg → `gallery_conflict` for stale editors (G-04).
+    `set_product_media` now returns `{ revision, items }`; the migration de-duplicates
+    pre-existing seed rows before adding the unique index. Verified via rolled-back
+    prod proof + expanded `pass2_db.test.sql` §17 + Vitest (G-06). Full `check` green
+    (**303 tests**).
 - **Deferred (Pass 3g+):** retire the legacy `PRODUCTS` array; further catalog polish.

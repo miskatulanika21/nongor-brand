@@ -14,6 +14,7 @@ import type { MediaAsset } from "@/lib/media.schema";
 import {
   PRODUCT_STATUSES,
   productInputSchema,
+  MAX_GALLERY_IMAGES,
   type ProductStatus,
   type ProductInput,
 } from "@/lib/catalog-admin.schema";
@@ -823,7 +824,11 @@ function ProductForm({
 
         <Section title="Gallery">
           {editing ? (
-            <GallerySection code={editing.code} initial={editing.gallery} />
+            <GallerySection
+              code={editing.code}
+              initial={editing.gallery}
+              initialRevision={editing.galleryRevision}
+            />
           ) : (
             <p className="rounded-lg border border-border p-3 text-xs text-muted-foreground">
               Save the product first, then add images from the media library.
@@ -853,15 +858,25 @@ function normalizeGallery(items: GalleryImage[]): GalleryImage[] {
   return ordered.map((it, i) => ({ ...it, isPrimary: i === keep }));
 }
 
-function GallerySection({ code, initial }: { code: string; initial: GalleryImage[] }) {
+function GallerySection({
+  code,
+  initial,
+  initialRevision,
+}: {
+  code: string;
+  initial: GalleryImage[];
+  initialRevision: number;
+}) {
   const router = useRouter();
   const [items, setItems] = useState<GalleryImage[]>(() => normalizeGallery(initial));
+  const [revision, setRevision] = useState(initialRevision);
   const [saving, setSaving] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [library, setLibrary] = useState<MediaAsset[] | null>(null);
   const [loadingLib, setLoadingLib] = useState(false);
 
   const urls = new Set(items.map((i) => i.url));
+  const isFull = items.length >= MAX_GALLERY_IMAGES;
 
   async function openPicker() {
     setPickerOpen((o) => !o);
@@ -874,7 +889,7 @@ function GallerySection({ code, initial }: { code: string; initial: GalleryImage
 
   const add = (url: string) =>
     setItems((prev) =>
-      prev.some((p) => p.url === url)
+      prev.some((p) => p.url === url) || prev.length >= MAX_GALLERY_IMAGES
         ? prev
         : normalizeGallery([...prev, { url, alt: null, isPrimary: false, sortOrder: prev.length }]),
     );
@@ -882,6 +897,8 @@ function GallerySection({ code, initial }: { code: string; initial: GalleryImage
     setItems((prev) => normalizeGallery(prev.filter((p) => p.url !== url)));
   const setPrimary = (url: string) =>
     setItems((prev) => normalizeGallery(prev.map((p) => ({ ...p, isPrimary: p.url === url }))));
+  const setAlt = (url: string, alt: string) =>
+    setItems((prev) => prev.map((p) => (p.url === url ? { ...p, alt } : p)));
   const move = (idx: number, dir: -1 | 1) =>
     setItems((prev) => {
       const next = [...prev];
@@ -893,10 +910,17 @@ function GallerySection({ code, initial }: { code: string; initial: GalleryImage
 
   async function save() {
     setSaving(true);
-    const payload = items.map((it) => ({ url: it.url, alt: it.alt, isPrimary: it.isPrimary }));
-    const res = await saveProductGallery({ data: { code, items: payload } });
+    const payload = items.map((it) => ({
+      url: it.url,
+      alt: it.alt?.trim() ? it.alt.trim() : null,
+      isPrimary: it.isPrimary,
+    }));
+    const res = await saveProductGallery({
+      data: { code, items: payload, expectedRevision: revision },
+    });
     setSaving(false);
     if (res.success) {
+      setRevision(res.revision);
       toast.success("Gallery saved.");
       router.invalidate();
     } else {
@@ -917,10 +941,22 @@ function GallerySection({ code, initial }: { code: string; initial: GalleryImage
               key={it.url}
               className="flex items-center gap-3 rounded-lg border border-border p-2"
             >
-              <img src={it.url} alt="" className="h-12 w-12 rounded object-cover" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs text-muted-foreground">{it.url.split("/").pop()}</p>
-                {it.isPrimary && <span className="text-[0.65rem] text-primary">Primary</span>}
+              <img src={it.url} alt={it.alt ?? ""} className="h-12 w-12 rounded object-cover" />
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="truncate text-xs text-muted-foreground">
+                  {it.url.split("/").pop()}
+                  {it.isPrimary && (
+                    <span className="ml-2 text-[0.65rem] text-primary">Primary</span>
+                  )}
+                </p>
+                <Input
+                  value={it.alt ?? ""}
+                  onChange={(e) => setAlt(it.url, e.target.value)}
+                  maxLength={300}
+                  placeholder="Alt text (describe the image for accessibility)"
+                  className="h-7 text-xs"
+                  aria-label={`Alt text for ${it.url.split("/").pop()}`}
+                />
               </div>
               <Button
                 type="button"
@@ -970,12 +1006,22 @@ function GallerySection({ code, initial }: { code: string; initial: GalleryImage
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" variant="outline" size="sm" onClick={openPicker}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={openPicker}
+          disabled={isFull}
+          title={isFull ? `A gallery can have at most ${MAX_GALLERY_IMAGES} images` : undefined}
+        >
           <ImagePlus className="h-4 w-4" /> Add from library
         </Button>
         <Button type="button" size="sm" onClick={save} disabled={saving}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save gallery
         </Button>
+        <span className="text-xs text-muted-foreground">
+          {items.length}/{MAX_GALLERY_IMAGES}
+        </span>
       </div>
 
       {pickerOpen && (
@@ -986,18 +1032,19 @@ function GallerySection({ code, initial }: { code: string; initial: GalleryImage
             <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
               {library.map((m) => {
                 const added = urls.has(m.publicUrl);
+                const disabled = added || isFull;
                 return (
                   <button
                     type="button"
                     key={m.id}
                     onClick={() => add(m.publicUrl)}
-                    disabled={added}
+                    disabled={disabled}
                     className={cn(
                       "relative overflow-hidden rounded-md border",
-                      added ? "border-primary opacity-50" : "border-border hover:border-primary",
+                      disabled ? "border-primary opacity-50" : "border-border hover:border-primary",
                     )}
                     aria-label={`Add ${m.fileName}`}
-                    title={added ? "Already added" : m.fileName}
+                    title={added ? "Already added" : isFull ? "Gallery is full" : m.fileName}
                   >
                     <img src={m.publicUrl} alt={m.fileName} className="h-16 w-full object-cover" />
                   </button>
