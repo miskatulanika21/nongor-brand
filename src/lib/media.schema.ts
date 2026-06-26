@@ -75,6 +75,7 @@ export const MEDIA_ERROR_MESSAGES: Record<string, string> = {
   media_in_use:
     "This image is attached to one or more products. Remove it from their galleries before deleting.",
   upload_failed: "The upload could not be completed. Please try again.",
+  upload_not_found: "The uploaded file could not be found in storage. Please upload it again.",
   internal_error: "Could not complete the change. Please try again.",
 };
 
