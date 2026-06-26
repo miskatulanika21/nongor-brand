@@ -25,6 +25,8 @@ import {
 } from "@/components/ui/dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { EmptyState } from "@/components/states";
+import { isDemoCommerceEnabled } from "@/lib/checkout-mode";
+import { WhatsappIcon } from "@/components/site/social-icons";
 import {
   Copy,
   Upload,
@@ -109,6 +111,9 @@ function Checkout() {
   const [dragOver, setDragOver] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
   const [submitting, setSubmitting] = useState(false);
+  // Simulated checkout is allowed only in dev / explicit preview; in production
+  // the form fails closed and offers a real WhatsApp ordering channel instead.
+  const demoCommerce = isDemoCommerceEnabled();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const submitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -240,6 +245,10 @@ function Checkout() {
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (submitting) return; // ignore repeated submits
+    // Fail closed in production: the real order backend (Stage 3) does not exist,
+    // so never fabricate a "successful" order for a real customer. Demo commerce
+    // is on only in dev / explicit preview; otherwise the WhatsApp CTA is shown.
+    if (!demoCommerce) return;
     const err = validate();
     setErrors(err);
     if (Object.keys(err).length) {
@@ -727,15 +736,45 @@ function Checkout() {
             Payment screenshot: {screenshot ? "Attached" : "Not attached"}
           </p>
 
-          <Button type="submit" size="lg" className="w-full" disabled={submitting}>
-            {submitting ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" /> Placing order…
-              </>
-            ) : (
-              "Place Order for Verification"
-            )}
-          </Button>
+          {demoCommerce ? (
+            <Button type="submit" size="lg" className="w-full" disabled={submitting}>
+              {submitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Placing order…
+                </>
+              ) : (
+                "Place Order for Verification"
+              )}
+            </Button>
+          ) : (
+            <div className="space-y-3">
+              <div className="rounded-xl border border-gold/40 bg-primary/5 p-4">
+                <p className="text-sm font-medium text-foreground">
+                  Online checkout is launching soon
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  We&apos;re finishing secure online ordering. To place this order now, message us
+                  on WhatsApp with your details below — we&apos;ll confirm payment and delivery
+                  personally.
+                </p>
+              </div>
+              <Button asChild size="lg" className="w-full">
+                <a
+                  href={`https://wa.me/${BRAND.whatsapp}?text=${encodeURIComponent(
+                    `Hi Nongorr! I'd like to place an order — ${cart.length} item${
+                      cart.length === 1 ? "" : "s"
+                    }, total ${formatBDT(total)}.\n\n${cart
+                      .map((i) => `• ${i.name}${i.size ? ` (${i.size})` : ""} ×${i.qty}`)
+                      .join("\n")}`,
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <WhatsappIcon className="h-4 w-4" /> Order on WhatsApp
+                </a>
+              </Button>
+            </div>
+          )}
           <p className="text-center text-xs text-muted-foreground">
             Your order will be confirmed after manual payment verification. We may contact you
             through WhatsApp if clarification is needed.
