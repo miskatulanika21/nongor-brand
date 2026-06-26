@@ -53,6 +53,44 @@ const optText = (max: number) =>
 
 const reqText = (max: number) => z.string().trim().min(1).max(max).optional();
 
+/**
+ * A link is safe to render into an `href` only if it is an absolute http(s) URL
+ * or a site-relative path (`/…`, but not protocol-relative `//…`). This rejects
+ * `javascript:`, `data:`, `vbscript:`, etc. Used for the announcement + social
+ * link fields, which are operator-supplied and rendered as anchors.
+ */
+export function isSafeLinkUrl(v: string): boolean {
+  if (v.startsWith("/") && !v.startsWith("//")) return true;
+  try {
+    const u = new URL(v);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/** Optional, clearable link bounded to `max`, restricted to safe URL schemes. */
+const optUrl = (max: number) =>
+  z
+    .preprocess(
+      (v) => (typeof v === "string" ? (v.trim() === "" ? null : v.trim()) : v),
+      z
+        .string()
+        .max(max)
+        .refine(isSafeLinkUrl, "Enter a valid http(s) or site-relative link.")
+        .nullable(),
+    )
+    .optional();
+
+/** Optional, clearable email address bounded to `max`. */
+const optEmail = (max: number) =>
+  z
+    .preprocess(
+      (v) => (typeof v === "string" ? (v.trim() === "" ? null : v.trim()) : v),
+      z.string().max(max).email("Enter a valid email address.").nullable(),
+    )
+    .optional();
+
 const nonNegInt = (max?: number) => {
   const base = z.coerce.number().int().min(0);
   return (max != null ? base.max(max) : base).optional();
@@ -63,17 +101,17 @@ export const settingsSaveSchema = z.object({
   tagline: optText(160),
   announcement_enabled: z.boolean().optional(),
   announcement_text: optText(200),
-  announcement_link: optText(300),
+  announcement_link: optUrl(300),
   free_delivery_threshold: nonNegInt(),
   delivery_fee_dhaka: nonNegInt(),
   delivery_fee_major: nonNegInt(),
   delivery_fee_outside: nonNegInt(),
-  contact_email: optText(160),
+  contact_email: optEmail(160),
   contact_phone: optText(40),
   whatsapp: optText(40),
-  instagram: optText(300),
-  facebook: optText(300),
-  tiktok: optText(300),
+  instagram: optUrl(300),
+  facebook: optUrl(300),
+  tiktok: optUrl(300),
   return_window_days: nonNegInt(365),
   order_hold_hours: nonNegInt(720),
   bkash_number: optText(40),

@@ -5,6 +5,7 @@ import {
   normalizePublicSettings,
   normalizeAdminSettings,
   announcementState,
+  isSafeLinkUrl,
   type PublicSettings,
 } from "@/lib/settings.schema";
 
@@ -55,6 +56,44 @@ describe("settingsSaveSchema", () => {
   it("ignores unknown keys", () => {
     const parsed = settingsSaveSchema.parse({ store_name: "S", nope: "x" } as never);
     expect("nope" in parsed).toBe(false);
+  });
+
+  it("rejects dangerous URL schemes on link fields (F-15)", () => {
+    for (const field of ["announcement_link", "instagram", "facebook", "tiktok"]) {
+      expect(settingsSaveSchema.safeParse({ [field]: "javascript:alert(1)" }).success).toBe(false);
+      expect(settingsSaveSchema.safeParse({ [field]: "data:text/html,<script>" }).success).toBe(
+        false,
+      );
+      expect(settingsSaveSchema.safeParse({ [field]: "//evil.com" }).success).toBe(false);
+    }
+  });
+
+  it("accepts http(s) and site-relative links", () => {
+    expect(
+      settingsSaveSchema.safeParse({ instagram: "https://instagram.com/nongorr" }).success,
+    ).toBe(true);
+    expect(settingsSaveSchema.safeParse({ announcement_link: "/shop" }).success).toBe(true);
+  });
+
+  it("validates contact_email as an email address", () => {
+    expect(settingsSaveSchema.safeParse({ contact_email: "not-an-email" }).success).toBe(false);
+    expect(settingsSaveSchema.safeParse({ contact_email: "hi@nongorr.com" }).success).toBe(true);
+  });
+});
+
+describe("isSafeLinkUrl", () => {
+  it("accepts http(s) and site-relative paths", () => {
+    expect(isSafeLinkUrl("https://x.com")).toBe(true);
+    expect(isSafeLinkUrl("http://x.com")).toBe(true);
+    expect(isSafeLinkUrl("/shop")).toBe(true);
+  });
+
+  it("rejects dangerous and protocol-relative schemes", () => {
+    expect(isSafeLinkUrl("javascript:alert(1)")).toBe(false);
+    expect(isSafeLinkUrl("data:text/html,x")).toBe(false);
+    expect(isSafeLinkUrl("vbscript:msgbox(1)")).toBe(false);
+    expect(isSafeLinkUrl("//evil.com")).toBe(false);
+    expect(isSafeLinkUrl("not a url")).toBe(false);
   });
 });
 

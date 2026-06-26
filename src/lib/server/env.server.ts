@@ -44,7 +44,7 @@ export interface PrivilegedEnv extends PublicEnv {
 export function getPublicSupabaseEnv(): PublicEnv {
   const supabaseUrl = requireEnv("VITE_SUPABASE_URL");
   const supabaseAnonKey = requireEnv("VITE_SUPABASE_ANON_KEY");
-  const siteUrl = process.env.VITE_SITE_URL || "http://localhost:3000";
+  const siteUrl = process.env.VITE_SITE_URL || "http://localhost:8080"; // canonical dev port (vite server)
   const nodeEnv = process.env.NODE_ENV || "development";
 
   return { supabaseUrl, supabaseAnonKey, siteUrl, nodeEnv };
@@ -141,8 +141,25 @@ export function validateEnvAtStartup(): void {
     );
   }
 
-  if (process.env.SUPABASE_SERVICE_ROLE_KEY?.startsWith("VITE_")) {
-    problems.push("SUPABASE_SERVICE_ROLE_KEY must NOT be exposed with a VITE_ prefix.");
+  // A VITE_-prefixed copy of the service-role key would be bundled into the
+  // CLIENT by Vite — a critical leak. Detect the misconfigured *variable*.
+  if (process.env.VITE_SUPABASE_SERVICE_ROLE_KEY) {
+    problems.push(
+      "VITE_SUPABASE_SERVICE_ROLE_KEY is set — the service-role key must never use a VITE_ prefix (it would ship to the browser).",
+    );
+  }
+
+  // Reject obvious placeholder values so a half-filled .env cannot reach prod.
+  const PLACEHOLDER = /your[-_]|changeme|replace[-_]?me|example\.com|xxxx|<.*>/i;
+  for (const name of [
+    "VITE_SUPABASE_URL",
+    "VITE_SUPABASE_ANON_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
+  ] as const) {
+    const v = process.env[name];
+    if (v && PLACEHOLDER.test(v)) {
+      problems.push(`${name} still contains a placeholder value.`);
+    }
   }
 
   if (problems.length === 0) return;
