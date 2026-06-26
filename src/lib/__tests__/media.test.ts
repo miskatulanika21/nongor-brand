@@ -59,6 +59,7 @@ describe("mediaErrorMessage", () => {
   it("maps known codes and falls back to internal_error", () => {
     expect(mediaErrorMessage("actor_not_authorized")).toBe("Not authorized.");
     expect(mediaErrorMessage("media_not_found")).toMatch(/no longer exists/i);
+    expect(mediaErrorMessage("media_in_use")).toMatch(/attached to one or more products/i);
     expect(mediaErrorMessage("???")).toBe(mediaErrorMessage("internal_error"));
   });
 });

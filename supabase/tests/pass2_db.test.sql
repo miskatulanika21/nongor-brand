@@ -839,6 +839,18 @@ BEGIN
   SELECT (e->>'usage_count')::int INTO cnt FROM jsonb_array_elements(lst) e WHERE e->>'id' = mid::text;
   IF cnt IS DISTINCT FROM 1 THEN RAISE EXCEPTION 'FAIL: usage_count=% (want 1)', cnt; END IF;
 
+  -- F-05: an in-use asset cannot be deleted (would orphan the gallery image)
+  BEGIN PERFORM api.delete_media(mid, actor);
+        RAISE EXCEPTION 'FAIL: in-use delete accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'media_in_use' THEN RAISE EXCEPTION 'FAIL: in-use code=%', got; END IF;
+  END;
+  IF NOT EXISTS (SELECT 1 FROM public.media_assets WHERE id = mid) THEN
+    RAISE EXCEPTION 'FAIL: in-use rejection still deleted the row'; END IF;
+
+  -- once the reference is gone the delete succeeds
+  DELETE FROM public.product_media WHERE url = 'https://x/t/p1.png';
+
   -- delete returns the path, removes the row, audits
   path := api.delete_media(mid, actor);
   IF path <> 't/p1.png' THEN RAISE EXCEPTION 'FAIL: delete path=%', path; END IF;
