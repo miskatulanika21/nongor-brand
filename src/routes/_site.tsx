@@ -9,7 +9,11 @@ import { BRAND, whatsappConfigured } from "@/lib/brand";
 import { NotFoundPage } from "@/components/NotFoundPage";
 import { getSessionSummary } from "@/lib/auth.api";
 import { getPublicSettings } from "@/lib/settings.api";
-import { announcementState, type AnnouncementState } from "@/lib/settings.schema";
+import {
+  announcementState,
+  type AnnouncementState,
+  type PublicSettings,
+} from "@/lib/settings.schema";
 
 export const Route = createFileRoute("/_site")({
   component: SiteLayout,
@@ -29,17 +33,25 @@ export const Route = createFileRoute("/_site")({
       getSessionSummary(),
       getPublicSettings(),
     ]);
-    return { sessionSummary, announcement: announcementState(settings) };
+    return {
+      sessionSummary,
+      announcement: announcementState(settings),
+      publicSettings: settings,
+    };
   },
 });
 
 function SiteLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isAuthRoute = pathname === "/login";
-  const { sessionSummary, announcement } = useRouteContext({ from: "/_site" }) as {
+  const { sessionSummary, announcement, publicSettings } = useRouteContext({ from: "/_site" }) as {
     sessionSummary: { isAuthenticated: boolean; designation: string; hasAdminAccess: boolean };
     announcement: AnnouncementState;
+    publicSettings: PublicSettings | null;
   };
+  // Prefer admin-configured contact values; fall back to the static brand default.
+  const whatsappNumber = publicSettings?.whatsapp || BRAND.whatsapp;
+  const showWhatsappFab = whatsappConfigured || Boolean(publicSettings?.whatsapp);
 
   return (
     <StoreProvider>
@@ -52,12 +64,12 @@ function SiteLayout() {
         <main className="flex-1">
           <Outlet />
         </main>
-        {isAuthRoute ? <AuthFooter /> : <SiteFooter />}
+        {isAuthRoute ? <AuthFooter /> : <SiteFooter settings={publicSettings} />}
         {/* Only render a real WhatsApp link when a real number is configured.
             Hidden while any Radix dialog/sheet is open (see .site-whatsapp-fab). */}
-        {whatsappConfigured && !isAuthRoute && (
+        {showWhatsappFab && !isAuthRoute && (
           <a
-            href={`https://wa.me/${BRAND.whatsapp}`}
+            href={`https://wa.me/${whatsappNumber}`}
             target="_blank"
             rel="noreferrer"
             aria-label="Chat on WhatsApp"
