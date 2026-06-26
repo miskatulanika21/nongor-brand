@@ -3,7 +3,8 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { Logo } from "@/components/Logo";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { BRAND, whatsappConfigured } from "@/lib/brand";
+import { BRAND } from "@/lib/brand";
+import type { PublicSettings } from "@/lib/settings.schema";
 import { PRODUCT_CATEGORIES } from "@/lib/categories";
 import {
   FacebookIcon,
@@ -33,17 +34,12 @@ import {
 /*
  * Nongorr premium customer-facing footer.
  * UI/UX only — all actions are frontend mock.
+ * Contact/social links come from admin DB settings (with the static brand as a
+ * fallback) — see the `settings` prop.
  * TODO: connect newsletter subscription to backend.
  * TODO: wire real order tracking backend (currently navigates to /track?id=).
- * TODO: pull contact/social links from admin settings instead of static BRAND.
  * TODO: load real payment/courier configuration from admin.
  */
-
-const WHATSAPP = BRAND.whatsapp || "";
-const EMAIL = BRAND.email || "hello@nongorr.com";
-
-const waLink = (msg: string) =>
-  WHATSAPP ? `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(msg)}` : "#";
 
 type FooterLink = {
   label: string;
@@ -94,28 +90,6 @@ const trustCards = [
   { icon: Truck, title: "Nationwide Delivery", text: "Inside and outside Dhaka" },
   { icon: Ruler, title: "Custom Size Available", text: "For selected kurti items" },
   { icon: Headphones, title: "WhatsApp Support", text: "Friendly help before and after order" },
-];
-
-const socials = [
-  {
-    icon: FacebookIcon,
-    label: "Visit Nongorr on Facebook",
-    href: BRAND.facebook || "#",
-    disabled: false,
-  },
-  {
-    icon: InstagramIcon,
-    label: "Visit Nongorr on Instagram",
-    href: BRAND.instagram || "#",
-    disabled: false,
-  },
-  {
-    icon: WhatsappIcon,
-    label: "Message Nongorr on WhatsApp",
-    href: waLink("Hi Nongorr! I found you through your website 💕"),
-    disabled: !whatsappConfigured,
-  },
-  { icon: TiktokIcon, label: "TikTok — coming soon", href: "#", disabled: true },
 ];
 
 /* ---------------- Footer link list (animated underline) ---------------- */
@@ -174,8 +148,40 @@ function MobileColumn({ title, links }: { title: string; links: FooterLink[] }) 
   );
 }
 
-export function SiteFooter() {
+export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
   const navigate = useNavigate();
+
+  // Contact/social values: admin-configured (DB) first, static brand as fallback.
+  const WHATSAPP = settings?.whatsapp || BRAND.whatsapp || "";
+  const EMAIL = settings?.contact_email || BRAND.email || "hello@nongorr.com";
+  const waLink = (msg: string) =>
+    WHATSAPP ? `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(msg)}` : "#";
+  const socials = [
+    {
+      icon: FacebookIcon,
+      label: "Visit Nongorr on Facebook",
+      href: settings?.facebook || BRAND.facebook || "#",
+      disabled: false,
+    },
+    {
+      icon: InstagramIcon,
+      label: "Visit Nongorr on Instagram",
+      href: settings?.instagram || BRAND.instagram || "#",
+      disabled: false,
+    },
+    {
+      icon: WhatsappIcon,
+      label: "Message Nongorr on WhatsApp",
+      href: waLink("Hi Nongorr! I found you through your website 💕"),
+      disabled: !WHATSAPP,
+    },
+    {
+      icon: TiktokIcon,
+      label: settings?.tiktok ? "Visit Nongorr on TikTok" : "TikTok — coming soon",
+      href: settings?.tiktok || "#",
+      disabled: !settings?.tiktok,
+    },
+  ];
 
   // Newsletter mock state
   const [email, setEmail] = useState("");
