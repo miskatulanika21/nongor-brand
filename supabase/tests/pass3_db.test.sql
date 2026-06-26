@@ -255,4 +255,88 @@ BEGIN
   IF n <> 0 THEN RAISE EXCEPTION 'FAIL: payment_submitted auto-expired (n=%)', n; END IF;
 END $$;
 
+-- ============================================================
+-- §P3 — quote_order + place_order (server pricing, oversell,
+--        idempotency, price-drift, guest token)
+-- ============================================================
+INSERT INTO public.products (code, slug, name, category_id, price, stock)
+  SELECT 'o-ord', 'o-ord', 'Orderable', id, 500, 50
+  FROM public.product_categories WHERE slug = 'o-cat';
+
+DO $$
+DECLARE
+  q jsonb; r jsonb; r2 jsonb; av int; got text; pid uuid;
+  cust jsonb := jsonb_build_object('name','Cathy','phone','01700000000','district','Dhaka','address','12 Rd');
+  lines2 jsonb := '[{"code":"o-ord","qty":2}]'::jsonb;
+  tok text;
+BEGIN
+  SELECT id INTO pid FROM public.products WHERE code = 'o-ord';
+
+  -- quote: 2 x 500 = 1000 + 80 shipping (under the 3000 free threshold)
+  q := api.quote_order(lines2, 'dhaka');
+  IF (q->>'subtotal')::int <> 1000 OR (q->>'shipping_fee')::int <> 80 OR (q->>'total')::int <> 1080 THEN
+    RAISE EXCEPTION 'FAIL: quote %', q; END IF;
+  tok := q->>'quote_token';
+
+  -- place a guest COD order with the matching token
+  r := api.place_order(lines2, cust, 'dhaka', 'cod', 'p3-idem-1', NULL, tok);
+  IF (r->>'total')::int <> 1080 OR (r->>'status') <> 'pending_confirmation'
+     OR (r->>'guest_token') IS NULL OR (r->>'replayed')::bool THEN RAISE EXCEPTION 'FAIL: place %', r; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.order_items WHERE order_id=(r->>'order_id')::uuid AND qty=2 AND unit_price=500)
+     OR NOT EXISTS (SELECT 1 FROM public.inventory_reservations WHERE order_id=(r->>'order_id')::uuid AND status='active' AND qty=2)
+     OR NOT EXISTS (SELECT 1 FROM public.payments WHERE order_id=(r->>'order_id')::uuid AND amount=1080 AND status='pending')
+     OR NOT EXISTS (SELECT 1 FROM public.order_status_history WHERE order_id=(r->>'order_id')::uuid AND to_status='pending_confirmation')
+     OR NOT EXISTS (SELECT 1 FROM public.audit_logs WHERE action='order.placed' AND target_id=(r->>'order_id')) THEN
+    RAISE EXCEPTION 'FAIL: order child rows'; END IF;
+  av := private.available_qty(pid, NULL);
+  IF av <> 48 THEN RAISE EXCEPTION 'FAIL: availability=% (want 48)', av; END IF;
+
+  -- idempotent replay → same order, no duplicate
+  r2 := api.place_order(lines2, cust, 'dhaka', 'cod', 'p3-idem-1', NULL, tok);
+  IF NOT (r2->>'replayed')::bool OR (r2->>'order_no') <> (r->>'order_no')
+     OR (SELECT count(*) FROM public.orders WHERE idempotency_key='p3-idem-1') <> 1 THEN
+    RAISE EXCEPTION 'FAIL: replay'; END IF;
+
+  -- true oversell: qty 49 (<=50 bound) but only 48 available
+  BEGIN PERFORM api.place_order('[{"code":"o-ord","qty":49}]'::jsonb, cust, 'dhaka', 'bkash', 'p3-os', NULL, NULL);
+        RAISE EXCEPTION 'FAIL: oversell accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got=MESSAGE_TEXT;
+    IF got <> 'out_of_stock' THEN RAISE EXCEPTION 'FAIL: oversell=%', got; END IF; END;
+
+  -- qty bound
+  BEGIN PERFORM api.place_order('[{"code":"o-ord","qty":51}]'::jsonb, cust, 'dhaka', 'bkash', 'p3-q', NULL, NULL);
+        RAISE EXCEPTION 'FAIL: invalid_qty accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got=MESSAGE_TEXT;
+    IF got <> 'invalid_qty' THEN RAISE EXCEPTION 'FAIL: qty=%', got; END IF; END;
+
+  -- price drift (stale token)
+  BEGIN PERFORM api.place_order(lines2, cust, 'dhaka', 'bkash', 'p3-dr', NULL, 'deadbeef');
+        RAISE EXCEPTION 'FAIL: drift accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got=MESSAGE_TEXT;
+    IF got <> 'price_changed' THEN RAISE EXCEPTION 'FAIL: drift=%', got; END IF; END;
+
+  -- idempotency conflict (same key, different payload)
+  BEGIN PERFORM api.place_order('[{"code":"o-ord","qty":3}]'::jsonb, cust, 'dhaka', 'cod', 'p3-idem-1', NULL, NULL);
+        RAISE EXCEPTION 'FAIL: conflict accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got=MESSAGE_TEXT;
+    IF got <> 'idempotency_conflict' THEN RAISE EXCEPTION 'FAIL: conflict=%', got; END IF; END;
+
+  -- unknown product
+  BEGIN PERFORM api.place_order('[{"code":"nope","qty":1}]'::jsonb, cust, 'dhaka', 'cod', 'p3-x', NULL, NULL);
+        RAISE EXCEPTION 'FAIL: bad product accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got=MESSAGE_TEXT;
+    IF got <> 'product_not_purchasable' THEN RAISE EXCEPTION 'FAIL: badprod=%', got; END IF; END;
+END $$;
+
+-- grants: quote_order is public; place_order is service-role only
+DO $$
+BEGIN
+  IF NOT has_function_privilege('anon', 'api.quote_order(jsonb,text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL: anon cannot call quote_order'; END IF;
+  IF has_function_privilege('anon', 'api.place_order(jsonb,jsonb,text,text,text,uuid,text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL: anon can call place_order'; END IF;
+  IF has_function_privilege('authenticated', 'api.place_order(jsonb,jsonb,text,text,text,uuid,text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL: authenticated can call place_order'; END IF;
+END $$;
+
 ROLLBACK;
