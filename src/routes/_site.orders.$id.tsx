@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { ORDERS, STATUS_TONE } from "@/lib/orders";
 import { formatBDT, BRAND } from "@/lib/brand";
@@ -38,8 +38,10 @@ import {
   isExceptionStatus,
   measurementLabel,
   measurementValue,
+  orderScope,
   type UIOrder,
 } from "@/lib/order-ui";
+import { isDemoCommerceEnabled } from "@/lib/checkout-mode";
 
 export const Route = createFileRoute("/_site/orders/$id")({
   head: ({ params }) => ({
@@ -94,20 +96,26 @@ function OrderDetails() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
   const { addToCart } = useStore();
+  const { sessionSummary } = useRouteContext({ from: "/_site" }) as {
+    sessionSummary: { userId: string | null };
+  };
+  const scope = orderScope(sessionSummary.userId);
   const [hydrated, setHydrated] = useState(false);
   const [device, setDevice] = useState<UIOrder[]>([]);
   const [reordering, setReordering] = useState(false);
 
-  // Seed orders resolve immediately (available without the browser).
+  // Seed orders are fabricated demo records — resolvable only in demo mode so a
+  // production customer can't open a fake order by guessing its id.
   const seedOrder = useMemo(() => {
+    if (!isDemoCommerceEnabled()) return null;
     const found = ORDERS.find((o) => o.id.toUpperCase() === id.toUpperCase());
     return found ? normalizeSeedOrder(found) : null;
   }, [id]);
 
   useEffect(() => {
-    setDevice(readStoredOrders());
+    setDevice(readStoredOrders(scope));
     setHydrated(true);
-  }, []);
+  }, [scope]);
 
   // Device order overrides seed with the same id.
   const order = useMemo(() => {
