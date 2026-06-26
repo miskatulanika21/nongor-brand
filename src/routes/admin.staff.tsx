@@ -61,8 +61,11 @@ function StaffPage() {
   async function refresh() {
     setLoading(true);
     const result = await listStaff();
-    if (result.success) setRows(result.staff);
-    else toast.error(result.error);
+    if (result.success) {
+      setRows(result.staff);
+      if (result.emailsDegraded)
+        toast.warning("Some staff emails could not be loaded. Showing the rest.");
+    } else toast.error(result.error);
     setLoading(false);
   }
 

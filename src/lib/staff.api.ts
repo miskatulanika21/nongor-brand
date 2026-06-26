@@ -58,13 +58,35 @@ async function requireStepUp(
 
 // ---- List staff -------------------------------------------------------------
 
+/** One staff member's email resolution attempt against the Auth admin API. */
+export type StaffEmailLookup = { userId: string; email: string | null; ok: boolean };
+
+/**
+ * Fold per-id Auth lookups into a userId→email map plus a `degraded` flag.
+ * `degraded` is true when any lookup failed, so the UI can warn that some
+ * emails could not be loaded instead of silently rendering blanks. Pure.
+ */
+export function resolveStaffEmails(lookups: StaffEmailLookup[]): {
+  emailById: Map<string, string | null>;
+  degraded: boolean;
+} {
+  const emailById = new Map<string, string | null>();
+  let degraded = false;
+  for (const l of lookups) {
+    emailById.set(l.userId, l.ok ? l.email : null);
+    if (!l.ok) degraded = true;
+  }
+  return { emailById, degraded };
+}
+
 export const listStaff = createServerFn({ method: "GET" }).handler(async () => {
   await setNoCache();
   const { requirePermission } = await import("@/lib/server/rbac.server");
   const { createAdminSupabaseClient } = await import("@/lib/server/supabase-admin.server");
 
   const authz = await requirePermission("staff.view");
-  if (!authz.ok) return { success: false as const, error: "Not authorized.", staff: [] };
+  if (!authz.ok)
+    return { success: false as const, error: "Not authorized.", staff: [], emailsDegraded: false };
 
   const admin = createAdminSupabaseClient();
   const { data: profiles, error } = await admin
@@ -72,14 +94,35 @@ export const listStaff = createServerFn({ method: "GET" }).handler(async () => {
     .select("user_id, role, is_active, display_name, created_at")
     .order("created_at", { ascending: true });
 
-  if (error) return { success: false as const, error: "Could not load staff.", staff: [] };
+  if (error)
+    return {
+      success: false as const,
+      error: "Could not load staff.",
+      staff: [],
+      emailsDegraded: false,
+    };
 
-  // Map emails from auth.users (admin listUsers).
-  const { data: usersList } = await admin.auth.admin.listUsers();
-  const emailById = new Map((usersList?.users ?? []).map((u) => [u.id, u.email ?? null]));
+  // Resolve each staff member's email by id. Targeted lookups (one per staff
+  // row) are correct regardless of how many auth users exist — the previous
+  // single listUsers() call defaulted to 50/page, so staff beyond the first
+  // page silently lost their email, and any Auth error was swallowed entirely.
+  const ids = (profiles ?? []).map((p) => p.user_id as string);
+  const lookups = await Promise.all(
+    ids.map(async (userId): Promise<StaffEmailLookup> => {
+      try {
+        const { data, error: e } = await admin.auth.admin.getUserById(userId);
+        if (e || !data?.user) return { userId, email: null, ok: false };
+        return { userId, email: data.user.email ?? null, ok: true };
+      } catch {
+        return { userId, email: null, ok: false };
+      }
+    }),
+  );
+  const { emailById, degraded } = resolveStaffEmails(lookups);
 
   return {
     success: true as const,
+    emailsDegraded: degraded,
     staff: (profiles ?? []).map((p) => ({
       userId: p.user_id as string,
       email: emailById.get(p.user_id as string) ?? null,
