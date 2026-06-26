@@ -31,7 +31,7 @@ import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { BRAND, formatBDT, whatsappConfigured } from "@/lib/brand";
 import { FREE_DELIVERY_THRESHOLD } from "@/lib/checkout-ui";
-import type { AnnouncementState } from "@/lib/settings.schema";
+import { isSafeLinkUrl, type AnnouncementState } from "@/lib/settings.schema";
 import { PRODUCT_CATEGORIES } from "@/lib/categories";
 import { useIsLoggedIn } from "@/lib/auth-state";
 
@@ -151,7 +151,7 @@ export function SiteHeader({
         <div className="relative bg-gradient-hero text-primary-foreground">
           <p className="animate-fade-in px-9 py-1.5 text-center text-[0.68rem] font-medium leading-tight tracking-wide sm:text-xs">
             {annState.mode === "custom" ? (
-              annState.link ? (
+              annState.link && isSafeLinkUrl(annState.link) ? (
                 <a href={annState.link} className="underline-offset-2 hover:underline">
                   {annState.text}
                 </a>
