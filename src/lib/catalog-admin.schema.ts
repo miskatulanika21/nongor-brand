@@ -214,3 +214,42 @@ export function reviewErrorMessage(code: string | undefined | null): string {
   if (!code) return "An unknown error occurred.";
   return REVIEW_ERROR_MESSAGES[code] ?? "Could not complete the change. Please try again.";
 }
+
+// ---- Product gallery (Pass 3f) ----------------------------------------------
+
+/** One image in a product's gallery; URLs come from the media library. */
+export const productGalleryItemSchema = z.object({
+  url: z.string().min(1).max(1000),
+  alt: z.string().max(300).nullable().optional(),
+  isPrimary: z.boolean().optional(),
+});
+
+/** A product's full gallery: at most 12 images, at most one primary. */
+export const productGallerySchema = z
+  .array(productGalleryItemSchema)
+  .max(12)
+  .refine((items) => items.filter((i) => i.isPrimary).length <= 1, {
+    message: "Only one image can be primary.",
+  });
+
+export const productGallerySaveSchema = z.object({
+  code: z.string().min(1).max(64),
+  items: productGallerySchema,
+});
+
+export type ProductGalleryItem = z.infer<typeof productGalleryItemSchema>;
+
+/** Stable codes raised by api.set_product_media (snake_case == error.message). */
+export const GALLERY_ERROR_MESSAGES: Record<string, string> = {
+  actor_not_authorized: "Not authorized.",
+  product_not_found: "That product no longer exists. Refresh and try again.",
+  invalid_gallery: "The gallery is invalid. Check the images and try again.",
+  invalid_media: "Each image must come from the media library.",
+  internal_error: "Could not save the gallery. Please try again.",
+};
+
+export const KNOWN_GALLERY_ERROR_CODES = new Set(Object.keys(GALLERY_ERROR_MESSAGES));
+
+export function galleryErrorMessage(code: string): string {
+  return GALLERY_ERROR_MESSAGES[code] ?? GALLERY_ERROR_MESSAGES.internal_error;
+}

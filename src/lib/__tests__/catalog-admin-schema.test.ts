@@ -3,6 +3,9 @@ import {
   productInputSchema,
   categoryInputSchema,
   categoryReorderSchema,
+  productGallerySchema,
+  productGallerySaveSchema,
+  galleryErrorMessage,
 } from "@/lib/catalog-admin.schema";
 
 const validProduct = {
@@ -79,6 +82,71 @@ describe("categoryInputSchema", () => {
   it("rejects a negative sort order", () => {
     expect(categoryInputSchema.safeParse({ slug: "kurti", name: "K", sortOrder: -1 }).success).toBe(
       false,
+    );
+  });
+});
+
+describe("productGallerySchema", () => {
+  it("accepts an empty gallery", () => {
+    expect(productGallerySchema.safeParse([]).success).toBe(true);
+  });
+
+  it("accepts up to one primary image", () => {
+    const r = productGallerySchema.safeParse([
+      { url: "https://x/a.png", isPrimary: true },
+      { url: "https://x/b.png" },
+    ]);
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects more than one primary image", () => {
+    const r = productGallerySchema.safeParse([
+      { url: "https://x/a.png", isPrimary: true },
+      { url: "https://x/b.png", isPrimary: true },
+    ]);
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects more than 12 images", () => {
+    const items = Array.from({ length: 13 }, (_, i) => ({ url: `https://x/${i}.png` }));
+    expect(productGallerySchema.safeParse(items).success).toBe(false);
+  });
+
+  it("rejects an empty url", () => {
+    expect(productGallerySchema.safeParse([{ url: "" }]).success).toBe(false);
+  });
+
+  it("accepts a null alt", () => {
+    expect(productGallerySchema.safeParse([{ url: "https://x/a.png", alt: null }]).success).toBe(
+      true,
+    );
+  });
+});
+
+describe("productGallerySaveSchema", () => {
+  it("requires a product code", () => {
+    expect(productGallerySaveSchema.safeParse({ items: [] }).success).toBe(false);
+  });
+
+  it("accepts a code with items", () => {
+    const r = productGallerySaveSchema.safeParse({
+      code: "NB-0001",
+      items: [{ url: "https://x/a.png" }],
+    });
+    expect(r.success).toBe(true);
+  });
+});
+
+describe("galleryErrorMessage", () => {
+  it("maps a known code to its message", () => {
+    expect(galleryErrorMessage("invalid_media")).toBe(
+      "Each image must come from the media library.",
+    );
+  });
+
+  it("falls back to the internal_error message for unknown codes", () => {
+    expect(galleryErrorMessage("something_else")).toBe(
+      "Could not save the gallery. Please try again.",
     );
   });
 });

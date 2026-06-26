@@ -104,11 +104,16 @@ once the admin write path is DB-backed.
       (`requestMediaUpload` → browser PUT → `register_media`), `api.delete_media`
       / `api.list_media` (usage counts), audited; `admin.media-library.tsx`
       rewritten DB-backed. Migration `20260626150000`.
-- [ ] Pass 3f+ — attach library media to product galleries; retire the `PRODUCTS`
-      array.
+- [x] Pass 3f (2026-06-26) — **Product gallery management**: `api.set_product_media`
+      (service-role) atomically replaces a product's `product_media` from the media
+      library — active-staff check, bounds 0–12, library-only for new images
+      (legacy URLs survive resubmit), ≤1 primary (else first), `product.media_changed`
+      audit; `admin.products.tsx` Gallery section (picker, reorder, set-primary).
+      Migration `20260626160000`.
+- [ ] Pass 3g+ — retire the legacy `PRODUCTS` array; further catalog polish.
 
 **Exit:** admin changes persist and drive the storefront; no mock array for
-catalog; permissions enforced server-side. (Pass 3f+ outstanding.)
+catalog; permissions enforced server-side. (Pass 3g+ outstanding.)
 
 ## Stage 3 — Checkout & orders
 
