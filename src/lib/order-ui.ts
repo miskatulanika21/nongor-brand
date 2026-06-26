@@ -184,12 +184,42 @@ function normalizeDeviceOrder(raw: unknown): UIOrder | null {
   };
 }
 
-// ---- localStorage readers (browser-only, defensive) -------------------------
+// ---- localStorage readers/writer (browser-only, per-user scoped) ------------
+//
+// Device orders carry PII (name, phone, address), so they are partitioned per
+// signed-in user. `scope` is the verified auth user id, or "guest" for a guest
+// checkout. The legacy unscoped keys below predate namespacing and are never
+// read; purgeLegacyOrderKeys() removes them so they cannot bleed across accounts.
 
-export function readStoredOrders(): UIOrder[] {
+const ORDERS_KEY = "nongorr_orders";
+const LAST_ORDER_KEY = "nongorr_last_order";
+
+/** Map a (possibly absent) user id to a storage scope. */
+export function orderScope(userId: string | null | undefined): string {
+  return userId && userId.length > 0 ? userId : "guest";
+}
+
+function ordersKey(scope: string): string {
+  return `${ORDERS_KEY}::u:${scope}`;
+}
+function lastOrderKey(scope: string): string {
+  return `${LAST_ORDER_KEY}::u:${scope}`;
+}
+
+export function purgeLegacyOrderKeys(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(ORDERS_KEY);
+    window.localStorage.removeItem(LAST_ORDER_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+export function readStoredOrders(scope: string): UIOrder[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem("nongorr_orders");
+    const raw = window.localStorage.getItem(ordersKey(scope));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -199,14 +229,28 @@ export function readStoredOrders(): UIOrder[] {
   }
 }
 
-export function readLastStoredOrder(): UIOrder | null {
+export function readLastStoredOrder(scope: string): UIOrder | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem("nongorr_last_order");
+    const raw = window.localStorage.getItem(lastOrderKey(scope));
     if (!raw) return null;
     return normalizeDeviceOrder(JSON.parse(raw));
   } catch {
     return null;
+  }
+}
+
+/** Persist a freshly-created (demo) order under the user's partition. */
+export function storeDeviceOrder(scope: string, order: unknown): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(lastOrderKey(scope), JSON.stringify(order));
+    const raw = window.localStorage.getItem(ordersKey(scope));
+    const list = raw ? (JSON.parse(raw) as unknown[]) : [];
+    list.unshift(order);
+    window.localStorage.setItem(ordersKey(scope), JSON.stringify(list));
+  } catch {
+    // ignore storage failures in the demo flow
   }
 }
 

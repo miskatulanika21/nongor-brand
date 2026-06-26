@@ -391,6 +391,7 @@ export const getSessionSummary = createServerFn({ method: "GET" }).handler(async
       isAuthenticated: false as const,
       designation: "customer" as Designation,
       hasAdminAccess: false,
+      userId: null as string | null,
     };
   }
 
@@ -399,6 +400,9 @@ export const getSessionSummary = createServerFn({ method: "GET" }).handler(async
     isAuthenticated: true as const,
     designation: (identity.kind === "staff" ? identity.role : "customer") as Designation,
     hasAdminAccess: identity.kind === "staff",
+    // The caller's own id (not secret) — used client-side only to partition this
+    // user's device-stored orders from any other account on a shared browser.
+    userId: identity.userId,
   };
 });
 

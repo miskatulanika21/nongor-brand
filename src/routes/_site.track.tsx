@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { STATUS_TONE } from "@/lib/orders";
 import { formatBDT, BRAND } from "@/lib/brand";
@@ -26,6 +26,7 @@ import {
   CUSTOMER_ORDER_STEPS,
   customerStepIndex,
   isExceptionStatus,
+  orderScope,
   type UIOrder,
 } from "@/lib/order-ui";
 
@@ -52,13 +53,17 @@ export const Route = createFileRoute("/_site/track")({
 function Track() {
   const { id = "" } = Route.useSearch();
   const navigate = useNavigate();
+  const { sessionSummary } = useRouteContext({ from: "/_site" }) as {
+    sessionSummary: { userId: string | null };
+  };
+  const scope = orderScope(sessionSummary.userId);
   const [input, setInput] = useState(id);
   const [submittedQuery, setSubmittedQuery] = useState(id);
   const [device, setDevice] = useState<UIOrder[]>([]);
 
   useEffect(() => {
-    setDevice(readStoredOrders());
-  }, []);
+    setDevice(readStoredOrders(scope));
+  }, [scope]);
 
   // Keep in sync if the URL search param changes externally.
   useEffect(() => {

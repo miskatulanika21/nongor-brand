@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { STATUS_TONE } from "@/lib/orders";
 import { formatBDT, BRAND } from "@/lib/brand";
@@ -24,6 +24,7 @@ import {
   buildOrderList,
   normalizeBDPhone,
   reorderItems,
+  orderScope,
   type UIOrder,
 } from "@/lib/order-ui";
 
@@ -48,6 +49,10 @@ type DateFilter = "all" | "7" | "30";
 function Orders() {
   const navigate = useNavigate();
   const { addToCart } = useStore();
+  const { sessionSummary } = useRouteContext({ from: "/_site" }) as {
+    sessionSummary: { userId: string | null };
+  };
+  const scope = orderScope(sessionSummary.userId);
   const [hydrated, setHydrated] = useState(false);
   const [device, setDevice] = useState<UIOrder[]>([]);
   const [search, setSearch] = useState("");
@@ -56,9 +61,9 @@ function Orders() {
   const [reordering, setReordering] = useState<string | null>(null);
 
   useEffect(() => {
-    setDevice(readStoredOrders());
+    setDevice(readStoredOrders(scope));
     setHydrated(true);
-  }, []);
+  }, [scope]);
 
   const orders = useMemo(() => buildOrderList(device), [device]);
 

@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { formatBDT, BRAND } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ import {
   CUSTOMER_ORDER_STEPS,
   customerStepIndex,
   isExceptionStatus,
+  orderScope,
   type UIOrder,
 } from "@/lib/order-ui";
 
@@ -48,13 +49,17 @@ const PAYMENT_TONE: Record<UIOrder["paymentStatus"], string> = {
 };
 
 function OrderSuccess() {
+  const { sessionSummary } = useRouteContext({ from: "/_site" }) as {
+    sessionSummary: { userId: string | null };
+  };
+  const scope = orderScope(sessionSummary.userId);
   const [hydrated, setHydrated] = useState(false);
   const [order, setOrder] = useState<UIOrder | null>(null);
 
   useEffect(() => {
-    setOrder(readLastStoredOrder());
+    setOrder(readLastStoredOrder(scope));
     setHydrated(true);
-  }, []);
+  }, [scope]);
 
   if (!hydrated) {
     return (

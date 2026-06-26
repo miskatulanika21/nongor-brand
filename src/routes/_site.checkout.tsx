@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { formatBDT, BRAND, paymentConfigured, PAYMENT_NOTICE } from "@/lib/brand";
@@ -26,6 +26,7 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { EmptyState } from "@/components/states";
 import { isDemoCommerceEnabled } from "@/lib/checkout-mode";
+import { storeDeviceOrder, orderScope } from "@/lib/order-ui";
 import { WhatsappIcon } from "@/components/site/social-icons";
 import {
   Copy,
@@ -114,6 +115,9 @@ function Checkout() {
   // Simulated checkout is allowed only in dev / explicit preview; in production
   // the form fails closed and offers a real WhatsApp ordering channel instead.
   const demoCommerce = isDemoCommerceEnabled();
+  const { sessionSummary } = useRouteContext({ from: "/_site" }) as {
+    sessionSummary: { userId: string | null };
+  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const submitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -291,15 +295,7 @@ function Checkout() {
         })),
       };
 
-      try {
-        localStorage.setItem("nongorr_last_order", JSON.stringify(order));
-        const raw = localStorage.getItem("nongorr_orders");
-        const list = raw ? JSON.parse(raw) : [];
-        list.unshift(order);
-        localStorage.setItem("nongorr_orders", JSON.stringify(list));
-      } catch {
-        // ignore storage failures in mock flow
-      }
+      storeDeviceOrder(orderScope(sessionSummary.userId), order);
 
       clearCart();
       setSubmitting(false);

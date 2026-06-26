@@ -1,7 +1,7 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useAccountUI, safeDateValue } from "@/lib/account-ui";
-import { readStoredOrders, type UIOrder } from "@/lib/order-ui";
+import { readStoredOrders, orderScope, type UIOrder } from "@/lib/order-ui";
 import { STATUS_TONE } from "@/lib/orders";
 import { formatBDT, BRAND } from "@/lib/brand";
 import { Badge } from "@/components/ui/badge";
@@ -30,14 +30,18 @@ const FALLBACK_TONE = "border-border bg-secondary text-secondary-foreground";
 function AccountOverview() {
   const { hydrated, profile, addresses, measurements } = useAccountUI();
   const { wishlist } = useStore();
+  const { session } = useRouteContext({ from: "/_site/account" }) as {
+    session: { userId: string };
+  };
+  const scope = orderScope(session.userId);
   const [orders, setOrders] = useState<UIOrder[]>([]);
 
   useEffect(() => {
-    const deviceOrders = readStoredOrders().sort(
+    const deviceOrders = readStoredOrders(scope).sort(
       (a, b) => safeDateValue(b.date) - safeDateValue(a.date),
     );
     setOrders(deviceOrders);
-  }, []);
+  }, [scope]);
 
   const recent = orders[0];
 
