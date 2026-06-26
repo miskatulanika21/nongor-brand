@@ -35,6 +35,7 @@ export type AuditAction =
   | "mfa.enroll.failed" // enrollment initiation errored at the provider
   | "mfa.enrolled"
   | "mfa.removed"
+  | "mfa.remove.denied" // factor removal refused (e.g. AAL2 required)
   | "mfa.challenge.success"
   | "mfa.challenge.failed"
   | "staff.invited"

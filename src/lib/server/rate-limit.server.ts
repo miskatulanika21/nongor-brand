@@ -46,6 +46,8 @@ export const RATE_LIMITS = {
   mfaVerify: { limit: 10, windowSec: 60 * 5 },
   /** MFA enrollment initiation — limit factor churn / abuse. */
   mfaEnroll: { limit: 5, windowSec: 60 * 10 },
+  /** MFA factor removal — sensitive; the only MFA op previously unguarded. */
+  mfaManage: { limit: 10, windowSec: 60 * 10 },
   /** Staff invitation / provisioning. */
   staffProvision: { limit: 10, windowSec: 60 * 10 },
   /** Catalog admin writes (products, categories) — higher volume than auth ops. */

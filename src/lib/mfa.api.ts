@@ -295,52 +295,92 @@ export const challengeMfa = createServerFn({ method: "POST" })
 
 const unenrollSchema = z.object({ factorId: z.string().min(1) });
 
-export const unenrollMfa = createServerFn({ method: "POST" })
-  .validator(unenrollSchema)
-  .handler(async ({ data }) => {
-    await setNoCacheHeaders();
-    const { createServerSupabaseClient } = await import("@/lib/server/supabase.server");
-    const { getPublicSupabaseEnv } = await import("@/lib/server/env.server");
-    const { checkCsrfOrigin } = await import("@/lib/server/security.server");
-    const { requireStaff } = await import("@/lib/server/identity.server");
-    const { mfaRequiredForRole } = await import("@/lib/server/mfa.server");
-    const { writeAudit } = await import("@/lib/server/audit.server");
+/**
+ * Remove a verified TOTP factor.
+ *
+ * Hardening (F-10):
+ *   - CSRF + strict staff identity (getUser).
+ *   - Rate-limited (this was the ONLY MFA op without a limit).
+ *   - **Requires a current AAL2 session.** Removing a factor lowers account
+ *     security, so — mirroring the enrollment path, which already requires AAL2
+ *     to ADD a factor when one exists — a first-factor-only (aal1) session, e.g.
+ *     a hijacked password, must not be able to STRIP MFA. The caller already
+ *     holds a verified factor, so it can step up via challengeMfa and retry.
+ *   - Policy backstop: for MFA-mandatory roles, never drop below one factor.
+ *   - Audit removal and AAL2 denial.
+ *
+ * Extracted as a plain function so it is unit-testable with mocked modules.
+ */
+export async function performUnenrollMfa(data: z.infer<typeof unenrollSchema>) {
+  await setNoCacheHeaders();
+  const { createServerSupabaseClient } = await import("@/lib/server/supabase.server");
+  const { getPublicSupabaseEnv } = await import("@/lib/server/env.server");
+  const { checkCsrfOrigin, getClientIp } = await import("@/lib/server/security.server");
+  const { requireStaff } = await import("@/lib/server/identity.server");
+  const { mfaRequiredForRole } = await import("@/lib/server/mfa.server");
+  const { checkIndependentRateLimit, rateLimitMessage } =
+    await import("@/lib/server/rate-limit.server");
+  const { writeAudit } = await import("@/lib/server/audit.server");
 
-    const env = getPublicSupabaseEnv();
-    if (!checkCsrfOrigin(env.siteUrl)) {
-      return { success: false as const, error: "Invalid request origin." };
-    }
+  const env = getPublicSupabaseEnv();
+  if (!checkCsrfOrigin(env.siteUrl)) {
+    return { success: false as const, error: "Invalid request origin." };
+  }
 
-    // High-risk: verify with getUser().
-    const staff = await requireStaff({ strict: true });
-    if (!staff.ok) return { success: false as const, error: "Not authorized." };
+  // High-risk: verify with getUser().
+  const staff = await requireStaff({ strict: true });
+  if (!staff.ok) return { success: false as const, error: "Not authorized." };
+  const actorId = staff.identity.userId;
 
-    const supabase = createServerSupabaseClient();
+  const rl = await checkIndependentRateLimit("mfaManage", { ip: getClientIp(), account: actorId });
+  if (!rl.allowed) return { success: false as const, error: rateLimitMessage() };
 
-    // If MFA is mandatory for this role, only allow removal when another
-    // verified factor remains (so the account never drops below the policy).
-    if (mfaRequiredForRole(staff.identity.role)) {
-      const { data: factors } = await supabase.auth.mfa.listFactors();
-      const verified = (factors?.totp ?? []).filter((f) => f.status === "verified");
-      if (verified.length <= 1) {
-        return {
-          success: false as const,
-          error:
-            "MFA is required for your role. Add another authenticator before removing this one.",
-        };
-      }
-    }
+  const supabase = createServerSupabaseClient();
 
-    const { error } = await supabase.auth.mfa.unenroll({ factorId: data.factorId });
-    if (error) {
-      return { success: false as const, error: "Could not remove this authenticator." };
-    }
-
+  // Require an AAL2 session to remove a factor (step-up the existing one first).
+  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (((aal?.currentLevel as string | null) ?? "aal1") !== "aal2") {
     await writeAudit({
-      action: "mfa.removed",
-      actorId: staff.identity.userId,
+      action: "mfa.remove.denied",
+      actorId,
       targetType: "mfa_factor",
       targetId: data.factorId,
+      metadata: { reason: "aal2_required" },
     });
-    return { success: true as const };
+    return {
+      success: false as const,
+      requiresAal2: true as const,
+      error: "Verify your authenticator first, then remove a device.",
+    };
+  }
+
+  // If MFA is mandatory for this role, only allow removal when another
+  // verified factor remains (so the account never drops below the policy).
+  if (mfaRequiredForRole(staff.identity.role)) {
+    const { data: factors } = await supabase.auth.mfa.listFactors();
+    const verified = (factors?.totp ?? []).filter((f) => f.status === "verified");
+    if (verified.length <= 1) {
+      return {
+        success: false as const,
+        error: "MFA is required for your role. Add another authenticator before removing this one.",
+      };
+    }
+  }
+
+  const { error } = await supabase.auth.mfa.unenroll({ factorId: data.factorId });
+  if (error) {
+    return { success: false as const, error: "Could not remove this authenticator." };
+  }
+
+  await writeAudit({
+    action: "mfa.removed",
+    actorId,
+    targetType: "mfa_factor",
+    targetId: data.factorId,
   });
+  return { success: true as const };
+}
+
+export const unenrollMfa = createServerFn({ method: "POST" })
+  .validator(unenrollSchema)
+  .handler(async ({ data }) => performUnenrollMfa(data));
