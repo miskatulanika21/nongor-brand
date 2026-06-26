@@ -12,8 +12,9 @@ submission (persisted + moderated); Pass 3c: DB-backed catalog facets & counts
 (shop filter sidebar); Pass 3d: DB-backed site settings (announcement bar live +
 audited admin settings); Pass 3e: Storage-backed media library (real uploads via
 signed URLs); Pass 3f: product gallery management (attach library media to a
-product's gallery, atomic replace, library-only for new images).** 26 migrations
-applied to the live project; remote ledger matches the 26 repo files._
+product's gallery, atomic replace, library-only for new images; hardened with
+duplicate prevention, alt-text editing, optimistic concurrency).** 27 migrations
+applied to the live project; remote ledger matches the 27 repo files._
 
 State legend: **(1) code complete · (2) migration applied · (3) deployed
 verification complete · (4) operator action pending.**
@@ -41,8 +42,8 @@ verification complete · (4) operator action pending.**
 
 ## Migrations (live project xomjxtmhkglhuiccekld)
 
-**26 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
-ledger matches the 26 repo files exactly (versions + names), in order:
+**27 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
+ledger matches the 27 repo files exactly (versions + names), in order:
 
 ```
 …143927 create_private_schema            …623000000 advisor_hardening
@@ -60,6 +61,7 @@ ledger matches the 26 repo files exactly (versions + names), in order:
                                           …626140000 site_settings
                                           …626150000 media_library
                                           …626160000 product_gallery
+                                          …626170000 product_gallery_hardening
 ```
 
 Note: `apply_migration` (MCP) stamps its own version, so after every MCP apply the
@@ -246,10 +248,18 @@ normal removal is **Archive**. Privileged GET handlers set `private, no-store`.
   (`requirePermission("products.manage")`, reusing `listMedia` so a products
   manager needs no `media.manage`). `admin.products.tsx` gains a **Gallery**
   section (when editing): inline library picker, add/remove, set-primary, reorder.
-- Verified by rolled-back SQL proof + `pass2_db.test.sql` §17 (replace + sort_order
-  - first-becomes-primary, explicit primary, preserve-legacy resubmit, non-library
-    rejection, two-primary rejection, bounds, bad actor, unknown product, empty
-    clears, grants) + Vitest (gallery schema).
+- **Hardening (`20260626170000`):** a `(product_id, url)` unique index + duplicate
+  rejection (`duplicate_media`); a DB alt-text length CHECK (≤300) + an alt-text
+  editor in the gallery UI; a hard 12-image guard in the picker; and **optimistic
+  concurrency** — `products.gallery_revision` + a `p_expected_revision` argument so a
+  stale editor gets `gallery_conflict` instead of silently clobbering a concurrent
+  save. `set_product_media` now returns `{ revision, items }`. The migration first
+  de-duplicates pre-existing seed rows (exact repeats) so the unique index can build.
+- Verified by rolled-back SQL proof + `pass2_db.test.sql` §17 (replace + sort_order,
+  first-becomes-primary, explicit primary, preserve-legacy resubmit, non-library
+  rejection, two-primary rejection, bounds, bad actor, unknown product, duplicate,
+  over-long alt, unique-index backstop, optimistic-concurrency conflict + bump, empty
+  clears, grants) + Vitest (gallery schema incl. duplicate + revision).
 
 ## Real vs mock (data flow)
 
@@ -272,7 +282,7 @@ reports.
 ## CI (honest)
 
 `ci.yml` runs (genuinely): frozen Bun install, typecheck, lint, format, test, build,
-**migrate-from-empty** (boots a local Supabase, applies all 26 migrations to a blank
+**migrate-from-empty** (boots a local Supabase, applies all 27 migrations to a blank
 DB), and **DB integration tests** (`pass2_db.test.sql` — stock write-guard,
 set_inventory validation, ledger immutability, FK RESTRICT, first-variant
 conservation, owner-only purge, reorder validation, bulk idempotency, actor-deletion

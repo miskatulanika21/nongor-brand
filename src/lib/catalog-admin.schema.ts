@@ -224,17 +224,25 @@ export const productGalleryItemSchema = z.object({
   isPrimary: z.boolean().optional(),
 });
 
-/** A product's full gallery: at most 12 images, at most one primary. */
+/** Maximum images per product gallery — enforced in the UI, schema, and DB. */
+export const MAX_GALLERY_IMAGES = 12;
+
+/** A product's full gallery: at most 12 images, ≤1 primary, no duplicate URLs. */
 export const productGallerySchema = z
   .array(productGalleryItemSchema)
-  .max(12)
+  .max(MAX_GALLERY_IMAGES)
   .refine((items) => items.filter((i) => i.isPrimary).length <= 1, {
     message: "Only one image can be primary.",
+  })
+  .refine((items) => new Set(items.map((i) => i.url)).size === items.length, {
+    message: "An image may appear only once in a gallery.",
   });
 
 export const productGallerySaveSchema = z.object({
   code: z.string().min(1).max(64),
   items: productGallerySchema,
+  /** Optimistic-concurrency token from when the editor loaded the gallery. */
+  expectedRevision: z.number().int().nonnegative().nullable().optional(),
 });
 
 export type ProductGalleryItem = z.infer<typeof productGalleryItemSchema>;
@@ -245,6 +253,8 @@ export const GALLERY_ERROR_MESSAGES: Record<string, string> = {
   product_not_found: "That product no longer exists. Refresh and try again.",
   invalid_gallery: "The gallery is invalid. Check the images and try again.",
   invalid_media: "Each image must come from the media library.",
+  duplicate_media: "An image may appear only once in a gallery.",
+  gallery_conflict: "This gallery was changed in another session. Refresh and try again.",
   internal_error: "Could not save the gallery. Please try again.",
 };
 

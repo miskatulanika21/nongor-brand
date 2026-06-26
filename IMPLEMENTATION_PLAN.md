@@ -109,7 +109,9 @@ once the admin write path is DB-backed.
       library — active-staff check, bounds 0–12, library-only for new images
       (legacy URLs survive resubmit), ≤1 primary (else first), `product.media_changed`
       audit; `admin.products.tsx` Gallery section (picker, reorder, set-primary).
-      Migration `20260626160000`.
+      Migration `20260626160000`. Hardened (`20260626170000`): `(product_id,url)`
+      unique index + `duplicate_media`, alt-length CHECK + alt editor, 12-image UI
+      guard, optimistic concurrency (`gallery_revision` → `gallery_conflict`).
 - [ ] Pass 3g+ — retire the legacy `PRODUCTS` array; further catalog polish.
 
 **Exit:** admin changes persist and drive the storefront; no mock array for

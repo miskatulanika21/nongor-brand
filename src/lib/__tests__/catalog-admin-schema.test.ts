@@ -112,6 +112,14 @@ describe("productGallerySchema", () => {
     expect(productGallerySchema.safeParse(items).success).toBe(false);
   });
 
+  it("rejects duplicate urls", () => {
+    const r = productGallerySchema.safeParse([
+      { url: "https://x/a.png" },
+      { url: "https://x/a.png" },
+    ]);
+    expect(r.success).toBe(false);
+  });
+
   it("rejects an empty url", () => {
     expect(productGallerySchema.safeParse([{ url: "" }]).success).toBe(false);
   });
@@ -135,12 +143,27 @@ describe("productGallerySaveSchema", () => {
     });
     expect(r.success).toBe(true);
   });
+
+  it("accepts an optional expectedRevision", () => {
+    const r = productGallerySaveSchema.safeParse({
+      code: "NB-0001",
+      items: [],
+      expectedRevision: 3,
+    });
+    expect(r.success).toBe(true);
+  });
 });
 
 describe("galleryErrorMessage", () => {
   it("maps a known code to its message", () => {
     expect(galleryErrorMessage("invalid_media")).toBe(
       "Each image must come from the media library.",
+    );
+    expect(galleryErrorMessage("duplicate_media")).toBe(
+      "An image may appear only once in a gallery.",
+    );
+    expect(galleryErrorMessage("gallery_conflict")).toBe(
+      "This gallery was changed in another session. Refresh and try again.",
     );
   });
 

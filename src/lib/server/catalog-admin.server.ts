@@ -161,6 +161,8 @@ export interface GalleryImage {
 export interface AdminProductDetail extends ProductInput {
   code: string;
   gallery: GalleryImage[];
+  /** Optimistic-concurrency token; pass back on save to detect concurrent edits. */
+  galleryRevision: number;
 }
 
 interface AdminProductDetailRow {
@@ -196,6 +198,7 @@ interface AdminProductDetailRow {
   safety: string | null;
   blouse_piece: boolean | null;
   stitched: boolean | null;
+  gallery_revision: number;
   category: { slug: string } | null;
   media: Array<{ url: string; alt: string | null; is_primary: boolean; sort_order: number }> | null;
 }
@@ -205,7 +208,7 @@ const ADMIN_DETAIL_SELECT = `
   is_new, is_handmade, is_best_seller, has_video, description,
   color, colors, fabric, occasion, care, length, work_type, pieces_included,
   shade, volume, skin_type, expiry, batch, ingredients, how_to_use, safety,
-  blouse_piece, stitched,
+  blouse_piece, stitched, gallery_revision,
   category:product_categories ( slug ),
   media:product_media ( url, alt, is_primary, sort_order )
 `;
@@ -256,6 +259,7 @@ export async function fetchAdminProductDetail(code: string): Promise<AdminProduc
     safety: und(r.safety),
     blousePiece: r.blouse_piece,
     stitched: r.stitched,
+    galleryRevision: r.gallery_revision ?? 0,
     gallery: [...(r.media ?? [])]
       .sort((a, b) => a.sort_order - b.sort_order)
       .map((m) => ({
@@ -722,16 +726,24 @@ function throwGalleryError(error: { message?: string }): never {
   throw new GalleryError(KNOWN_GALLERY_ERROR_CODES.has(raw) ? raw : "internal_error");
 }
 
+export interface SavedGallery {
+  revision: number;
+  gallery: GalleryImage[];
+}
+
 /**
  * Replace a product's gallery from media-library images via api.set_product_media
  * (atomic delete + insert + canonical `product.media_changed` audit). The DB
- * enforces library-or-existing URLs and a single primary.
+ * enforces library-or-existing URLs, a single primary, no duplicate URLs, and —
+ * when `expectedRevision` is supplied — optimistic concurrency (a stale editor
+ * gets a `gallery_conflict`). Returns the new revision + persisted gallery.
  */
 export async function setProductMedia(
   code: string,
   items: ProductGalleryItem[],
   actorId: string,
-): Promise<void> {
+  expectedRevision: number | null,
+): Promise<SavedGallery> {
   const admin = createAdminSupabaseClient();
   const payload = items.map((it, i) => ({
     url: it.url,
@@ -739,12 +751,26 @@ export async function setProductMedia(
     is_primary: Boolean(it.isPrimary),
     sort_order: i,
   }));
-  const { error } = await admin.schema("api").rpc("set_product_media", {
+  const { data, error } = await admin.schema("api").rpc("set_product_media", {
     p_code: code,
     p_items: payload,
     p_actor: actorId,
+    p_expected_revision: expectedRevision,
   });
   if (error) throwGalleryError(error);
+  const result = (data ?? {}) as {
+    revision?: number;
+    items?: Array<{ url: string; alt: string | null; is_primary: boolean; sort_order: number }>;
+  };
+  return {
+    revision: result.revision ?? 0,
+    gallery: (result.items ?? []).map((m) => ({
+      url: m.url,
+      alt: m.alt,
+      isPrimary: m.is_primary,
+      sortOrder: m.sort_order,
+    })),
+  };
 }
 
 // ---- Category writes (transactional canonical audit via api.* RPCs) ---------

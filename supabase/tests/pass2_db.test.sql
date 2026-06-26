@@ -877,7 +877,7 @@ END $$;
 -- ============================================================
 DO $$
 DECLARE actor uuid := '00000000-0000-0000-0000-0000000000a1';
-        res jsonb; got text; cnt int; pid uuid; big jsonb;
+        res jsonb; got text; cnt int; pid uuid; big jsonb; rev int;
 BEGIN
   -- Self-contained product: §6 purges 'p-clean', so seed a dedicated one here
   -- rather than depending on a product an earlier section may have removed.
@@ -894,7 +894,10 @@ BEGIN
   res := api.set_product_media('p-gallery', jsonb_build_array(
            jsonb_build_object('url', 'https://x/g/a.png', 'alt', 'A'),
            jsonb_build_object('url', 'https://x/g/b.png')), actor);
-  IF jsonb_array_length(res) <> 2 THEN RAISE EXCEPTION 'FAIL: gallery len=%', jsonb_array_length(res); END IF;
+  -- New return shape: { revision, items }. First save bumps revision 0 -> 1.
+  IF jsonb_array_length(res->'items') <> 2 THEN RAISE EXCEPTION 'FAIL: gallery len=%', jsonb_array_length(res->'items'); END IF;
+  rev := (res->>'revision')::int;
+  IF rev <> 1 THEN RAISE EXCEPTION 'FAIL: revision=% (want 1)', rev; END IF;
   SELECT count(*) INTO cnt FROM public.product_media WHERE product_id = pid;
   IF cnt <> 2 THEN RAISE EXCEPTION 'FAIL: rows=%', cnt; END IF;
   IF NOT EXISTS (SELECT 1 FROM public.product_media
@@ -925,7 +928,7 @@ BEGIN
   res := api.set_product_media('p-gallery', jsonb_build_array(
            jsonb_build_object('url', 'https://legacy/seed.jpg'),
            jsonb_build_object('url', 'https://x/g/a.png')), actor);
-  IF jsonb_array_length(res) <> 2 THEN RAISE EXCEPTION 'FAIL: legacy resubmit len=%', jsonb_array_length(res); END IF;
+  IF jsonb_array_length(res->'items') <> 2 THEN RAISE EXCEPTION 'FAIL: legacy resubmit len=%', jsonb_array_length(res->'items'); END IF;
 
   -- Library-only for NEW images: an unknown, non-library URL is rejected.
   BEGIN PERFORM api.set_product_media('p-gallery', jsonb_build_array(
@@ -967,15 +970,51 @@ BEGIN
     IF got <> 'product_not_found' THEN RAISE EXCEPTION 'FAIL: product code=%', got; END IF;
   END;
 
-  -- Empty array clears the gallery.
+  -- Duplicate URL rejected (G-01).
+  BEGIN PERFORM api.set_product_media('p-gallery', jsonb_build_array(
+          jsonb_build_object('url', 'https://x/g/a.png'),
+          jsonb_build_object('url', 'https://x/g/a.png')), actor);
+        RAISE EXCEPTION 'FAIL: duplicate url accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'duplicate_media' THEN RAISE EXCEPTION 'FAIL: duplicate code=%', got; END IF;
+  END;
+
+  -- Over-long alt text rejected (G-05).
+  BEGIN PERFORM api.set_product_media('p-gallery', jsonb_build_array(
+          jsonb_build_object('url', 'https://x/g/a.png', 'alt', repeat('x', 301))), actor);
+        RAISE EXCEPTION 'FAIL: long alt accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'invalid_gallery' THEN RAISE EXCEPTION 'FAIL: long-alt code=%', got; END IF;
+  END;
+
+  -- DB unique index backstops duplicate direct inserts (G-01).
+  BEGIN INSERT INTO public.product_media (product_id, url)
+        VALUES (pid, 'https://x/g/a.png'), (pid, 'https://x/g/a.png');
+        RAISE EXCEPTION 'FAIL: unique (product_id,url) not enforced';
+  EXCEPTION WHEN unique_violation THEN NULL; END;
+
+  -- Optimistic concurrency (G-04): a stale expected revision is rejected.
+  SELECT gallery_revision INTO rev FROM public.products WHERE id = pid;
+  BEGIN PERFORM api.set_product_media('p-gallery', '[]'::jsonb, actor, rev - 1);
+        RAISE EXCEPTION 'FAIL: stale revision accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'gallery_conflict' THEN RAISE EXCEPTION 'FAIL: conflict code=%', got; END IF;
+  END;
+  -- The matching revision succeeds and bumps the counter.
+  res := api.set_product_media('p-gallery', jsonb_build_array(
+           jsonb_build_object('url', 'https://x/g/a.png')), actor, rev);
+  IF (res->>'revision')::int <> rev + 1 THEN
+    RAISE EXCEPTION 'FAIL: revision not bumped (%)', res->>'revision'; END IF;
+
+  -- Empty array clears the gallery (return shape is { revision, items: [] }).
   res := api.set_product_media('p-gallery', '[]'::jsonb, actor);
-  IF res <> '[]'::jsonb THEN RAISE EXCEPTION 'FAIL: empty result=%', res; END IF;
+  IF res->'items' <> '[]'::jsonb THEN RAISE EXCEPTION 'FAIL: empty result=%', res; END IF;
   SELECT count(*) INTO cnt FROM public.product_media WHERE product_id = pid;
   IF cnt <> 0 THEN RAISE EXCEPTION 'FAIL: gallery not cleared (%)', cnt; END IF;
 END $$;
 
 -- Grant: api.set_product_media is service-role only.
-DO $$ DECLARE fn text := 'api.set_product_media(text,jsonb,uuid)'; BEGIN
+DO $$ DECLARE fn text := 'api.set_product_media(text,jsonb,uuid,integer)'; BEGIN
   IF has_function_privilege('anon', fn, 'EXECUTE') THEN
     RAISE EXCEPTION 'FAIL: anon has EXECUTE on %', fn; END IF;
   IF has_function_privilege('authenticated', fn, 'EXECUTE') THEN

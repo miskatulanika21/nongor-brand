@@ -180,8 +180,13 @@ export const saveProductGallery = createServerFn({ method: "POST" })
 
     const repo = await import("@/lib/server/catalog-admin.server");
     try {
-      await repo.setProductMedia(data.code, data.items, g.actorId);
-      return { success: true as const };
+      const saved = await repo.setProductMedia(
+        data.code,
+        data.items,
+        g.actorId,
+        data.expectedRevision ?? null,
+      );
+      return { success: true as const, revision: saved.revision, gallery: saved.gallery };
     } catch (e) {
       return { success: false as const, error: await messageFromGalleryError(e) };
     }
