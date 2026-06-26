@@ -294,6 +294,16 @@ remove it); orders, cart, wishlist, checkout, coupons; payments; customer
 profiles/addresses/measurements; courier; banners, CMS, contact, newsletter,
 reports.
 
+**Privacy / fail-closed guardrails (F-03 / F-04, ahead of Stage 3/4):** customer
+account PII (profile/addresses/measurements) and device orders are now partitioned
+in localStorage **per verified user id** (legacy unscoped keys are purged), so two
+customers sharing one browser can never read each other's data. Simulated checkout
+is gated by `isDemoCommerceEnabled()` (dev / explicit `VITE_ENABLE_DEMO_CHECKOUT`
+preview only): in production it **fails closed** — no fabricated "order placed";
+the form offers a real WhatsApp ordering CTA — and the seeded demo `ORDERS` never
+appear in a real customer's order/track/detail views. This is a guardrail, not the
+Stage 3 order backend.
+
 ## CI (honest)
 
 `ci.yml` runs (genuinely): frozen Bun install, typecheck, lint, format, test, build,
