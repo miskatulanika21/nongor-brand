@@ -16,7 +16,11 @@ import type {
   CategoryReorder,
   ProductStatus,
 } from "@/lib/catalog-admin.schema";
-import { KNOWN_INVENTORY_ERROR_CODES } from "@/lib/catalog-admin.schema";
+import {
+  KNOWN_INVENTORY_ERROR_CODES,
+  KNOWN_GALLERY_ERROR_CODES,
+  type ProductGalleryItem,
+} from "@/lib/catalog-admin.schema";
 
 // Re-export the isomorphic mapper so existing server-side importers keep working;
 // the canonical definition now lives in the (client-safe) schema module so the
@@ -147,8 +151,16 @@ export async function fetchAdminProducts(): Promise<AdminProductListItem[]> {
 }
 
 /** Full editable detail for one product (any status), keyed by stable code. */
+export interface GalleryImage {
+  url: string;
+  alt: string | null;
+  isPrimary: boolean;
+  sortOrder: number;
+}
+
 export interface AdminProductDetail extends ProductInput {
   code: string;
+  gallery: GalleryImage[];
 }
 
 interface AdminProductDetailRow {
@@ -185,6 +197,7 @@ interface AdminProductDetailRow {
   blouse_piece: boolean | null;
   stitched: boolean | null;
   category: { slug: string } | null;
+  media: Array<{ url: string; alt: string | null; is_primary: boolean; sort_order: number }> | null;
 }
 
 const ADMIN_DETAIL_SELECT = `
@@ -193,7 +206,8 @@ const ADMIN_DETAIL_SELECT = `
   color, colors, fabric, occasion, care, length, work_type, pieces_included,
   shade, volume, skin_type, expiry, batch, ingredients, how_to_use, safety,
   blouse_piece, stitched,
-  category:product_categories ( slug )
+  category:product_categories ( slug ),
+  media:product_media ( url, alt, is_primary, sort_order )
 `;
 
 const und = <T>(v: T | null): T | undefined => (v === null ? undefined : v);
@@ -242,6 +256,14 @@ export async function fetchAdminProductDetail(code: string): Promise<AdminProduc
     safety: und(r.safety),
     blousePiece: r.blouse_piece,
     stitched: r.stitched,
+    gallery: [...(r.media ?? [])]
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((m) => ({
+        url: m.url,
+        alt: m.alt,
+        isPrimary: m.is_primary,
+        sortOrder: m.sort_order,
+      })),
   };
 }
 
@@ -684,6 +706,45 @@ export async function setProductStatus(
     p_actor_id: actorId,
   });
   if (error) fromPgError(error, "Failed to update status");
+}
+
+// ---- Product gallery (Pass 3f) ----------------------------------------------
+
+export class GalleryError extends Error {
+  constructor(public readonly code: string) {
+    super(code);
+    this.name = "GalleryError";
+  }
+}
+
+function throwGalleryError(error: { message?: string }): never {
+  const raw = (error.message ?? "").trim();
+  throw new GalleryError(KNOWN_GALLERY_ERROR_CODES.has(raw) ? raw : "internal_error");
+}
+
+/**
+ * Replace a product's gallery from media-library images via api.set_product_media
+ * (atomic delete + insert + canonical `product.media_changed` audit). The DB
+ * enforces library-or-existing URLs and a single primary.
+ */
+export async function setProductMedia(
+  code: string,
+  items: ProductGalleryItem[],
+  actorId: string,
+): Promise<void> {
+  const admin = createAdminSupabaseClient();
+  const payload = items.map((it, i) => ({
+    url: it.url,
+    alt: it.alt ?? null,
+    is_primary: Boolean(it.isPrimary),
+    sort_order: i,
+  }));
+  const { error } = await admin.schema("api").rpc("set_product_media", {
+    p_code: code,
+    p_items: payload,
+    p_actor: actorId,
+  });
+  if (error) throwGalleryError(error);
 }
 
 // ---- Category writes (transactional canonical audit via api.* RPCs) ---------

@@ -872,5 +872,112 @@ BEGIN
   END LOOP;
 END $$;
 
+-- ============================================================
+-- 17. Product gallery management (Pass 3f) — api.set_product_media
+-- ============================================================
+DO $$
+DECLARE actor uuid := '00000000-0000-0000-0000-0000000000a1';
+        res jsonb; got text; cnt int; pid uuid; big jsonb;
+BEGIN
+  SELECT id INTO pid FROM public.products WHERE code = 'p-clean';
+  -- Two library assets to attach.
+  PERFORM api.register_media('g/a.png', 'https://x/g/a.png', 'a.png', 'image/png', 100, NULL, NULL, actor);
+  PERFORM api.register_media('g/b.png', 'https://x/g/b.png', 'b.png', 'image/png', 100, NULL, NULL, actor);
+
+  -- Replace from library: sort_order follows array order; first becomes primary
+  -- when none is flagged; audit written.
+  res := api.set_product_media('p-clean', jsonb_build_array(
+           jsonb_build_object('url', 'https://x/g/a.png', 'alt', 'A'),
+           jsonb_build_object('url', 'https://x/g/b.png')), actor);
+  IF jsonb_array_length(res) <> 2 THEN RAISE EXCEPTION 'FAIL: gallery len=%', jsonb_array_length(res); END IF;
+  SELECT count(*) INTO cnt FROM public.product_media WHERE product_id = pid;
+  IF cnt <> 2 THEN RAISE EXCEPTION 'FAIL: rows=%', cnt; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.product_media
+                 WHERE product_id = pid AND url = 'https://x/g/a.png'
+                   AND sort_order = 0 AND is_primary AND alt = 'A') THEN
+    RAISE EXCEPTION 'FAIL: first image not primary/sorted'; END IF;
+  IF EXISTS (SELECT 1 FROM public.product_media
+             WHERE product_id = pid AND url = 'https://x/g/b.png' AND is_primary) THEN
+    RAISE EXCEPTION 'FAIL: second image should not be primary'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.audit_logs
+                 WHERE action = 'product.media_changed' AND target_id = 'p-clean') THEN
+    RAISE EXCEPTION 'FAIL: media_changed audit missing'; END IF;
+
+  -- Explicit primary on the second image is respected (exactly one primary).
+  res := api.set_product_media('p-clean', jsonb_build_array(
+           jsonb_build_object('url', 'https://x/g/a.png'),
+           jsonb_build_object('url', 'https://x/g/b.png', 'is_primary', true)), actor);
+  IF NOT EXISTS (SELECT 1 FROM public.product_media
+                 WHERE product_id = pid AND url = 'https://x/g/b.png' AND is_primary) THEN
+    RAISE EXCEPTION 'FAIL: explicit primary not honored'; END IF;
+  SELECT count(*) INTO cnt FROM public.product_media WHERE product_id = pid AND is_primary;
+  IF cnt <> 1 THEN RAISE EXCEPTION 'FAIL: primary count=%', cnt; END IF;
+
+  -- Preserve-legacy: a URL already on this product (not in the library) may be
+  -- resubmitted. Seed a legacy row, then include its URL alongside a library one.
+  INSERT INTO public.product_media (product_id, url, kind, sort_order)
+    VALUES (pid, 'https://legacy/seed.jpg', 'image', 9);
+  res := api.set_product_media('p-clean', jsonb_build_array(
+           jsonb_build_object('url', 'https://legacy/seed.jpg'),
+           jsonb_build_object('url', 'https://x/g/a.png')), actor);
+  IF jsonb_array_length(res) <> 2 THEN RAISE EXCEPTION 'FAIL: legacy resubmit len=%', jsonb_array_length(res); END IF;
+
+  -- Library-only for NEW images: an unknown, non-library URL is rejected.
+  BEGIN PERFORM api.set_product_media('p-clean', jsonb_build_array(
+          jsonb_build_object('url', 'https://evil/new.png')), actor);
+        RAISE EXCEPTION 'FAIL: non-library url accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'invalid_media' THEN RAISE EXCEPTION 'FAIL: non-library code=%', got; END IF;
+  END;
+
+  -- Two primaries rejected.
+  BEGIN PERFORM api.set_product_media('p-clean', jsonb_build_array(
+          jsonb_build_object('url', 'https://x/g/a.png', 'is_primary', true),
+          jsonb_build_object('url', 'https://x/g/b.png', 'is_primary', true)), actor);
+        RAISE EXCEPTION 'FAIL: two primaries accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'invalid_gallery' THEN RAISE EXCEPTION 'FAIL: two-primary code=%', got; END IF;
+  END;
+
+  -- Bounds: more than 12 images rejected.
+  SELECT jsonb_agg(jsonb_build_object('url', 'https://x/g/a.png')) INTO big
+  FROM generate_series(1, 13);
+  BEGIN PERFORM api.set_product_media('p-clean', big, actor);
+        RAISE EXCEPTION 'FAIL: 13 images accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'invalid_gallery' THEN RAISE EXCEPTION 'FAIL: bounds code=%', got; END IF;
+  END;
+
+  -- Bad actor rejected.
+  BEGIN PERFORM api.set_product_media('p-clean', '[]'::jsonb, gen_random_uuid());
+        RAISE EXCEPTION 'FAIL: bad actor accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'actor_not_authorized' THEN RAISE EXCEPTION 'FAIL: actor code=%', got; END IF;
+  END;
+
+  -- Unknown product rejected.
+  BEGIN PERFORM api.set_product_media('p-nope', '[]'::jsonb, actor);
+        RAISE EXCEPTION 'FAIL: unknown product accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'product_not_found' THEN RAISE EXCEPTION 'FAIL: product code=%', got; END IF;
+  END;
+
+  -- Empty array clears the gallery.
+  res := api.set_product_media('p-clean', '[]'::jsonb, actor);
+  IF res <> '[]'::jsonb THEN RAISE EXCEPTION 'FAIL: empty result=%', res; END IF;
+  SELECT count(*) INTO cnt FROM public.product_media WHERE product_id = pid;
+  IF cnt <> 0 THEN RAISE EXCEPTION 'FAIL: gallery not cleared (%)', cnt; END IF;
+END $$;
+
+-- Grant: api.set_product_media is service-role only.
+DO $$ DECLARE fn text := 'api.set_product_media(text,jsonb,uuid)'; BEGIN
+  IF has_function_privilege('anon', fn, 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL: anon has EXECUTE on %', fn; END IF;
+  IF has_function_privilege('authenticated', fn, 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL: authenticated has EXECUTE on %', fn; END IF;
+  IF NOT has_function_privilege('service_role', fn, 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL: service_role lacks EXECUTE on %', fn; END IF;
+END $$;
+
 \echo '--- ALL PASS ---'
 ROLLBACK;

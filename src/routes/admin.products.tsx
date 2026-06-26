@@ -7,14 +7,21 @@ import {
   getAdminProduct,
   saveProduct,
   setProductStatus,
+  saveProductGallery,
+  listMediaForProducts,
 } from "@/lib/catalog-admin.api";
+import type { MediaAsset } from "@/lib/media.schema";
 import {
   PRODUCT_STATUSES,
   productInputSchema,
   type ProductStatus,
   type ProductInput,
 } from "@/lib/catalog-admin.schema";
-import type { AdminCategory, AdminProductDetail } from "@/lib/server/catalog-admin.server";
+import type {
+  AdminCategory,
+  AdminProductDetail,
+  GalleryImage,
+} from "@/lib/server/catalog-admin.server";
 import { formatBDT } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,6 +53,11 @@ import {
   LayoutGrid,
   List,
   Loader2,
+  Star,
+  ArrowUp,
+  ArrowDown,
+  X,
+  ImagePlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -808,6 +820,16 @@ function ProductForm({
             </p>
           </div>
         </Section>
+
+        <Section title="Gallery">
+          {editing ? (
+            <GallerySection code={editing.code} initial={editing.gallery} />
+          ) : (
+            <p className="rounded-lg border border-border p-3 text-xs text-muted-foreground">
+              Save the product first, then add images from the media library.
+            </p>
+          )}
+        </Section>
       </div>
 
       <SheetFooter className="flex-col gap-2 border-t border-border pt-3 sm:flex-row">
@@ -819,6 +841,177 @@ function ProductForm({
         </Button>
       </SheetFooter>
     </>
+  );
+}
+
+/** Renumber sort_order by position and guarantee exactly one primary. */
+function normalizeGallery(items: GalleryImage[]): GalleryImage[] {
+  const ordered = items.map((it, i) => ({ ...it, sortOrder: i }));
+  if (ordered.length === 0) return ordered;
+  const primaryIdx = ordered.findIndex((it) => it.isPrimary);
+  const keep = primaryIdx === -1 ? 0 : primaryIdx;
+  return ordered.map((it, i) => ({ ...it, isPrimary: i === keep }));
+}
+
+function GallerySection({ code, initial }: { code: string; initial: GalleryImage[] }) {
+  const router = useRouter();
+  const [items, setItems] = useState<GalleryImage[]>(() => normalizeGallery(initial));
+  const [saving, setSaving] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [library, setLibrary] = useState<MediaAsset[] | null>(null);
+  const [loadingLib, setLoadingLib] = useState(false);
+
+  const urls = new Set(items.map((i) => i.url));
+
+  async function openPicker() {
+    setPickerOpen((o) => !o);
+    if (library || loadingLib) return;
+    setLoadingLib(true);
+    const res = await listMediaForProducts();
+    setLibrary(res.success ? res.media : []);
+    setLoadingLib(false);
+  }
+
+  const add = (url: string) =>
+    setItems((prev) =>
+      prev.some((p) => p.url === url)
+        ? prev
+        : normalizeGallery([...prev, { url, alt: null, isPrimary: false, sortOrder: prev.length }]),
+    );
+  const remove = (url: string) =>
+    setItems((prev) => normalizeGallery(prev.filter((p) => p.url !== url)));
+  const setPrimary = (url: string) =>
+    setItems((prev) => normalizeGallery(prev.map((p) => ({ ...p, isPrimary: p.url === url }))));
+  const move = (idx: number, dir: -1 | 1) =>
+    setItems((prev) => {
+      const next = [...prev];
+      const j = idx + dir;
+      if (j < 0 || j >= next.length) return prev;
+      [next[idx], next[j]] = [next[j], next[idx]];
+      return normalizeGallery(next);
+    });
+
+  async function save() {
+    setSaving(true);
+    const payload = items.map((it) => ({ url: it.url, alt: it.alt, isPrimary: it.isPrimary }));
+    const res = await saveProductGallery({ data: { code, items: payload } });
+    setSaving(false);
+    if (res.success) {
+      toast.success("Gallery saved.");
+      router.invalidate();
+    } else {
+      toast.error(res.error);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {items.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
+          No images yet. Add images from the media library below.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {items.map((it, idx) => (
+            <li
+              key={it.url}
+              className="flex items-center gap-3 rounded-lg border border-border p-2"
+            >
+              <img src={it.url} alt="" className="h-12 w-12 rounded object-cover" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs text-muted-foreground">{it.url.split("/").pop()}</p>
+                {it.isPrimary && <span className="text-[0.65rem] text-primary">Primary</span>}
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                aria-label="Move up"
+                disabled={idx === 0}
+                onClick={() => move(idx, -1)}
+              >
+                <ArrowUp className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                aria-label="Move down"
+                disabled={idx === items.length - 1}
+                onClick={() => move(idx, 1)}
+              >
+                <ArrowDown className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className={cn("h-7 w-7", it.isPrimary && "text-primary")}
+                aria-label="Set as primary"
+                onClick={() => setPrimary(it.url)}
+              >
+                <Star className={cn("h-3.5 w-3.5", it.isPrimary && "fill-current")} />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                aria-label="Remove image"
+                onClick={() => remove(it.url)}
+              >
+                <X className="h-3.5 w-3.5 text-destructive" />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={openPicker}>
+          <ImagePlus className="h-4 w-4" /> Add from library
+        </Button>
+        <Button type="button" size="sm" onClick={save} disabled={saving}>
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save gallery
+        </Button>
+      </div>
+
+      {pickerOpen && (
+        <div className="rounded-lg border border-border p-3">
+          {loadingLib ? (
+            <p className="text-xs text-muted-foreground">Loading media…</p>
+          ) : library && library.length > 0 ? (
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+              {library.map((m) => {
+                const added = urls.has(m.publicUrl);
+                return (
+                  <button
+                    type="button"
+                    key={m.id}
+                    onClick={() => add(m.publicUrl)}
+                    disabled={added}
+                    className={cn(
+                      "relative overflow-hidden rounded-md border",
+                      added ? "border-primary opacity-50" : "border-border hover:border-primary",
+                    )}
+                    aria-label={`Add ${m.fileName}`}
+                    title={added ? "Already added" : m.fileName}
+                  >
+                    <img src={m.publicUrl} alt={m.fileName} className="h-16 w-full object-cover" />
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              No media yet. Upload images in the Media Library first.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

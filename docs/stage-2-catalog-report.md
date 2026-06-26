@@ -319,3 +319,37 @@ actor)` (returns `storage_path` so the repo can drop the object; `media.deleted`
     mime) is the server-side guarantee.
 - **Deferred (Pass 3f):** attach library media to a product's gallery (the product
   editor has no gallery UI yet); retire the legacy `PRODUCTS` array.
+
+## 15. Stage 2 Pass 3f — Product gallery management (2026-06-26)
+
+The product editor had no way to build a product's image gallery; `product_media`
+rows could only be set by the seed. Migration `20260626160000` adds the authoring
+path that connects the Pass 3e media library to products.
+
+- **`api.set_product_media(p_code, p_items, p_actor)`** (SECURITY DEFINER,
+  service-role only) **atomically replaces** a product's `product_media` rows:
+  active-staff check (`actor_not_authorized`), product resolved by `code`
+  (`product_not_found`), bounds 0–12 (`invalid_gallery`).
+- **Library-only for new images:** each submitted URL must be EITHER a
+  `media_assets.public_url` OR already on this product — so the picker enforces
+  library-only for newly added images while preserving legacy/seeded images that
+  predate the library (`invalid_media` otherwise).
+- **Primary:** at most one image may be flagged primary (`invalid_gallery` if more);
+  when none is flagged the first becomes primary, matching the
+  `uq_product_media_one_primary` partial unique index. `sort_order` follows array
+  order via `jsonb_array_elements … WITH ORDINALITY`. `product.media_changed` audit.
+- **App:** `catalog-admin.schema.ts` gains `productGalleryItemSchema` /
+  `productGallerySchema` (max 12, ≤1 primary) / `productGallerySaveSchema` and
+  `galleryErrorMessage`. `fetchAdminProductDetail` now selects + returns the sorted
+  `gallery`; `setProductMedia` repo + `GalleryError` in `catalog-admin.server.ts`;
+  server fns in `catalog-admin.api.ts`: `saveProductGallery`
+  (`guardAdminWrite("products.manage")`) and `listMediaForProducts`
+  (`requirePermission("products.manage")` — reuses `listMedia` so a products manager
+  needs no `media.manage`). `admin.products.tsx` adds a **Gallery** section (when
+  editing) with an inline library picker, add/remove, set-primary, and ↑/↓ reorder.
+- **Verification:** rolled-back SQL proof + `pass2_db.test.sql` §17 (replace +
+  sort_order + first-becomes-primary; explicit primary; preserve-legacy resubmit;
+  non-library rejection → `invalid_media`; two-primary → `invalid_gallery`; bounds;
+  bad actor; unknown product; empty clears; service-role-only grant) + Vitest gallery
+  schema specs. Full `check` green (**301 tests**). 26 migrations; ledger matches.
+- **Deferred (Pass 3g+):** retire the legacy `PRODUCTS` array; further catalog polish.

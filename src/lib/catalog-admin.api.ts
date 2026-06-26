@@ -15,6 +15,7 @@ import {
   categoryReorderSchema,
   inventoryAdjustSchema,
   bulkInventorySchema,
+  productGallerySaveSchema,
   PRODUCT_STATUSES,
   slugSchema,
 } from "@/lib/catalog-admin.schema";
@@ -101,6 +102,13 @@ async function messageFromInventoryError(e: unknown): Promise<string> {
   return "Could not complete the change. Please try again.";
 }
 
+async function messageFromGalleryError(e: unknown): Promise<string> {
+  const { GalleryError } = await import("@/lib/server/catalog-admin.server");
+  const { galleryErrorMessage } = await import("@/lib/catalog-admin.schema");
+  if (e instanceof GalleryError) return galleryErrorMessage(e.code);
+  return "Could not save the gallery. Please try again.";
+}
+
 // ---- Product writes ---------------------------------------------------------
 
 export const saveProduct = createServerFn({ method: "POST" })
@@ -142,6 +150,40 @@ export const setProductStatus = createServerFn({ method: "POST" })
       return { success: true as const };
     } catch (e) {
       return { success: false as const, error: await messageFromError(e) };
+    }
+  });
+
+// ---- Product gallery (Pass 3f) ----------------------------------------------
+
+/** Media-library assets for the product editor's gallery picker. */
+export const listMediaForProducts = createServerFn({ method: "GET" }).handler(async () => {
+  const { setNoStore } = await import("@/lib/server/admin-guard.server");
+  await setNoStore();
+  const { requirePermission } = await import("@/lib/server/rbac.server");
+  const authz = await requirePermission("products.manage");
+  if (!authz.ok) return { success: false as const, error: "Not authorized.", media: [] };
+  const { listMedia } = await import("@/lib/server/media.server");
+  try {
+    return { success: true as const, media: await listMedia(authz.identity.userId) };
+  } catch {
+    return { success: false as const, error: "Could not load media.", media: [] };
+  }
+});
+
+/** Replace a product's gallery from picked library images. */
+export const saveProductGallery = createServerFn({ method: "POST" })
+  .validator(productGallerySaveSchema)
+  .handler(async ({ data }) => {
+    const { guardAdminWrite } = await import("@/lib/server/admin-guard.server");
+    const g = await guardAdminWrite("products.manage", "saveProductGallery");
+    if (!g.ok) return { success: false as const, error: g.error };
+
+    const repo = await import("@/lib/server/catalog-admin.server");
+    try {
+      await repo.setProductMedia(data.code, data.items, g.actorId);
+      return { success: true as const };
+    } catch (e) {
+      return { success: false as const, error: await messageFromGalleryError(e) };
     }
   });
 
