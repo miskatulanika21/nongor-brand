@@ -11,8 +11,11 @@ only a real Storage object, record its true size/type, derive the public URL
 server-side), F-19 (storefront + admin-catalog E2E specs). Stage 2 Pass 3g: the
 admin dashboard's Low Stock / Best Sellers widgets now read the live product
 table, so the legacy `PRODUCTS` array is referenced only by the Stage 3/5 order
-mocks — its deletion is now cleanly gated on Stage 3. 30 migrations applied;
-324 Vitest + DB integration green; build clean. Prior context:_
+mocks — its deletion is now cleanly gated on Stage 3. Auth hardening then closed
+F-10 (MFA factor-removal AAL2 step-up + rate limit) and F-11 (current-password
+re-auth for authenticated change; recovery gated by an httpOnly marker cookie),
+both app-layer. 30 migrations applied; 333 Vitest + DB integration green; build
+clean. Prior context:_
 
 _2026-06-26 — Stage 1.5 operationally closed; Stage 2 public read
 (Pass 1) + admin product/category/inventory writes (Pass 2) implemented, hardened
@@ -355,5 +358,16 @@ restriction, grant verification, post-migration schema proof, the merged RLS pol
    3f, dashboard 3g); the only remaining consumers are the Stage 3/5 order mocks
    (`orders.ts`, `order-ui.ts`), so the array is removed when that backend lands.
 6. GPT-audit remediation status: done — F-02, F-03, F-04, F-05, F-06, F-07, F-08,
-   F-13, F-15, F-16, F-17, F-19. Remaining: F-10 / F-11 (MFA / password hardening,
-   Stage 1 auth surface — not Stage 2) and any Stage-3-scoped items.
+   F-10, F-11, F-13, F-15, F-16, F-17, F-19. **F-10** (MFA factor removal now
+   requires an AAL2 step-up + a rate limit) and **F-11** (authenticated password
+   change requires the verified current password; recovery/invite gated by a
+   short-lived httpOnly marker cookie) landed app-layer (no migration).
+   _Manual-verify before go-live_: exercise the real recovery → set-password and
+   account change-password flows against a safe backend (unit tests mock the
+   cookie + the throwaway verify client). Remaining audit items: F-14
+   (customer→staff promotion), F-18 (deployment target — business decision).
+7. Live security advisors (2026-06-27): 4 intentional INFO `rls_enabled_no_policy`
+   (RPC-only tables) + WARN `anon/authenticated_security_definer_function_executable`
+   for `api.catalog_facets()` and `api.get_public_settings()` — **intentional
+   public reads** (facets; settings sans payment secrets), accepted posture +
+   the deferred leaked-password toggle.
