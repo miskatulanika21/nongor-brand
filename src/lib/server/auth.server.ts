@@ -111,12 +111,83 @@ const passwordUpdateWithNextSchema = z
   .object({
     password: passwordSchema,
     confirm: z.string(),
+    // Present for an authenticated change (re-auth); omitted in the recovery/
+    // invite flow, which is gated server-side by a recovery marker cookie.
+    currentPassword: z.string().max(200).optional(),
     next: z.string().max(2048).optional(),
   })
   .refine((d) => d.password === d.confirm, {
     message: "Passwords do not match.",
     path: ["confirm"],
   });
+
+// ---- Recovery / invite marker ----------------------------------------------
+//
+// Supabase JWT claims cannot reliably distinguish a recovery session from a
+// normal one (a recovery sign-in records AMR method "otp", same as magic-link).
+// So when /auth/confirm verifies a recovery- or invite-token we set a short-
+// lived httpOnly marker cookie. performPasswordUpdate permits a NO-current-
+// password change only when this marker is present; otherwise it requires and
+// verifies the current password. A normal/hijacked authenticated session has no
+// marker and cannot fabricate one (httpOnly + server-set), so it cannot silently
+// take over the account via the password endpoint.
+const PW_RECOVERY_COOKIE = "nz_pwreset";
+const PW_RECOVERY_TTL_SEC = 15 * 60;
+
+async function setRecoveryMarker(): Promise<void> {
+  try {
+    const { setCookie } = await import("@tanstack/react-start/server");
+    const { isProduction } = await import("./env.server");
+    setCookie(PW_RECOVERY_COOKIE, "1", {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: isProduction(),
+      path: "/",
+      maxAge: PW_RECOVERY_TTL_SEC,
+    });
+  } catch {
+    // Outside request context (tests) — ignore.
+  }
+}
+
+async function hasRecoveryMarker(): Promise<boolean> {
+  try {
+    const { getCookie } = await import("@tanstack/react-start/server");
+    return getCookie(PW_RECOVERY_COOKIE) === "1";
+  } catch {
+    return false;
+  }
+}
+
+async function clearRecoveryMarker(): Promise<void> {
+  try {
+    const { deleteCookie } = await import("@tanstack/react-start/server");
+    deleteCookie(PW_RECOVERY_COOKIE, { path: "/" });
+  } catch {
+    // Ignore.
+  }
+}
+
+/**
+ * Verify a password by attempting a sign-in on a THROWAWAY, non-persistent
+ * client (never the request's cookie-bound client), so the live session is
+ * untouched. Returns true iff the credentials are valid.
+ */
+async function verifyCurrentPassword(email: string, password: string): Promise<boolean> {
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const { getPublicSupabaseEnv } = await import("./env.server");
+    const env = getPublicSupabaseEnv();
+    const probe = createClient(env.supabaseUrl, env.supabaseAnonKey, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    });
+    const { error } = await probe.auth.signInWithPassword({ email, password });
+    await probe.auth.signOut({ scope: "local" }).catch(() => undefined);
+    return !error;
+  } catch {
+    return false;
+  }
+}
 
 export async function performPasswordUpdate(data: z.infer<typeof passwordUpdateWithNextSchema>) {
   await setNoCacheHeaders();
@@ -161,6 +232,38 @@ export async function performPasswordUpdate(data: z.infer<typeof passwordUpdateW
     }
   }
 
+  // F-11 — re-authentication gate. A no-current-password change is allowed ONLY
+  // in a recovery/invite context (proven by the server-set marker cookie).
+  // Otherwise this is a normal authenticated change and the current password
+  // must be supplied and verified, so a hijacked session cannot silently take
+  // over the account + lock the owner out.
+  const viaRecovery = await hasRecoveryMarker();
+  if (!viaRecovery) {
+    const current = data.currentPassword?.trim();
+    if (!current) {
+      return { success: false as const, error: "Enter your current password to change it." };
+    }
+    if (!identity.email) {
+      // No email to verify against (e.g. an OAuth-only account) — direct them to
+      // the email reset flow rather than allowing an unverified change.
+      return {
+        success: false as const,
+        error: "Use the password reset link to set a password for this account.",
+      };
+    }
+    const ok = await verifyCurrentPassword(identity.email, current);
+    if (!ok) {
+      if (identity.kind === "staff") {
+        await writeAudit({
+          action: "auth.password_change.denied",
+          actorId: identity.userId,
+          metadata: { reason: "invalid_current_password", role: identity.role },
+        });
+      }
+      return { success: false as const, error: "Your current password is incorrect." };
+    }
+  }
+
   const { error } = await supabase.auth.updateUser({ password: data.password });
 
   if (error) {
@@ -168,9 +271,12 @@ export async function performPasswordUpdate(data: z.infer<typeof passwordUpdateW
     return { success: false as const, error: "Failed to update password. Please try again." };
   }
 
+  // Consume the one-time recovery marker so it cannot be reused.
+  if (viaRecovery) await clearRecoveryMarker();
+
   if (identity.kind === "staff") {
     await writeAudit({
-      action: "auth.password_reset.completed",
+      action: viaRecovery ? "auth.password_reset.completed" : "auth.password_changed",
       actorId: identity.userId,
       metadata: { role: identity.role },
     });
@@ -261,6 +367,10 @@ export async function performEmailConfirm(data: z.infer<typeof authTokenConfirmS
   }
 
   if (data.type === "recovery" || data.type === "invite") {
+    // Mark this session as recovery/invite-originated so the password endpoint
+    // accepts a no-current-password set (F-11). The marker is short-lived and
+    // consumed on a successful update.
+    await setRecoveryMarker();
     const { isSafeRedirect } = await import("@/lib/safe-redirect");
     const safeNext = data.next && isSafeRedirect(data.next) ? data.next : undefined;
     const destination = safeNext
