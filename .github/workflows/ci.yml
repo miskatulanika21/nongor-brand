@@ -75,17 +75,57 @@ jobs:
           version: ${{ env.SUPABASE_CLI_VERSION }}
 
       # The repo intentionally ships no config.toml (it would pin a project ref);
-      # generate a default one locally only for this ephemeral validation.
-      - name: Initialize local Supabase config
+      # generate a default one locally only for this ephemeral validation, then
+      # expose the `api` schema through PostgREST so the REST smoke test below
+      # exercises the same Data API surface the app uses in production. `private`
+      # is never exposed. (Production exposure is set in the dashboard; this keeps
+      # a fresh local/CI stack faithful to it.)
+      - name: Initialize local Supabase config (expose api schema)
         run: |
           if [ ! -f supabase/config.toml ]; then
             supabase init
+          fi
+          if ! grep -qE '^\s*schemas\s*=.*"api"' supabase/config.toml; then
+            sed -i -E 's/^(\s*schemas\s*=\s*\[)([^]]*)\]/\1\2, "api"]/' supabase/config.toml
+          fi
+          grep -qE '"api"' supabase/config.toml \
+            || { echo "config.toml: failed to expose the api schema"; exit 1; }
+          if grep -qE '^\s*schemas\s*=.*"private"' supabase/config.toml; then
+            echo "config.toml: the private schema must NOT be exposed"; exit 1
           fi
 
       # `supabase start` boots a local stack and APPLIES all migrations in order.
       # If any migration errors, this step fails the job.
       - name: Apply migrations to a fresh local database
         run: supabase start
+
+      # REST smoke test: a SQL migration succeeding does NOT prove PostgREST can
+      # call the RPCs the app uses. Hit the Data API on the fresh stack to assert
+      # the api schema is reachable, anon cannot reach privileged RPCs, and the
+      # service role can.
+      - name: REST smoke test (PostgREST Data API)
+        run: |
+          eval "$(supabase status -o env | sed 's/^/export /')"
+          BASE="${API_URL:-http://127.0.0.1:54321}"
+          echo "API base: $BASE"
+          # 1. api schema is reachable via anon (public read RPC → 200).
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/rest/v1/rpc/catalog_facets" \
+            -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ANON_KEY" \
+            -H "Content-Type: application/json" -d '{}')
+          [ "$code" = "200" ] || { echo "FAIL: anon api.catalog_facets expected 200, got $code"; exit 1; }
+          # 2. a privileged api RPC is NOT executable by anon (denied → 4xx, not 200).
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/rest/v1/rpc/set_product_media" \
+            -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ANON_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"p_code":"x","p_items":[],"p_actor":"00000000-0000-0000-0000-000000000000"}')
+          case "$code" in 401|403|404) : ;; *) echo "FAIL: anon set_product_media expected deny, got $code"; exit 1 ;; esac
+          # 3. the service role CAN reach it (executes, then raises a stable code → 400).
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/rest/v1/rpc/set_product_media" \
+            -H "apikey: $SERVICE_ROLE_KEY" -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"p_code":"x","p_items":[],"p_actor":"00000000-0000-0000-0000-000000000000"}')
+          case "$code" in 400|404) : ;; *) echo "FAIL: service_role set_product_media expected 400, got $code"; exit 1 ;; esac
+          echo "REST smoke test passed."
 
       # DB integration tests: assert the Stage-2 Pass-2 database guards
       # (stock-write guard, set_inventory validation, ledger immutability,

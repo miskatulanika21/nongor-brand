@@ -305,8 +305,14 @@ restriction, grant verification, post-migration schema proof, the merged RLS pol
   customer submission → pending → approve → rating, catalog-facet counts +
   visibility filtering, site-settings public/admin projection + audit +
   single-row invariant + grants, media-library bucket + register/upsert/
-  delete/audit + usage count + grants, and product-gallery atomic replace +
-  library-only + one-primary + bounds + audit + grants). The **linked deployed-DB lint step runs** in CI (using `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, and `SUPABASE_DB_PASSWORD` repository secrets). This lints the deployed live database structure against recommendations.
+  delete/audit + usage count + grants, product-gallery atomic replace +
+  library-only + one-primary + bounds + audit + grants + duplicate/alt/concurrency,
+  and the `staff_profiles` direct-write lockdown). The migrate-from-empty job now
+  **exposes the `api` schema** in the local stack config (never `private`) and runs
+  a **REST smoke test (F-08)** against PostgREST on the fresh stack: anon can reach
+  a public `api` RPC (`catalog_facets`), anon **cannot** reach a privileged RPC
+  (`set_product_media`), and the service role can — proving the Data API surface the
+  app actually uses, not just the SQL functions. The **linked deployed-DB lint step runs** in CI (using `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, and `SUPABASE_DB_PASSWORD` repository secrets). This lints the deployed live database structure against recommendations.
 
 ## Outstanding follow-ups
 
