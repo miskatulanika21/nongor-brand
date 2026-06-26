@@ -186,7 +186,7 @@ DECLARE t text; n int;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
     'orders','order_items','order_status_history','payments',
-    'payment_screenshots','idempotency_keys'
+    'payment_screenshots','idempotency_keys','inventory_reservations'
   ] LOOP
     IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = ('public.'||t)::regclass) THEN
       RAISE EXCEPTION 'FAIL: % RLS not enabled', t; END IF;
@@ -197,6 +197,62 @@ BEGIN
     IF has_table_privilege('authenticated', 'public.'||t, 'INSERT') THEN
       RAISE EXCEPTION 'FAIL: authenticated has INSERT on %', t; END IF;
   END LOOP;
+END $$;
+
+-- ============================================================
+-- §P2 — reservations: availability, lazy backstop & TTL expiry
+-- ============================================================
+DO $$
+DECLARE pid uuid; base int; o1 uuid; o2 uuid; av int; n int;
+BEGIN
+  SELECT id, stock INTO pid, base FROM public.products WHERE code = 'o-prod';
+
+  -- order #1: pending_payment, TTL in the PAST, active hold of 3
+  INSERT INTO public.orders (order_no, guest_token_hash, customer_name, customer_phone,
+    ship_district, ship_zone, ship_address, subtotal, shipping_fee, total, payment_method,
+    status, idempotency_key, reservation_expires_at)
+  VALUES ('NGR-R-1', repeat('1',64), 'A', '01700000000', 'Dhaka', 'dhaka', 'a',
+    100, 0, 100, 'bkash', 'pending_payment', 'idem-r1', now() - interval '1 hour')
+  RETURNING id INTO o1;
+  INSERT INTO public.inventory_reservations (order_id, product_id, qty, status, expires_at)
+  VALUES (o1, pid, 3, 'active', now() - interval '1 hour');
+
+  -- lazy backstop: an EXPIRED hold does not reduce availability
+  av := private.available_qty(pid, NULL);
+  IF av <> base THEN RAISE EXCEPTION 'FAIL: expired hold reduced availability (av=% base=%)', av, base; END IF;
+
+  -- order #2: pending_confirmation, TTL in the FUTURE, active hold of 2
+  INSERT INTO public.orders (order_no, guest_token_hash, customer_name, customer_phone,
+    ship_district, ship_zone, ship_address, subtotal, shipping_fee, total, payment_method,
+    status, idempotency_key, reservation_expires_at)
+  VALUES ('NGR-R-2', repeat('2',64), 'B', '01700000000', 'Dhaka', 'dhaka', 'a',
+    100, 0, 100, 'cod', 'pending_confirmation', 'idem-r2', now() + interval '1 hour')
+  RETURNING id INTO o2;
+  INSERT INTO public.inventory_reservations (order_id, product_id, qty, status, expires_at)
+  VALUES (o2, pid, 2, 'active', now() + interval '1 hour');
+
+  -- only the unexpired hold counts
+  av := private.available_qty(pid, NULL);
+  IF av <> base - 2 THEN RAISE EXCEPTION 'FAIL: active hold not counted (av=% want=%)', av, base - 2; END IF;
+
+  -- expiry sweep: expires #1 only
+  n := api.expire_reservations();
+  IF n <> 1 THEN RAISE EXCEPTION 'FAIL: expire count=% (want 1)', n; END IF;
+  IF (SELECT status FROM public.orders WHERE id = o1) <> 'expired' THEN
+    RAISE EXCEPTION 'FAIL: order1 not expired'; END IF;
+  IF (SELECT status FROM public.inventory_reservations WHERE order_id = o1) <> 'released' THEN
+    RAISE EXCEPTION 'FAIL: reservation1 not released'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.order_status_history
+                 WHERE order_id = o1 AND to_status = 'expired' AND from_status = 'pending_payment') THEN
+    RAISE EXCEPTION 'FAIL: missing expiry history'; END IF;
+  IF (SELECT status FROM public.orders WHERE id = o2) <> 'pending_confirmation' THEN
+    RAISE EXCEPTION 'FAIL: future-TTL order wrongly expired'; END IF;
+
+  -- an order with submitted evidence past its TTL must NOT be auto-expired
+  UPDATE public.orders SET status = 'payment_submitted', reservation_expires_at = now() - interval '1 hour'
+    WHERE id = o2;
+  n := api.expire_reservations();
+  IF n <> 0 THEN RAISE EXCEPTION 'FAIL: payment_submitted auto-expired (n=%)', n; END IF;
 END $$;
 
 ROLLBACK;
