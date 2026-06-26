@@ -1023,5 +1023,57 @@ DO $$ DECLARE fn text := 'api.set_product_media(text,jsonb,uuid,integer)'; BEGIN
     RAISE EXCEPTION 'FAIL: service_role lacks EXECUTE on %', fn; END IF;
 END $$;
 
+-- ============================================================
+-- 18. staff_profiles direct-write lockdown (F-02)
+-- ============================================================
+-- No INSERT/UPDATE policy and no write grant for the API roles; SELECT stays so
+-- the identity resolver works; all writes go through service-role api.* RPCs.
+DO $$
+DECLARE ins_blocked boolean := false; upd_blocked boolean := false; can_select boolean;
+        owner_uid uuid := '00000000-0000-0000-0000-0000000000a1';
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_policies
+             WHERE schemaname='public' AND tablename='staff_profiles' AND cmd IN ('INSERT','UPDATE')) THEN
+    RAISE EXCEPTION 'FAIL: a staff_profiles write policy still exists'; END IF;
+  IF has_table_privilege('authenticated','public.staff_profiles','INSERT')
+     OR has_table_privilege('authenticated','public.staff_profiles','UPDATE')
+     OR has_table_privilege('authenticated','public.staff_profiles','DELETE')
+     OR has_table_privilege('anon','public.staff_profiles','INSERT')
+     OR has_table_privilege('anon','public.staff_profiles','UPDATE') THEN
+    RAISE EXCEPTION 'FAIL: authenticated/anon retains a write grant'; END IF;
+  IF NOT has_table_privilege('authenticated','public.staff_profiles','SELECT') THEN
+    RAISE EXCEPTION 'FAIL: authenticated lost SELECT (identity resolver needs it)'; END IF;
+
+  -- Impersonate an authenticated OWNER and confirm direct writes are rejected.
+  SET LOCAL ROLE authenticated;
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', owner_uid, 'role','authenticated')::text, true);
+  SELECT EXISTS(SELECT 1 FROM public.staff_profiles WHERE user_id = owner_uid) INTO can_select;
+  BEGIN INSERT INTO public.staff_profiles (user_id, role, is_active)
+        VALUES (gen_random_uuid(), 'admin'::private.staff_role, true);
+  EXCEPTION WHEN OTHERS THEN ins_blocked := true; END;
+  BEGIN UPDATE public.staff_profiles SET role='owner'::private.staff_role WHERE user_id = owner_uid;
+  EXCEPTION WHEN OTHERS THEN upd_blocked := true; END;
+  RESET ROLE;
+
+  IF NOT can_select THEN RAISE EXCEPTION 'FAIL: owner self-SELECT broke'; END IF;
+  IF NOT ins_blocked THEN RAISE EXCEPTION 'FAIL: authenticated owner direct INSERT allowed'; END IF;
+  IF NOT upd_blocked THEN RAISE EXCEPTION 'FAIL: authenticated owner direct UPDATE allowed'; END IF;
+END $$;
+
+-- The supported staff-write path (service-role api.* RPCs) is intact.
+DO $$
+DECLARE fn text; fns text[] := ARRAY[
+  'api.provision_staff(uuid,text,text,uuid,boolean)',
+  'api.update_staff_role(uuid,uuid,text)',
+  'api.set_staff_active(uuid,uuid,boolean)'
+];
+BEGIN
+  FOREACH fn IN ARRAY fns LOOP
+    IF NOT has_function_privilege('service_role', fn, 'EXECUTE') THEN
+      RAISE EXCEPTION 'FAIL: service_role lacks EXECUTE on %', fn; END IF;
+  END LOOP;
+END $$;
+
 \echo '--- ALL PASS ---'
 ROLLBACK;

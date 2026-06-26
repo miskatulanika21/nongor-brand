@@ -13,8 +13,9 @@ submission (persisted + moderated); Pass 3c: DB-backed catalog facets & counts
 audited admin settings); Pass 3e: Storage-backed media library (real uploads via
 signed URLs); Pass 3f: product gallery management (attach library media to a
 product's gallery, atomic replace, library-only for new images; hardened with
-duplicate prevention, alt-text editing, optimistic concurrency).** 27 migrations
-applied to the live project; remote ledger matches the 27 repo files._
+duplicate prevention, alt-text editing, optimistic concurrency). Security
+hardening: closed the direct `staff_profiles` write path (F-02).** 28 migrations
+applied to the live project; remote ledger matches the 28 repo files._
 
 State legend: **(1) code complete · (2) migration applied · (3) deployed
 verification complete · (4) operator action pending.**
@@ -42,8 +43,8 @@ verification complete · (4) operator action pending.**
 
 ## Migrations (live project xomjxtmhkglhuiccekld)
 
-**27 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
-ledger matches the 27 repo files exactly (versions + names), in order:
+**28 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
+ledger matches the 28 repo files exactly (versions + names), in order:
 
 ```
 …143927 create_private_schema            …623000000 advisor_hardening
@@ -62,6 +63,7 @@ ledger matches the 27 repo files exactly (versions + names), in order:
                                           …626150000 media_library
                                           …626160000 product_gallery
                                           …626170000 product_gallery_hardening
+                                          …626180000 staff_profiles_write_lockdown
 ```
 
 Note: `apply_migration` (MCP) stamps its own version, so after every MCP apply the
@@ -88,6 +90,17 @@ back). Always confirm with `supabase migration list`.
   SECURITY DEFINER RPCs, so deny-all-with-no-policy is the correct posture; and
   INFO `unused_index` (no production traffic yet).
 - Deferred (owner): credential rotation (go-live); leaked-password protection toggle.
+- **Direct `staff_profiles` write lockdown (`20260626180000`, F-02):** dropped the
+  `owner_insert_staff` / `owner_update_staff` RLS policies and revoked
+  INSERT/UPDATE/DELETE from `anon` + `authenticated`. Because `public` is exposed
+  via PostgREST, an authenticated **owner** could previously `POST/PATCH
+/rest/v1/staff_profiles` directly, bypassing the guarded workflow (CSRF + MFA
+  step-up + rate limit + canonical staff audit). All supported staff writes already
+  flow through service-role `api.*` RPCs (`provision_staff` / `update_staff_role` /
+  `set_staff_active`), which bypass RLS/grants, so no behavior changed. SELECT is
+  retained (the identity resolver reads under the caller's session). Verified by a
+  rolled-back prod proof (authenticated-owner INSERT + UPDATE both rejected; SELECT
+  intact; RPC path intact) + `pass2_db.test.sql` §18.
 
 ## Stage 2 Pass 2 — admin write path (done, hardened)
 
@@ -282,7 +295,7 @@ reports.
 ## CI (honest)
 
 `ci.yml` runs (genuinely): frozen Bun install, typecheck, lint, format, test, build,
-**migrate-from-empty** (boots a local Supabase, applies all 27 migrations to a blank
+**migrate-from-empty** (boots a local Supabase, applies all 28 migrations to a blank
 DB), and **DB integration tests** (`pass2_db.test.sql` — stock write-guard,
 set_inventory validation, ledger immutability, FK RESTRICT, first-variant
 conservation, owner-only purge, reorder validation, bulk idempotency, actor-deletion
