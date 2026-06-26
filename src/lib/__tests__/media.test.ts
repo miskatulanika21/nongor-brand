@@ -60,6 +60,7 @@ describe("mediaErrorMessage", () => {
     expect(mediaErrorMessage("actor_not_authorized")).toBe("Not authorized.");
     expect(mediaErrorMessage("media_not_found")).toMatch(/no longer exists/i);
     expect(mediaErrorMessage("media_in_use")).toMatch(/attached to one or more products/i);
+    expect(mediaErrorMessage("upload_not_found")).toMatch(/could not be found in storage/i);
     expect(mediaErrorMessage("???")).toBe(mediaErrorMessage("internal_error"));
   });
 });
