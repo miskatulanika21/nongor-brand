@@ -14,8 +14,9 @@ audited admin settings); Pass 3e: Storage-backed media library (real uploads via
 signed URLs); Pass 3f: product gallery management (attach library media to a
 product's gallery, atomic replace, library-only for new images; hardened with
 duplicate prevention, alt-text editing, optimistic concurrency). Security
-hardening: closed the direct `staff_profiles` write path (F-02).** 28 migrations
-applied to the live project; remote ledger matches the 28 repo files._
+hardening: closed the direct `staff_profiles` write path (F-02); granted `api`
+schema USAGE to anon/authenticated so public RPCs actually work over REST (F-08).**
+29 migrations applied to the live project; remote ledger matches the 29 repo files._
 
 State legend: **(1) code complete · (2) migration applied · (3) deployed
 verification complete · (4) operator action pending.**
@@ -43,8 +44,8 @@ verification complete · (4) operator action pending.**
 
 ## Migrations (live project xomjxtmhkglhuiccekld)
 
-**28 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
-ledger matches the 28 repo files exactly (versions + names), in order:
+**29 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
+ledger matches the 29 repo files exactly (versions + names), in order:
 
 ```
 …143927 create_private_schema            …623000000 advisor_hardening
@@ -64,6 +65,7 @@ ledger matches the 28 repo files exactly (versions + names), in order:
                                           …626160000 product_gallery
                                           …626170000 product_gallery_hardening
                                           …626180000 staff_profiles_write_lockdown
+                                          …626190000 api_schema_usage_grant
 ```
 
 Note: `apply_migration` (MCP) stamps its own version, so after every MCP apply the
@@ -295,7 +297,7 @@ reports.
 ## CI (honest)
 
 `ci.yml` runs (genuinely): frozen Bun install, typecheck, lint, format, test, build,
-**migrate-from-empty** (boots a local Supabase, applies all 28 migrations to a blank
+**migrate-from-empty** (boots a local Supabase, applies all 29 migrations to a blank
 DB), and **DB integration tests** (`pass2_db.test.sql` — stock write-guard,
 set_inventory validation, ledger immutability, FK RESTRICT, first-variant
 conservation, owner-only purge, reorder validation, bulk idempotency, actor-deletion
@@ -312,7 +314,10 @@ restriction, grant verification, post-migration schema proof, the merged RLS pol
   a **REST smoke test (F-08)** against PostgREST on the fresh stack: anon can reach
   a public `api` RPC (`catalog_facets`), anon **cannot** reach a privileged RPC
   (`set_product_media`), and the service role can — proving the Data API surface the
-  app actually uses, not just the SQL functions. The **linked deployed-DB lint step runs** in CI (using `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, and `SUPABASE_DB_PASSWORD` repository secrets). This lints the deployed live database structure against recommendations.
+  app actually uses, not just the SQL functions. This immediately caught a real
+  latent bug: anon/authenticated lacked `USAGE` on the `api` schema, so public RPCs
+  (`catalog_facets`, `get_public_settings`) were silently failing over REST
+  (`42501`) and falling back — fixed by `20260626190000_api_schema_usage_grant`. The **linked deployed-DB lint step runs** in CI (using `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, and `SUPABASE_DB_PASSWORD` repository secrets). This lints the deployed live database structure against recommendations.
 
 ## Outstanding follow-ups
 
