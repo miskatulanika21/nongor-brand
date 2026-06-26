@@ -6,6 +6,7 @@
 
 import { ORDERS, type Order, type OrderStatus } from "@/lib/orders";
 import { PRODUCTS, requiresSelection, type Product } from "@/lib/products";
+import { isDemoCommerceEnabled } from "@/lib/checkout-mode";
 
 export interface UIOrderItem {
   productId?: string;
@@ -264,9 +265,13 @@ export function mergeOrders(demoOrders: Order[], deviceOrders: UIOrder[]): UIOrd
   return Array.from(byId.values()).sort((a, b) => dateValue(b.date) - dateValue(a.date));
 }
 
-// Convenience: full merged list using the built-in seed ORDERS + provided device list.
+// Convenience: full merged list. The built-in seed ORDERS are fabricated demo
+// records (with names/phones/addresses) and must NEVER appear in a real
+// customer's order list — they are included only when demo commerce is enabled
+// (dev / explicit preview). In production the list reflects device orders only.
 export function buildOrderList(deviceOrders: UIOrder[]): UIOrder[] {
-  return mergeOrders(ORDERS, deviceOrders);
+  const seed = isDemoCommerceEnabled() ? ORDERS : [];
+  return mergeOrders(seed, deviceOrders);
 }
 
 // ---- Phone normalization ----------------------------------------------------
