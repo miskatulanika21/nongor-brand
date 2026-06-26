@@ -3,13 +3,16 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { Logo } from "@/components/Logo";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { BRAND } from "@/lib/brand";
+import { BRAND, whatsappConfigured } from "@/lib/brand";
 import { PRODUCT_CATEGORIES } from "@/lib/categories";
+import {
+  FacebookIcon,
+  InstagramIcon,
+  WhatsappIcon,
+  TiktokIcon,
+} from "@/components/site/social-icons";
 
 import {
-  Instagram,
-  Facebook,
-  Music2,
   MessageCircle,
   Mail,
   MapPin,
@@ -95,24 +98,24 @@ const trustCards = [
 
 const socials = [
   {
-    icon: Facebook,
+    icon: FacebookIcon,
     label: "Visit Nongorr on Facebook",
     href: BRAND.facebook || "#",
     disabled: false,
   },
   {
-    icon: Instagram,
+    icon: InstagramIcon,
     label: "Visit Nongorr on Instagram",
     href: BRAND.instagram || "#",
     disabled: false,
   },
   {
-    icon: MessageCircle,
+    icon: WhatsappIcon,
     label: "Message Nongorr on WhatsApp",
     href: waLink("Hi Nongorr! I found you through your website 💕"),
-    disabled: false,
+    disabled: !whatsappConfigured,
   },
-  { icon: Music2, label: "TikTok — coming soon", href: "#", disabled: true },
+  { icon: TiktokIcon, label: "TikTok — coming soon", href: "#", disabled: true },
 ];
 
 /* ---------------- Footer link list (animated underline) ---------------- */
