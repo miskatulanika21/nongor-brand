@@ -1,0 +1,202 @@
+-- Stage 3 DB integration test — runs against the EPHEMERAL local Supabase DB in
+-- CI (all migrations applied from empty). Asserts the database-level invariants
+-- that TS/Vitest cannot cover. Run with: psql -v ON_ERROR_STOP=1 -f this.sql
+--
+-- Convention (same as pass2_db.test.sql):
+--   * expected-SUCCESS: run plainly (ON_ERROR_STOP aborts on error).
+--   * expected-FAILURE: wrap in a sub-block; if it did NOT raise → RAISE 'FAIL:'.
+--   * value checks: RAISE 'FAIL:' when the invariant is violated.
+--
+-- §P1 — order schema, numbering & idempotency (no RPCs yet).
+
+\set ON_ERROR_STOP on
+BEGIN;
+
+-- ── Fixtures (clean DB) ──────────────────────────────────────────────────────
+INSERT INTO public.product_categories (slug, name, sort_order) VALUES ('o-cat', 'Orders Cat', 0);
+INSERT INTO public.products (code, slug, name, category_id, price, stock)
+  SELECT 'o-prod', 'o-prod', 'Order Product', id, 500, 50
+  FROM public.product_categories WHERE slug = 'o-cat';
+
+-- ============================================================
+-- §1 — orders pricing invariant + owner XOR
+-- ============================================================
+DO $$
+DECLARE pid uuid; oid uuid;
+BEGIN
+  SELECT id INTO pid FROM public.products WHERE code = 'o-prod';
+
+  -- unbalanced total rejected
+  BEGIN
+    INSERT INTO public.orders (order_no, guest_token_hash, customer_name, customer_phone,
+      ship_district, ship_zone, ship_address, subtotal, discount, shipping_fee, total,
+      payment_method, status, idempotency_key)
+    VALUES ('NGR-T-1', repeat('a',64), 'X', '01700000000', 'Dhaka', 'dhaka', 'addr',
+      1000, 0, 80, 999, 'bkash', 'pending_payment', 'idem-bad');
+    RAISE EXCEPTION 'FAIL: unbalanced total accepted';
+  EXCEPTION WHEN check_violation THEN NULL; END;
+
+  -- both owners set rejected
+  BEGIN
+    INSERT INTO public.orders (order_no, user_id, guest_token_hash, customer_name, customer_phone,
+      ship_district, ship_zone, ship_address, subtotal, shipping_fee, total,
+      payment_method, status, idempotency_key)
+    VALUES ('NGR-T-2', gen_random_uuid(), repeat('a',64), 'X', '01700000000', 'Dhaka', 'dhaka', 'addr',
+      1000, 80, 1080, 'bkash', 'pending_payment', 'idem-xor1');
+    RAISE EXCEPTION 'FAIL: two-owner order accepted';
+  EXCEPTION WHEN check_violation THEN NULL; END;
+
+  -- neither owner set rejected
+  BEGIN
+    INSERT INTO public.orders (order_no, customer_name, customer_phone,
+      ship_district, ship_zone, ship_address, subtotal, shipping_fee, total,
+      payment_method, status, idempotency_key)
+    VALUES ('NGR-T-2b', 'X', '01700000000', 'Dhaka', 'dhaka', 'addr',
+      1000, 80, 1080, 'bkash', 'pending_payment', 'idem-xor2');
+    RAISE EXCEPTION 'FAIL: owner-less order accepted';
+  EXCEPTION WHEN check_violation THEN NULL; END;
+
+  -- valid guest order + invalid zone rejected
+  BEGIN
+    INSERT INTO public.orders (order_no, guest_token_hash, customer_name, customer_phone,
+      ship_district, ship_zone, ship_address, subtotal, shipping_fee, total,
+      payment_method, status, idempotency_key)
+    VALUES ('NGR-T-2c', repeat('a',64), 'X', '01700000000', 'Dhaka', 'mars', 'addr',
+      1000, 80, 1080, 'bkash', 'pending_payment', 'idem-zone');
+    RAISE EXCEPTION 'FAIL: invalid zone accepted';
+  EXCEPTION WHEN check_violation THEN NULL; END;
+
+  INSERT INTO public.orders (order_no, guest_token_hash, customer_name, customer_phone,
+    ship_district, ship_zone, ship_address, subtotal, discount, shipping_fee, total,
+    payment_method, status, idempotency_key)
+  VALUES ('NGR-T-3', repeat('b',64), 'Cathy', '01700000000', 'Dhaka', 'dhaka', 'addr 1',
+    2000, 100, 0, 1900, 'cod', 'pending_confirmation', 'idem-ok')
+  RETURNING id INTO oid;
+
+  -- duplicate idempotency_key rejected
+  BEGIN
+    INSERT INTO public.orders (order_no, guest_token_hash, customer_name, customer_phone,
+      ship_district, ship_zone, ship_address, subtotal, shipping_fee, total,
+      payment_method, status, idempotency_key)
+    VALUES ('NGR-T-3dup', repeat('c',64), 'Y', '01700000000', 'Dhaka', 'dhaka', 'a',
+      100, 0, 100, 'cod', 'pending_confirmation', 'idem-ok');
+    RAISE EXCEPTION 'FAIL: duplicate idempotency_key accepted';
+  EXCEPTION WHEN unique_violation THEN NULL; END;
+END $$;
+
+-- ============================================================
+-- §2 — order_items line_total + FK RESTRICT on product
+-- ============================================================
+DO $$
+DECLARE pid uuid; oid uuid;
+BEGIN
+  SELECT id INTO pid FROM public.products WHERE code = 'o-prod';
+  SELECT id INTO oid FROM public.orders WHERE order_no = 'NGR-T-3';
+
+  BEGIN
+    INSERT INTO public.order_items (order_id, product_id, name, unit_price, qty, line_total)
+    VALUES (oid, pid, 'Item', 500, 2, 999);
+    RAISE EXCEPTION 'FAIL: bad line_total accepted';
+  EXCEPTION WHEN check_violation THEN NULL; END;
+
+  INSERT INTO public.order_items (order_id, product_id, name, unit_price, qty, line_total)
+  VALUES (oid, pid, 'Item', 500, 2, 1000);
+
+  -- product with order history cannot be deleted (FK RESTRICT)
+  BEGIN
+    DELETE FROM public.products WHERE id = pid;
+    RAISE EXCEPTION 'FAIL: product with order_items deleted';
+  EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+END $$;
+
+-- ============================================================
+-- §3 — order_status_history is append-only
+-- ============================================================
+DO $$
+DECLARE oid uuid; hid uuid; got text;
+BEGIN
+  SELECT id INTO oid FROM public.orders WHERE order_no = 'NGR-T-3';
+  INSERT INTO public.order_status_history (order_id, to_status)
+  VALUES (oid, 'pending_confirmation') RETURNING id INTO hid;
+
+  BEGIN UPDATE public.order_status_history SET reason = 'x' WHERE id = hid;
+        RAISE EXCEPTION 'FAIL: history UPDATE allowed';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got NOT LIKE '%append-only%' THEN RAISE EXCEPTION 'FAIL: hist update code=%', got; END IF; END;
+
+  BEGIN DELETE FROM public.order_status_history WHERE id = hid;
+        RAISE EXCEPTION 'FAIL: history DELETE allowed';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got NOT LIKE '%append-only%' THEN RAISE EXCEPTION 'FAIL: hist delete code=%', got; END IF; END;
+END $$;
+
+-- ============================================================
+-- §4 — verified-TrxID fraud guard (unique only among verified)
+-- ============================================================
+DO $$
+DECLARE oid uuid;
+BEGIN
+  SELECT id INTO oid FROM public.orders WHERE order_no = 'NGR-T-3';
+
+  INSERT INTO public.payments (order_id, method, amount, trx_id, status)
+  VALUES (oid, 'bkash', 1900, 'TRX123', 'verified');
+
+  -- case-insensitive collision among verified → reject
+  BEGIN
+    INSERT INTO public.payments (order_id, method, amount, trx_id, status)
+    VALUES (oid, 'bkash', 1900, 'trx123', 'verified');
+    RAISE EXCEPTION 'FAIL: duplicate verified TrxID accepted';
+  EXCEPTION WHEN unique_violation THEN NULL; END;
+
+  -- a pending payment with the same trx is allowed (only verified is unique)
+  INSERT INTO public.payments (order_id, method, amount, trx_id, status)
+  VALUES (oid, 'bkash', 1900, 'TRX123', 'pending');
+
+  -- a different method may reuse the trx
+  INSERT INTO public.payments (order_id, method, amount, trx_id, status)
+  VALUES (oid, 'nagad', 1900, 'TRX123', 'verified');
+END $$;
+
+-- ============================================================
+-- §5 — idempotency_keys + order_no sequence
+-- ============================================================
+DO $$
+DECLARE oid uuid; a bigint; b bigint;
+BEGIN
+  SELECT id INTO oid FROM public.orders WHERE order_no = 'NGR-T-3';
+  INSERT INTO public.idempotency_keys (key, scope, request_hash, order_id)
+  VALUES ('idem-ok', 'guest', 'hash123', oid);
+
+  BEGIN
+    INSERT INTO public.idempotency_keys (key, scope, request_hash)
+    VALUES ('idem-ok', 'guest', 'other');
+    RAISE EXCEPTION 'FAIL: duplicate idempotency key accepted';
+  EXCEPTION WHEN unique_violation THEN NULL; END;
+
+  a := nextval('public.order_no_seq');
+  b := nextval('public.order_no_seq');
+  IF b <> a + 1 THEN RAISE EXCEPTION 'FAIL: sequence not monotonic % %', a, b; END IF;
+END $$;
+
+-- ============================================================
+-- §6 — RPC-only posture: RLS enabled, no policies, no anon/auth grants
+-- ============================================================
+DO $$
+DECLARE t text; n int;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'orders','order_items','order_status_history','payments',
+    'payment_screenshots','idempotency_keys'
+  ] LOOP
+    IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = ('public.'||t)::regclass) THEN
+      RAISE EXCEPTION 'FAIL: % RLS not enabled', t; END IF;
+    SELECT count(*) INTO n FROM pg_policies WHERE schemaname = 'public' AND tablename = t;
+    IF n <> 0 THEN RAISE EXCEPTION 'FAIL: % has % policies (want 0)', t, n; END IF;
+    IF has_table_privilege('anon', 'public.'||t, 'SELECT') THEN
+      RAISE EXCEPTION 'FAIL: anon has SELECT on %', t; END IF;
+    IF has_table_privilege('authenticated', 'public.'||t, 'INSERT') THEN
+      RAISE EXCEPTION 'FAIL: authenticated has INSERT on %', t; END IF;
+  END LOOP;
+END $$;
+
+ROLLBACK;
