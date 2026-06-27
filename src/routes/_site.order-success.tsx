@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useRouteContext } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatBDT, BRAND } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -64,15 +64,19 @@ function OrderSuccess() {
   const [order, setOrder] = useState<UIOrder | null>(null);
 
   // Server-created order data from search params (checkout rewire P3b)
-  const serverOrder = search.order_id
-    ? {
-        id: search.order_no ?? search.order_id,
-        orderId: search.order_id,
-        orderNo: search.order_no ?? search.order_id,
-        status: search.status ?? "pending_confirmation",
-        total: search.total ?? 0,
-      }
-    : null;
+  const serverOrder = useMemo(
+    () =>
+      search.order_id
+        ? {
+            id: search.order_no ?? search.order_id,
+            orderId: search.order_id,
+            orderNo: search.order_no ?? search.order_id,
+            status: search.status ?? "pending_confirmation",
+            total: search.total ?? 0,
+          }
+        : null,
+    [search.order_id, search.order_no, search.status, search.total],
+  );
 
   useEffect(() => {
     // Prefer localStorage order for full details (items, address etc.)

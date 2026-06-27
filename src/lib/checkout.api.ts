@@ -26,9 +26,8 @@ export const quoteOrderFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { getPublicSupabaseEnv } = await import("@/lib/server/env.server");
     const { checkCsrfOrigin, getClientIp } = await import("@/lib/server/security.server");
-    const { checkIndependentRateLimit, rateLimitMessage } = await import(
-      "@/lib/server/rate-limit.server"
-    );
+    const { checkIndependentRateLimit, rateLimitMessage } =
+      await import("@/lib/server/rate-limit.server");
 
     const env = getPublicSupabaseEnv();
     if (!checkCsrfOrigin(env.siteUrl)) {
@@ -54,9 +53,8 @@ export const placeOrderFn = createServerFn({ method: "POST" })
     const { checkCsrfOrigin, getClientIp } = await import("@/lib/server/security.server");
     const { createServerSupabaseClient } = await import("@/lib/server/supabase.server");
     const { getAuthenticatedIdentity } = await import("@/lib/server/identity.server");
-    const { checkIndependentRateLimit, rateLimitMessage } = await import(
-      "@/lib/server/rate-limit.server"
-    );
+    const { checkIndependentRateLimit, rateLimitMessage } =
+      await import("@/lib/server/rate-limit.server");
 
     const env = getPublicSupabaseEnv();
     if (!checkCsrfOrigin(env.siteUrl)) {
