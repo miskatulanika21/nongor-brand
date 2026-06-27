@@ -1,7 +1,8 @@
 # WALKTHROUGH — actual data flows
 
-Reflects what the code does today (after Stage 2 Pass 2 final closure). Updated each
-stage. Where a flow depends on a pending migration, that is called out.
+Reflects what the code does today (Stage 2 closed; Stage 3 checkout backend live,
+app integration in progress). Updated each stage. Where a flow depends on a pending
+migration, that is called out.
 
 ## Request → response security wrapper
 
@@ -107,6 +108,39 @@ All admin catalog mutations share one guard: `guardAdminWrite(permission, op)`
   / `remove_product_variant`. DB-level guarantees verified by reproducible
   rolled-back SQL proofs (see the Stage-2 hardening report).
 
+## Checkout & orders (Stage 3) — backend live, app wiring in progress
+
+The server-authoritative order backend exists in the database; the storefront UI is
+being wired to it in Pass 3b.
+
+- **Pricing/quote (live, public):** `api.quote_order(lines, zone)` prices a cart
+  from the DB via `private.price_lines` (the single source shared with placement),
+  returning per-line availability/visibility + `subtotal/shipping/total` and a
+  `quote_token` (md5 of the visible-line snapshot) used to detect drift at submit.
+- **Placement (live, service-role only):** `api.place_order(lines, customer, zone,
+method, idempotency_key, actor?, quote_token?)` runs one transaction: race-safe
+  idempotency (INSERT … ON CONFLICT — a replay returns the original order, a
+  hash-mismatch throws `idempotency_conflict`), deterministic product locking
+  (sorted ids, deadlock-free), server-side re-pricing (client totals ignored),
+  oversell guard via `private.available_qty` under the locks, price-drift check
+  against `quote_token`, a 24h soft `inventory_reservations` hold, and the order +
+  items + payment + append-only status-history writes. COD → `pending_confirmation`,
+  manual (bkash/nagad) → `pending_payment`. Guests get a one-time `guest_token`
+  (only its sha256 hash is stored). The RPC is REVOKE-d from anon/authenticated; the
+  app server fn (Pass 3b) adds CSRF + rate limit + optional identity and calls it
+  with the service-role client.
+- **Reservation TTL:** `api.expire_reservations()` (pg_cron, every 5 min) expires
+  stale pending orders; correctness does not depend on it — `available_qty` counts
+  only unexpired holds (lazy backstop).
+- **Payment methods config (live):** `site_settings.cod_enabled` +
+  `payment_methods_enabled[]` are projected by `api.get_public_settings` and edited
+  in the admin "Payment methods" section; `checkout-shared.ts` derives the offered
+  methods (COD first) for the storefront.
+- **In progress (Pass 3b):** the checkout/cart routes still use the localStorage
+  demo path gated by `isDemoCommerceEnabled()` (F-04). The rewire to call
+  `quote_order`/`place_order`, add cart reconciliation, collect TrxID inline (stashed
+  locally for P4), and **remove the F-04 gate** is the remaining work.
+
 ## CI
 
 `.github/workflows/ci.yml` runs on push to `main` and all PRs: Bun (pinned
@@ -123,6 +157,8 @@ migrations — that is the `migrations-local` job's role.
 
 ## Still mock / localStorage (later stages)
 
-Orders, checkout, payments, coupons, customer profiles/addresses/measurements,
-courier, reviews moderation, CMS, newsletter, reports, site settings. See
+The checkout/cart/order-success UI (the order backend is live but not yet wired —
+Pass 3b), cart, wishlist, coupons (display-only until P5), payment verification +
+evidence (P4), customer profiles/addresses/measurements, courier, CMS, newsletter,
+reports. (Reviews moderation and site settings are DB-backed since Stage 2.) See
 `CURRENT_STATUS.md`.

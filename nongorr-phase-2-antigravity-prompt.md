@@ -427,6 +427,17 @@ Design with: UUID primary keys, `created_at`/`updated_at` timestamps, `deleted_a
 
 ## Stage 3 — Authoritative pricing and checkout
 
+> **Implementation status (2026-06-27) — see `CURRENT_STATUS.md` for detail.**
+> Backend **live**: order schema + numbering + idempotency (Pass 1), inventory
+> reservations (Pass 1r), and the server-authoritative `api.quote_order` /
+> `api.place_order` RPCs (Pass 3a — server re-pricing, `quote_token` drift guard,
+> race-safe idempotency, oversell guard, reservations, guest tokens). **In
+> progress** (Pass 3b): app integration — admin payment-method settings +
+> `checkout-shared` shipped; checkout/cart UI rewire, cart reconciliation, inline
+> TrxID, and F-04 gate removal next. **Deferred:** coupons/`coupon_usages` (P5),
+> payment evidence + verification in private Storage (P4). The `PaymentProvider`
+> interface is realised RPC-first (manual bKash/Nagad + COD); no gateway is faked.
+
 ### Key rules — non-negotiable
 
 - **Never trust browser-supplied totals.** The server must reload product price, sale price, custom-size charge, coupon discount, shipping fee, and free-delivery eligibility from the database and recalculate the final total.
