@@ -1,9 +1,9 @@
 # Stage 3 — Checkout, Orders & Payments — Master Design (v2)
 
-Status: **approved & in build** (2026-06-27). P1 (schema), P1r/P2 (reservations) and
-P3a (`quote_order`/`place_order` RPCs) are implemented + live; P3b (checkout app
-integration) is in progress. Live progress detail lives in `CURRENT_STATUS.md`; this
-remains the design source of truth. Aligns with the Stage 3 line in
+Status: **approved & complete** (2026-06-28). P1 (schema), P1r/P2 (reservations),
+P3a (`quote_order`/`place_order` RPCs) and P3b (checkout app integration) are all
+implemented + live + CI-green. Live progress detail lives in `CURRENT_STATUS.md`;
+this remains the design source of truth. Aligns with the Stage 3 line in
 `IMPLEMENTATION_PLAN.md` and the established codebase posture (RPC-only tables,
 `guardAdminWrite`, canonical audit, stable snake_case error codes, prod-proven
 migrations, CI-green per pass).

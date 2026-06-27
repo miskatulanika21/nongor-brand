@@ -112,7 +112,9 @@ once the admin write path is DB-backed.
       Migration `20260626160000`. Hardened (`20260626170000`): `(product_id,url)`
       unique index + `duplicate_media`, alt-length CHECK + alt editor, 12-image UI
       guard, optimistic concurrency (`gallery_revision` → `gallery_conflict`).
-- [ ] Pass 3g+ — retire the legacy `PRODUCTS` array; further catalog polish.
+- [x] Pass 3g (2026-06-27) — **admin dashboard cut off mock `PRODUCTS`**: dashboard
+      Low Stock / Best Sellers widgets read the live product table.
+- [ ] Pass 3g+ — retire the legacy `PRODUCTS` array entirely; further catalog polish.
 
 **Exit:** admin changes persist and drive the storefront; no mock array for
 catalog; permissions enforced server-side. (Pass 3g+ outstanding.)
@@ -141,17 +143,21 @@ idempotency_keys. localStorage migration per the V3 table (one-time flag).
       `api.place_order` (service-role only; race-safe idempotency via ON CONFLICT,
       deterministic product locks, server pricing, oversell + price-drift guards,
       reservation + guest token; stable error codes). Migration `20260627150000`.
-- [~] Pass 3b — **checkout app integration** (in progress): admin-configurable
+- [x] Pass 3b (2026-06-27) — **checkout app integration** (complete): admin-configurable
   payment methods (`cod_enabled` + `payment_methods_enabled[]`, migration
-  `20260627160000`) + admin "Payment methods" UI + isomorphic `checkout-shared`
-  module shipped. **Remaining:** checkout/cart server fns, checkout-route rewire
-  (method selector, quote-driven total, inline TrxID, remove the F-04 gate), cart
-  reconciliation, order-success refresh, pass3 DB integration tests.
+  `20260627085345`) + admin "Payment methods" UI + isomorphic `checkout-shared`
+  module + `checkout.server.ts` repository + `checkout.api.ts` server fns +
+  checkout-route rewire (method selector, quote-driven totals, placeOrderFn with
+  CSRF + rate-limit + identity + method validation, idempotency key minting +
+  quoteToken drift guard) + cart reconciliation (quoteOrderFn on mount, per-item
+  warnings, auto-correct quantities) + order-success page refresh
+  (ServerOrderSuccess component with search-param routing) + F-04 gate removed.
+  Rate-limit buckets: `quoteOrder` (60/min), `placeOrder` (10/10min).
 - [ ] Pass 4+ — payment evidence (`submit_payment_evidence` + private Storage),
       order tracking/read RPCs, admin orders board.
 
 **Exit:** one order per submission under retry; totals recomputed server-side;
-payment evidence in private Storage. (Pass 3b+ outstanding.)
+checkout fully server-authoritative. (Pass 4+ outstanding.)
 
 ## Stage 4 — Customer accounts
 
