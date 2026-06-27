@@ -298,10 +298,15 @@ implements `verify` off a webhook handler that writes to the same
 - **P3a — `place_order` + `quote_order` RPCs.** ✅ DONE (live, migration
   `20260627150000`). Server pricing, deterministic locking, race-safe idempotency,
   price-drift token, reservation, guest token.
-- **P3b — Checkout app integration.** 🔄 IN PROGRESS. Admin payment-method settings
-  (migration `20260627160000`) + `checkout-shared` module shipped; checkout/cart UI
-  wired (COD + manual) with cart reconciliation, inline TrxID (stashed locally for
-  P4), and the F-04 fail-closed gate removed — remaining.
+- **P3b — Checkout app integration.** ✅ DONE (live, migration
+  `20260627085345`). Admin payment-method settings + `checkout-shared` module +
+  `checkout.server.ts` repository + `checkout.api.ts` server fns + checkout-route
+  rewire (method selector, quote-driven totals, placeOrderFn with CSRF +
+  rate-limit + identity + method validation, idempotency key minting + quoteToken
+  drift guard) + cart reconciliation (quoteOrderFn on mount, per-item warnings,
+  auto-correct quantities) + order-success page (ServerOrderSuccess component) +
+  F-04 demo gate removed. Rate-limit buckets: `quoteOrder` (60/min), `placeOrder`
+  (10/10min).
 - **P4 — Payment evidence + verification.** Private bucket, submit/verify/reject,
   duplicate-TrxID guard, COD confirm, consume guard, ledger decrement.
 - **P5 — Real coupons.** `coupons` + `coupon_usages`, race-safe validation +

@@ -373,9 +373,9 @@ empty_cart, idempotency_conflict, product_not_purchasable, invalid_qty`. Status:
   COD → `pending_confirmation`, manual (bkash/nagad) → `pending_payment`. Coupons
   are not handled yet (discount always 0; P5).
 
-## Stage 3 Pass 3b — checkout app integration (in progress)
+## Stage 3 Pass 3b — checkout app integration (done, live, CI-green)
 
-- **Migration `20260627160000` (applied + verified):** `site_settings` gains
+- **Migration `20260627085345` (applied + verified):** `site_settings` gains
   `cod_enabled` (bool) + `payment_methods_enabled` (text[] ⊆ {bkash,nagad});
   `api.get_public_settings` projects both (public-safe); `api.save_settings`
   patches both. Round-trip verified against prod (then defaults restored).
@@ -388,13 +388,26 @@ empty_cart, idempotency_conflict, product_not_purchasable, invalid_qty`. Status:
   `cartToQuoteLines` (CartItem.productId **is** the product code, since the DB-backed
   storefront sets `Product.id = products.code`), `checkoutErrorMessage` over the 8
   stable codes, and `newIdempotencyKey`. Covered by `checkout-shared.test.ts`.
+- **Server layer:** `checkout.server.ts` (repository — `quoteOrder` via anon client,
+  `placeOrder` via service-role client) + `checkout.api.ts` (TanStack Start server
+  fns with CSRF + rate-limit middleware). Rate-limit buckets: `quoteOrder` (60/min),
+  `placeOrder` (10/10min).
+- **Checkout route rewire (`_site.checkout.tsx`):** quote-driven totals on mount +
+  zone/cart change; payment method selector (COD + bKash/Nagad from `publicSettings`);
+  `placeOrderFn` with CSRF + rate-limit + identity + method validation; idempotency
+  key minting + `quoteToken` drift guard. Error handling: `price_changed` → re-quote;
+  `out_of_stock` → redirect to cart. **F-04 demo gate removed.**
+- **Cart reconciliation (`_site.cart.tsx`):** `quoteOrderFn` on mount to verify
+  stock/availability; per-item warnings (not found, not visible, out of stock, low
+  stock); auto-corrects quantity to available max with toast notification;
+  server-verified subtotal with ✓ indicator.
+- **Order success (`_site.order-success.tsx`):** `validateSearch` accepts `order_id`,
+  `order_no`, `status`, `total` from checkout redirect; `ServerOrderSuccess`
+  component with real server data; COD vs manual payment differentiated "what happens
+  next" steps; legacy localStorage path preserved for backward compat.
 - **Decision (locked):** TrxID is collected inline at checkout and stashed locally
   for P4's `submit_payment_evidence` to attach — `place_order` has no TrxID param,
   so it is **not** server-recorded yet.
-- **Next:** checkout/cart server fns (`checkout.server.ts`/`checkout.api.ts`),
-  checkout-route rewire (method selector, quote-driven total, inline TrxID,
-  **removal of the F-04 fail-closed gate**), cart reconciliation, order-success
-  refresh, and the pass3 DB integration tests.
 
 ## Real vs mock (data flow)
 
@@ -403,62 +416,52 @@ public catalog read (`product_*`); **admin product/category writes**; **inventor
 (ledger + stock)**; **review moderation + product rating/review_count**;
 **customer review submission** (authenticated → pending → moderated); **shop
 filter facets + category counts** (`api.catalog_facets()`); **site settings +
-announcement bar** (`api.get_public_settings` / `save_settings`); \*\*media library
-
-- Storage uploads** (`product-media` bucket / `media_assets`); **product galleries\*\*
-  (`api.set_product_media` — library-backed, atomic replace).
-
-**Server-authoritative at the DB, app wiring in progress:** the **order backend**
-exists (Stage 3 P1 schema + reservations + P3a `quote_order`/`place_order`), but the
-storefront checkout/cart UI is not yet calling it — that is Stage 3 Pass 3b (the
-admin payment-method settings + `checkout-shared` module have landed; the UI rewire
-
-- F-04 gate removal are next).
+announcement bar** (`api.get_public_settings` / `save_settings`); **media library
++ Storage uploads** (`product-media` bucket / `media_assets`); **product galleries**
+(`api.set_product_media` — library-backed, atomic replace); **checkout + orders**
+(server-authoritative pricing via `quote_order`, order placement via `place_order`,
+cart reconciliation, payment method selection — all wired to the storefront UI).
 
 **Still mock / localStorage (later passes):** the legacy `PRODUCTS` array (still
-exported for the admin dashboard and the Stage 3/5 order mocks, until those passes
-remove it); cart, wishlist, the checkout/order-success UI; coupons (display-only
-until P5); payment verification + evidence (P4); customer
-profiles/addresses/measurements; courier; banners, CMS, contact, newsletter,
-reports.
+exported for order mocks, until Pass 3g+ removes it); cart and wishlist hold item
+IDs in localStorage only (no server-side cart); coupons (display-only until Stage
+5); payment verification + evidence (Stage 4); customer
+profiles/addresses/measurements (Stage 4); courier (Stage 5); banners, CMS,
+contact, newsletter, reports (Stage 6).
 
-**Privacy / fail-closed guardrails (F-03 / F-04, ahead of Stage 3/4):** customer
-account PII (profile/addresses/measurements) and device orders are now partitioned
-in localStorage **per verified user id** (legacy unscoped keys are purged), so two
-customers sharing one browser can never read each other's data. Simulated checkout
-is gated by `isDemoCommerceEnabled()` (dev / explicit `VITE_ENABLE_DEMO_CHECKOUT`
-preview only): in production it **fails closed** — no fabricated "order placed";
-the form offers a real WhatsApp ordering CTA — and the seeded demo `ORDERS` never
-appear in a real customer's order/track/detail views. This is a guardrail, not the
-Stage 3 order backend. **Update:** the real Stage 3 order backend now exists
-(`place_order`); the F-04 gate is removed from the checkout submit path as part of
-Pass 3b once the UI calls the RPC.
+**Privacy / fail-closed guardrails (F-03 / F-04):** customer account PII
+(profile/addresses/measurements) and device orders are partitioned in localStorage
+**per verified user id** (legacy unscoped keys are purged), so two customers
+sharing one browser can never read each other's data. The F-04 demo checkout gate
+(`isDemoCommerceEnabled()`) has been **removed** from the checkout submit path —
+checkout now calls the real `place_order` RPC. The seeded demo `ORDERS` array is
+still referenced by the legacy order-history/tracking views (Stage 4 replaces
+these with DB reads).
 
 ## CI (honest)
 
 `ci.yml` runs (genuinely): frozen Bun install, typecheck, lint, format, test, build,
-**migrate-from-empty** (boots a local Supabase, applies all migrations to a blank
-DB — now 34, incl. the Stage 3 order schema/reservations/RPCs), and **DB
-integration tests** (`pass2_db.test.sql` — stock write-guard,
-set_inventory validation, ledger immutability, FK RESTRICT, first-variant
-conservation, owner-only purge, reorder validation, bulk idempotency, actor-deletion
-restriction, grant verification, post-migration schema proof, the merged RLS policy
-
-- FK index, stable error-code assertions, review moderation + rating sync,
-  customer submission → pending → approve → rating, catalog-facet counts +
-  visibility filtering, site-settings public/admin projection + audit +
-  single-row invariant + grants, media-library bucket + register/upsert/
-  delete/audit + usage count + grants, product-gallery atomic replace +
-  library-only + one-primary + bounds + audit + grants + duplicate/alt/concurrency,
-  and the `staff_profiles` direct-write lockdown). The migrate-from-empty job now
-  **exposes the `api` schema** in the local stack config (never `private`) and runs
-  a **REST smoke test (F-08)** against PostgREST on the fresh stack: anon can reach
-  a public `api` RPC (`catalog_facets`), anon **cannot** reach a privileged RPC
-  (`set_product_media`), and the service role can — proving the Data API surface the
-  app actually uses, not just the SQL functions. This immediately caught a real
-  latent bug: anon/authenticated lacked `USAGE` on the `api` schema, so public RPCs
-  (`catalog_facets`, `get_public_settings`) were silently failing over REST
-  (`42501`) and falling back — fixed by `20260626190000_api_schema_usage_grant`. The **linked deployed-DB lint step runs** in CI (using `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_ID`, and `SUPABASE_DB_PASSWORD` repository secrets). This lints the deployed live database structure against recommendations.
+**migrate-from-empty** (boots a local Supabase, applies all 34 migrations to a
+blank DB — incl. the Stage 3 order schema/reservations/RPCs/payment-method
+settings), and **DB integration tests** (`pass2_db.test.sql` + `pass3_db.test.sql`
+— stock write-guard, set_inventory validation, ledger immutability, FK RESTRICT,
+first-variant conservation, owner-only purge, reorder validation, bulk idempotency,
+actor-deletion restriction, grant verification, post-migration schema proof, the
+merged RLS policy + FK index, stable error-code assertions, review moderation +
+rating sync, customer submission → pending → approve → rating, catalog-facet counts
++ visibility filtering, site-settings public/admin projection + audit + single-row
+invariant + grants, media-library bucket + register/upsert/delete/audit + usage
+count + grants, product-gallery atomic replace + library-only + one-primary +
+bounds + audit + grants + duplicate/alt/concurrency, `staff_profiles` direct-write
+lockdown, **Stage 3 order-schema invariants** — pricing balance, owner XOR,
+line-total, append-only status, verified-TrxID guard, idempotency uniqueness,
+RPC-only RLS). The migrate-from-empty job **exposes the `api` schema** in the local
+stack config (never `private`) and runs a **REST smoke test (F-08)** against
+PostgREST on the fresh stack: anon can reach a public `api` RPC (`catalog_facets`),
+anon **cannot** reach a privileged RPC (`set_product_media`), and the service role
+can. The **linked deployed-DB lint step runs** in CI (using `SUPABASE_ACCESS_TOKEN`,
+`SUPABASE_PROJECT_ID`, and `SUPABASE_DB_PASSWORD` repository secrets). All **4 CI
+checks** green (Quality + Migrations + DB Lint + Supabase Preview).
 
 ## Outstanding follow-ups
 
@@ -468,10 +471,11 @@ restriction, grant verification, post-migration schema proof, the merged RLS pol
 4. DB integration tests are automated in CI (`pass2_db.test.sql`); a genuine
    two-connection concurrency test (`concurrency.test.sh`) also runs in the
    `migrations-local` job. True multi-session advisory-lock races are verified.
-5. Delete the `PRODUCTS` constant itself — now gated on Stage 3. Every Stage-2
-   surface is DB-backed (facets Pass 3c, settings 3d, media library 3e, galleries
-   3f, dashboard 3g); the only remaining consumers are the Stage 3/5 order mocks
-   (`orders.ts`, `order-ui.ts`), so the array is removed when that backend lands.
+5. Delete the `PRODUCTS` constant itself — every Stage-2 surface is DB-backed
+   (facets Pass 3c, settings 3d, media library 3e, galleries 3f, dashboard 3g);
+   the only remaining consumers are the legacy order-history/tracking views
+   (`orders.ts`, `order-ui.ts`) — to be removed in Stage 4 when order reads are
+   DB-backed.
 6. GPT-audit remediation status: done — F-02, F-03, F-04, F-05, F-06, F-07, F-08,
    F-10, F-11, F-13, F-15, F-16, F-17, F-19. **F-10** (MFA factor removal now
    requires an AAL2 step-up + a rate limit) and **F-11** (authenticated password
