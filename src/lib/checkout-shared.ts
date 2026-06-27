@@ -11,9 +11,15 @@
  *     is the drift guard carried from quote → place.
  *   - Coupons/discounts are not handled yet (discount is always 0; P5).
  */
+import { z } from "zod";
 import type { CartItem } from "@/lib/store";
 import type { DeliveryZone } from "@/lib/checkout-ui";
 import type { ManualPaymentMethod, PublicSettings } from "@/lib/settings.schema";
+
+/** Delivery zones, matching the DB CHECK and DeliveryZone union. */
+export const DELIVERY_ZONE_VALUES = ["dhaka", "major", "outside"] as const;
+/** Bangladesh mobile, normalized to 01XXXXXXXXX (matches the checkout form). */
+export const BD_PHONE_RE = /^01[3-9]\d{8}$/;
 
 // ── Payment methods ──────────────────────────────────────────────────────────
 
@@ -157,3 +163,50 @@ export function newIdempotencyKey(): string {
   // Fallback (older runtimes / tests without WebCrypto).
   return `idem-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
+
+// ── Server-fn input validation (zod; mirrors the RPC argument bounds) ─────────
+
+const lineSchema = z.object({
+  code: z.string().min(1).max(64),
+  size: z.string().min(1).max(40).optional(),
+  qty: z.number().int().min(1).max(50),
+});
+
+/** Validator for quoteOrderFn. */
+export const quoteOrderSchema = z.object({
+  lines: z.array(lineSchema).min(1).max(50),
+  zone: z.enum(DELIVERY_ZONE_VALUES),
+});
+
+/** Customer details for placeOrderFn (name/phone/district/address required). */
+export const checkoutCustomerSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  phone: z.string().trim().regex(BD_PHONE_RE, "Enter a valid Bangladesh mobile number."),
+  district: z.string().trim().min(1).max(100),
+  address: z.string().trim().min(1).max(500),
+  email: z
+    .preprocess(
+      (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+      z.string().trim().email().max(200).optional(),
+    )
+    .optional(),
+  area: z
+    .preprocess(
+      (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+      z.string().trim().max(200).optional(),
+    )
+    .optional(),
+});
+
+/** Validator for placeOrderFn. */
+export const placeOrderSchema = z.object({
+  lines: z.array(lineSchema).min(1).max(50),
+  customer: checkoutCustomerSchema,
+  zone: z.enum(DELIVERY_ZONE_VALUES),
+  method: z.enum(["cod", "bkash", "nagad"]),
+  idempotencyKey: z.string().min(1).max(200),
+  quoteToken: z.string().min(1).max(64).optional(),
+});
+
+export type QuoteOrderInput = z.infer<typeof quoteOrderSchema>;
+export type PlaceOrderInput = z.infer<typeof placeOrderSchema>;
