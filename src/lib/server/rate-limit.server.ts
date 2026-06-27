@@ -54,6 +54,10 @@ export const RATE_LIMITS = {
   catalogWrite: { limit: 120, windowSec: 60 * 5 },
   /** Customer review submission — limit spam from a single IP/account. */
   reviewSubmit: { limit: 5, windowSec: 60 * 10 },
+  /** Checkout price quote — a cheap public read; generous but not unlimited. */
+  quoteOrder: { limit: 60, windowSec: 60 },
+  /** Order placement — a write that creates rows; strict per IP + account. */
+  placeOrder: { limit: 10, windowSec: 60 * 10 },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 export type RateLimitAction = keyof typeof RATE_LIMITS;
