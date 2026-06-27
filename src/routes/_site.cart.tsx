@@ -1,8 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore, type CartItem } from "@/lib/store";
 import { formatBDT } from "@/lib/brand";
 import { PRODUCT_TYPE_LABEL, type Product } from "@/lib/products";
+import { cartToQuoteLines, type QuoteResult } from "@/lib/checkout-shared";
+import { quoteOrderFn } from "@/lib/checkout.api";
 import { listProductCards } from "@/lib/catalog.api";
 import { ProductCard } from "@/components/ProductCard";
 import { Button } from "@/components/ui/button";
@@ -43,6 +45,8 @@ import {
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
+  AlertTriangle,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -102,11 +106,64 @@ function Cart() {
   const [couponError, setCouponError] = useState<string | null>(null);
   const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
 
+  // ── Server reconciliation ──────────────────────────────────────────────
+  const [quote, setQuote] = useState<QuoteResult | null>(null);
+  const [reconciling, setReconciling] = useState(false);
+  /** Per-item warnings keyed by `code:size`. */
+  const [itemWarnings, setItemWarnings] = useState<Map<string, string>>(new Map());
+
+  const reconcile = useCallback(async () => {
+    const lines = cartToQuoteLines(cart);
+    if (lines.length === 0) return;
+    setReconciling(true);
+    try {
+      const result = await quoteOrderFn({ data: { lines, zone: deliveryZone } });
+      if (result.success) {
+        setQuote(result.quote);
+        const warnings = new Map<string, string>();
+        for (const line of result.quote.lines) {
+          const key = `${line.code}:${line.size ?? ""}`;
+          if (!line.found) {
+            warnings.set(key, "This item is no longer available.");
+          } else if (!line.visible) {
+            warnings.set(key, "This item has been removed from the store.");
+          } else if (line.available !== undefined && line.available < line.qty) {
+            if (line.available === 0) {
+              warnings.set(key, "Out of stock.");
+            } else {
+              warnings.set(key, `Only ${line.available} left in stock.`);
+              // Auto-correct qty
+              const cartItem = cart.find(
+                (c) => c.productId === line.code && (c.size ?? "") === (line.size ?? ""),
+              );
+              if (cartItem && cartItem.qty > line.available) {
+                updateQty(cartItem.id, line.available);
+                toast.info(
+                  `${cartItem.name}: quantity adjusted to ${line.available} (max available).`,
+                );
+              }
+            }
+          }
+        }
+        setItemWarnings(warnings);
+      }
+    } catch {
+      // Non-critical — client-side totals remain usable
+    } finally {
+      setReconciling(false);
+    }
+  }, [cart, deliveryZone, updateQty]);
+
+  useEffect(() => {
+    reconcile();
+  }, [reconcile]);
+
   const shipping = computeShipping(deliveryZone, cartSubtotal);
   const total = Math.max(0, cartSubtotal - discount) + shipping;
   const freeDelivery = cartSubtotal >= FREE_DELIVERY_THRESHOLD;
   const remaining = freeDeliveryRemaining(cartSubtotal);
   const progress = Math.min(100, (cartSubtotal / FREE_DELIVERY_THRESHOLD) * 100);
+  const serverSubtotal = quote?.subtotal ?? null;
 
   // Coupon applied in store but no longer qualifies after qty changes.
   const couponNoLongerQualifies = Boolean(appliedCoupon && cartSubtotal < appliedCoupon.min);
@@ -253,6 +310,17 @@ function Cart() {
                       </CollapsibleContent>
                     </Collapsible>
                   )}
+
+                  {/* Server reconciliation warning */}
+                  {(() => {
+                    const warnKey = `${item.productId}:${item.size ?? ""}`;
+                    const warning = itemWarnings.get(warnKey);
+                    return warning ? (
+                      <p className="flex items-center gap-1 text-xs font-medium text-destructive">
+                        <AlertTriangle className="h-3 w-3 shrink-0" /> {warning}
+                      </p>
+                    ) : null;
+                  })()}
 
                   {item.customCharge ? (
                     <p className="text-xs text-muted-foreground">
@@ -460,7 +528,17 @@ function Cart() {
             <Separator />
 
             <div className="space-y-2 text-sm">
-              <Row label="Subtotal" value={formatBDT(cartSubtotal)} />
+              <Row
+                label="Subtotal"
+                value={formatBDT(serverSubtotal ?? cartSubtotal)}
+                suffix={
+                  reconciling ? (
+                    <Loader2 className="inline h-3 w-3 animate-spin text-muted-foreground" />
+                  ) : quote ? (
+                    <span className="text-xs text-success">✓</span>
+                  ) : null
+                }
+              />
               {discount > 0 && (
                 <Row
                   label={`Discount (${appliedCoupon?.code})`}
@@ -594,11 +672,13 @@ function Row({
   value,
   big,
   accent,
+  suffix,
 }: {
   label: string;
   value: string;
   big?: boolean;
   accent?: boolean;
+  suffix?: React.ReactNode;
 }) {
   return (
     <div className="flex items-center justify-between">
@@ -615,6 +695,7 @@ function Row({
         }
       >
         {value}
+        {suffix && <span className="ml-1">{suffix}</span>}
       </span>
     </div>
   );
