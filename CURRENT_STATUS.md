@@ -3,7 +3,27 @@
 Authoritative record of verified project state. Code and live-environment
 behavior are the source of truth; this file is updated after every stage.
 
-_Last updated: 2026-06-27 — **Stage 2 closed.** GPT-audit remediation continued:
+_Last updated: 2026-06-27 — **Stage 3 checkout backend live; app integration in
+progress.** Stage 3 Pass 1 created the order schema (orders / order_items /
+order_status_history / payments / payment_screenshots / idempotency_keys — RPC-only
+deny-all; integer-BDT pricing with a balanced-total CHECK; append-only status
+history) and the `NGR-YYYY-######` sequence. The reservations pass added soft
+`inventory_reservations` holds with a lazy-backstop `private.available_qty` (counts
+only unexpired holds, so an unswept hold never blocks a sale) and a `pg_cron` TTL
+sweep (`api.expire_reservations`). **Pass 3a** shipped the server-authoritative
+pricing/order RPCs: `api.quote_order` (public; per-line availability + a
+`quote_token` drift guard) and `api.place_order` (service-role only; race-safe
+idempotency via INSERT … ON CONFLICT, deterministic product-lock ordering,
+server-side pricing, oversell + price-drift guards, reservation + guest-token
+issuance; COD → `pending_confirmation`, manual → `pending_payment`). **Pass 3b (in
+progress)** is the app integration: migration 34 added admin-configurable payment
+methods (`cod_enabled` + `payment_methods_enabled[]`, public-projected), the admin
+Settings "Payment methods" toggles, and the isomorphic `checkout-shared` module
+(cart→lines, error-code map, method derivation, idempotency key). The checkout/cart
+UI wiring, cart reconciliation, and removal of the F-04 fail-closed gate follow. 34
+migrations applied; 344 Vitest + DB integration green; build clean. Prior context:_
+
+_Earlier (2026-06-27) — **Stage 2 closed.** GPT-audit remediation continued:
 F-05 (in-use media delete guard, `media_in_use` — migration 30 applied + prod-
 proven), F-13 (resolve staff emails by id — fixes the >50-user `listUsers`
 blind spot + swallowed Auth error), F-06 (upload-intent verification — register
@@ -37,30 +57,33 @@ verification complete · (4) operator action pending.**
 
 ## Stage status
 
-| Stage        | Scope                                                                    | Status                                                                   |
-| ------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| 1            | Auth, RBAC, CSRF, headers, rate limit, MFA scaffold, audit, owner-safety | Implemented                                                              |
-| 1.5          | Security closure (4 bugs + A–E + follow-up hardening)                    | **Operationally closed** (migrations applied; `api` exposed; proofs run) |
-| 2 (Pass 1)   | DB-backed **public catalog read** path                                   | Implemented + live                                                       |
-| 2 (Pass 2)   | Admin **product / category / inventory** writes (DB-backed + hardened)   | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3a)  | **Reviews moderation + rating/review_count sync** (DB-backed)            | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3b)  | **Authenticated customer review submission** (persisted + moderated)     | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3c)  | **DB-backed catalog facets & counts** (shop filter sidebar)              | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3d)  | **DB-backed site settings** (announcement bar live; audited admin form)  | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3e)  | **Storage-backed media library** (real uploads via signed URLs)          | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3f)  | **Product gallery management** (attach library media; atomic replace)    | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3g)  | **Admin dashboard cut off mock `PRODUCTS`** (live catalog widgets)       | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3g+) | Delete the `PRODUCTS` constant itself                                    | Gated on Stage 3 (order mocks are its only remaining consumer)           |
-| 3            | Server-authoritative checkout, orders, payments                          | Not started                                                              |
-| 4            | Customer accounts / addresses / measurements                             | Not started (localStorage)                                               |
-| 5            | Courier adapters, shipments, webhooks, outbox                            | Not started                                                              |
-| 6            | Banners, CMS, contact, newsletter, reports, settings                     | Not started (mock)                                                       |
-| 7            | Hardening, perf/a11y, CI/CD, backups                                     | Not started                                                              |
+| Stage        | Scope                                                                     | Status                                                                   |
+| ------------ | ------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| 1            | Auth, RBAC, CSRF, headers, rate limit, MFA scaffold, audit, owner-safety  | Implemented                                                              |
+| 1.5          | Security closure (4 bugs + A–E + follow-up hardening)                     | **Operationally closed** (migrations applied; `api` exposed; proofs run) |
+| 2 (Pass 1)   | DB-backed **public catalog read** path                                    | Implemented + live                                                       |
+| 2 (Pass 2)   | Admin **product / category / inventory** writes (DB-backed + hardened)    | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3a)  | **Reviews moderation + rating/review_count sync** (DB-backed)             | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3b)  | **Authenticated customer review submission** (persisted + moderated)      | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3c)  | **DB-backed catalog facets & counts** (shop filter sidebar)               | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3d)  | **DB-backed site settings** (announcement bar live; audited admin form)   | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3e)  | **Storage-backed media library** (real uploads via signed URLs)           | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3f)  | **Product gallery management** (attach library media; atomic replace)     | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3g)  | **Admin dashboard cut off mock `PRODUCTS`** (live catalog widgets)        | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3g+) | Delete the `PRODUCTS` constant itself                                     | Gated on Stage 3 (order mocks are its only remaining consumer)           |
+| 3 (Pass 1)   | **Order schema, numbering & idempotency** (RPC-only tables, no behavior)  | **Implemented + live**                                                   |
+| 3 (Pass 1r)  | **Inventory reservations** (soft holds + lazy availability + cron sweep)  | **Implemented + live**                                                   |
+| 3 (Pass 3a)  | **Server-authoritative pricing/order RPCs** (`quote_order`/`place_order`) | **Implemented + live**                                                   |
+| 3 (Pass 3b)  | **Checkout app integration** (payment-method settings + checkout-shared)  | **In progress** (settings + shared module live; UI wiring next)          |
+| 4            | Customer accounts / addresses / measurements                              | Not started (localStorage)                                               |
+| 5            | Courier adapters, shipments, webhooks, outbox                             | Not started                                                              |
+| 6            | Banners, CMS, contact, newsletter, reports, settings                      | Not started (mock)                                                       |
+| 7            | Hardening, perf/a11y, CI/CD, backups                                      | Not started                                                              |
 
 ## Migrations (live project xomjxtmhkglhuiccekld)
 
-**30 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
-ledger matches the 30 repo files exactly (versions + names), in order:
+**34 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
+ledger matches the 34 repo files exactly (versions + names), in order:
 
 ```
 …143927 create_private_schema            …623000000 advisor_hardening
@@ -82,6 +105,10 @@ ledger matches the 30 repo files exactly (versions + names), in order:
                                           …626180000 staff_profiles_write_lockdown
                                           …626190000 api_schema_usage_grant
                                           …627120000 media_delete_in_use_guard
+                                          …627130000 orders_schema
+                                          …627140000 reservations
+                                          …627150000 order_rpcs
+                                          …627160000 payment_method_settings
 ```
 
 Note: `apply_migration` (MCP) stamps its own version, so after every MCP apply the
@@ -292,6 +319,78 @@ normal removal is **Archive**. Privileged GET handlers set `private, no-store`.
   over-long alt, unique-index backstop, optimistic-concurrency conflict + bump, empty
   clears, grants) + Vitest (gallery schema incl. duplicate + revision).
 
+## Stage 3 Pass 1 — order schema, numbering & idempotency (done, live)
+
+- Foundation tables for server-authoritative checkout, all **RPC-only** (RLS
+  deny-all + direct grants revoked from anon/authenticated — same posture as the
+  inventory/settings tables): `orders`, `order_items`, `order_status_history`,
+  `payments`, `payment_screenshots`, `idempotency_keys`.
+- **Invariants enforced at the DB:** money is integer BDT with a balanced-total
+  CHECK (`subtotal - discount + shipping_fee = total`); each order has exactly one
+  owner (`user_id` XOR `guest_token_hash`, the latter a 64-char sha256 hash);
+  `order_items.line_total = unit_price * qty`, qty 1..50; `order_status_history` is
+  **append-only** (a trigger blocks UPDATE/DELETE); a partial unique index makes a
+  given wallet `(method, lower(trx_id))` VERIFIED on at most one payment (fraud
+  guard); `idempotency_keys.key` is the PK (the serialization point for retries).
+- `order_no_seq` sequence backs the `NGR-YYYY-######` number minted in the P3a RPC.
+  No app behavior in this pass — structure + invariants only.
+
+## Stage 3 Pass 1r — inventory reservations (done, live)
+
+- `inventory_reservations` holds soft stock for pending orders.
+  `private.available_qty(product_id, size) = base_stock − Σ(active, **unexpired**
+holds)` — the **lazy backstop**: availability ignores expired holds, so
+  correctness never depends on the sweep running on time.
+- `api.expire_reservations()` (service-role) flips expired pending orders to
+  `expired` (FOR UPDATE SKIP LOCKED) and records system status history; scheduled
+  every 5 min via `pg_cron` (best-effort; the lazy count is the real guarantee).
+
+## Stage 3 Pass 3a — server-authoritative pricing/order RPCs (done, live)
+
+- **`api.quote_order(p_lines, p_zone)`** (public; anon/authenticated/service):
+  prices a cart from the DB (`private.price_lines` is the single source shared with
+  place), returns per-line `{unit_price, line_total, available, visible, found}`
+  plus `subtotal/discount(0)/shipping_fee/total` and a **`quote_token`**
+  (`md5(canon || '#' || subtotal)` over visible lines) — the honest pre-submit
+  total and a drift fingerprint. Free-delivery keyed on pre-discount subtotal.
+- **`api.place_order(p_lines, p_customer, p_zone, p_payment_method,
+p_idempotency_key, p_actor, p_quote_token)`** (**service-role only** — REVOKE from
+  anon/authenticated; the app server fn adds CSRF/rate-limit/identity). One
+  transaction: race-safe idempotency (INSERT … ON CONFLICT DO NOTHING; replay
+  returns the original order, hash-mismatch → `idempotency_conflict`),
+  **deterministic product lock order** (sorted ids → deadlock-free), server-side
+  pricing (client totals ignored), oversell guard under the locks via
+  `available_qty`, **price-drift** check against `quote_token` (`price_changed`),
+  soft reservation (24h TTL), order + items + payment + status-history writes,
+  guest-token issuance (returned once). Stable snake_case error codes:
+  `out_of_stock, price_changed, invalid_payment_method, invalid_address,
+empty_cart, idempotency_conflict, product_not_purchasable, invalid_qty`. Status:
+  COD → `pending_confirmation`, manual (bkash/nagad) → `pending_payment`. Coupons
+  are not handled yet (discount always 0; P5).
+
+## Stage 3 Pass 3b — checkout app integration (in progress)
+
+- **Migration `20260627160000` (applied + verified):** `site_settings` gains
+  `cod_enabled` (bool) + `payment_methods_enabled` (text[] ⊆ {bkash,nagad});
+  `api.get_public_settings` projects both (public-safe); `api.save_settings`
+  patches both. Round-trip verified against prod (then defaults restored).
+- **Admin UI:** `admin.settings.tsx` gains a "Payment methods" section (COD toggle +
+  bKash/Nagad toggles + a no-method-enabled warning) on the existing guarded
+  `saveSettings` plumbing.
+- **`checkout-shared.ts`** (isomorphic, client-safe): `PaymentMethod`/
+  `MANUAL_METHODS`/`isManualMethod`, `availableMethods`/`enabledMethodList` (from
+  public settings, COD first), quote/place request+response types,
+  `cartToQuoteLines` (CartItem.productId **is** the product code, since the DB-backed
+  storefront sets `Product.id = products.code`), `checkoutErrorMessage` over the 8
+  stable codes, and `newIdempotencyKey`. Covered by `checkout-shared.test.ts`.
+- **Decision (locked):** TrxID is collected inline at checkout and stashed locally
+  for P4's `submit_payment_evidence` to attach — `place_order` has no TrxID param,
+  so it is **not** server-recorded yet.
+- **Next:** checkout/cart server fns (`checkout.server.ts`/`checkout.api.ts`),
+  checkout-route rewire (method selector, quote-driven total, inline TrxID,
+  **removal of the F-04 fail-closed gate**), cart reconciliation, order-success
+  refresh, and the pass3 DB integration tests.
+
 ## Real vs mock (data flow)
 
 **Real / persistent (DB-backed):** auth, staff RBAC (`staff_profiles`), audit logs;
@@ -304,9 +403,17 @@ announcement bar** (`api.get_public_settings` / `save_settings`); \*\*media libr
 - Storage uploads** (`product-media` bucket / `media_assets`); **product galleries\*\*
   (`api.set_product_media` — library-backed, atomic replace).
 
+**Server-authoritative at the DB, app wiring in progress:** the **order backend**
+exists (Stage 3 P1 schema + reservations + P3a `quote_order`/`place_order`), but the
+storefront checkout/cart UI is not yet calling it — that is Stage 3 Pass 3b (the
+admin payment-method settings + `checkout-shared` module have landed; the UI rewire
+
+- F-04 gate removal are next).
+
 **Still mock / localStorage (later passes):** the legacy `PRODUCTS` array (still
 exported for the admin dashboard and the Stage 3/5 order mocks, until those passes
-remove it); orders, cart, wishlist, checkout, coupons; payments; customer
+remove it); cart, wishlist, the checkout/order-success UI; coupons (display-only
+until P5); payment verification + evidence (P4); customer
 profiles/addresses/measurements; courier; banners, CMS, contact, newsletter,
 reports.
 
@@ -318,13 +425,16 @@ is gated by `isDemoCommerceEnabled()` (dev / explicit `VITE_ENABLE_DEMO_CHECKOUT
 preview only): in production it **fails closed** — no fabricated "order placed";
 the form offers a real WhatsApp ordering CTA — and the seeded demo `ORDERS` never
 appear in a real customer's order/track/detail views. This is a guardrail, not the
-Stage 3 order backend.
+Stage 3 order backend. **Update:** the real Stage 3 order backend now exists
+(`place_order`); the F-04 gate is removed from the checkout submit path as part of
+Pass 3b once the UI calls the RPC.
 
 ## CI (honest)
 
 `ci.yml` runs (genuinely): frozen Bun install, typecheck, lint, format, test, build,
-**migrate-from-empty** (boots a local Supabase, applies all 29 migrations to a blank
-DB), and **DB integration tests** (`pass2_db.test.sql` — stock write-guard,
+**migrate-from-empty** (boots a local Supabase, applies all migrations to a blank
+DB — now 34, incl. the Stage 3 order schema/reservations/RPCs), and **DB
+integration tests** (`pass2_db.test.sql` — stock write-guard,
 set_inventory validation, ledger immutability, FK RESTRICT, first-variant
 conservation, owner-only purge, reorder validation, bulk idempotency, actor-deletion
 restriction, grant verification, post-migration schema proof, the merged RLS policy

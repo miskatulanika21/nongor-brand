@@ -1,9 +1,12 @@
 # Stage 3 — Checkout, Orders & Payments — Master Design (v2)
 
-Status: **proposed, awaiting approval** (no code yet). Source of truth on approval.
-Aligns with the Stage 3 line in `IMPLEMENTATION_PLAN.md` and the established
-codebase posture (RPC-only tables, `guardAdminWrite`, canonical audit, stable
-snake_case error codes, prod-proven migrations, CI-green per pass).
+Status: **approved & in build** (2026-06-27). P1 (schema), P1r/P2 (reservations) and
+P3a (`quote_order`/`place_order` RPCs) are implemented + live; P3b (checkout app
+integration) is in progress. Live progress detail lives in `CURRENT_STATUS.md`; this
+remains the design source of truth. Aligns with the Stage 3 line in
+`IMPLEMENTATION_PLAN.md` and the established codebase posture (RPC-only tables,
+`guardAdminWrite`, canonical audit, stable snake_case error codes, prod-proven
+migrations, CI-green per pass).
 
 **v2 changelog:** hardened the _inside_ of every pass — deterministic lock
 ordering, race-safe idempotency, transition concurrency, price-drift handling,
@@ -286,14 +289,19 @@ implements `verify` off a webhook handler that writes to the same
 
 ## 11. Phasing (each sub-pass: prod-proven migration, atomic commit, CI-green)
 
-- **P1 — Order schema + numbering + idempotency.** Tables, sequence, enums, CHECKs,
-  RLS deny-all, grants, append-only history trigger. No behavior yet.
-- **P2 — Reservations + availability + expiry.** `inventory_reservations`,
-  availability RPC, `api.expire_reservations` + `pg_cron`, ledger-consume design,
-  lazy backstop. Storefront "available" reflects holds.
-- **P3 — `place_order` + `quote_order`.** Server pricing, deterministic locking,
-  race-safe idempotency, price-drift token, reservation, guest token; checkout UI
-  wired (COD + manual) with cart reconciliation; fail-closed gate removed.
+- **P1 — Order schema + numbering + idempotency.** ✅ DONE (live, migration
+  `20260627130000`). Tables, sequence, enums, CHECKs, RLS deny-all, grants,
+  append-only history trigger. No behavior yet.
+- **P2 — Reservations + availability + expiry.** ✅ DONE (live, migration
+  `20260627140000`). `inventory_reservations`, `private.available_qty`,
+  `api.expire_reservations` + `pg_cron`, lazy backstop.
+- **P3a — `place_order` + `quote_order` RPCs.** ✅ DONE (live, migration
+  `20260627150000`). Server pricing, deterministic locking, race-safe idempotency,
+  price-drift token, reservation, guest token.
+- **P3b — Checkout app integration.** 🔄 IN PROGRESS. Admin payment-method settings
+  (migration `20260627160000`) + `checkout-shared` module shipped; checkout/cart UI
+  wired (COD + manual) with cart reconciliation, inline TrxID (stashed locally for
+  P4), and the F-04 fail-closed gate removed — remaining.
 - **P4 — Payment evidence + verification.** Private bucket, submit/verify/reject,
   duplicate-TrxID guard, COD confirm, consume guard, ledger decrement.
 - **P5 — Real coupons.** `coupons` + `coupon_usages`, race-safe validation +

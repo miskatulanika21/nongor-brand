@@ -126,8 +126,32 @@ interface + `ManualBkashProvider`. Tables: orders, order_items,
 order_status_history, payments, payment_screenshots, coupons, coupon_usages,
 idempotency_keys. localStorage migration per the V3 table (one-time flag).
 
+**Progress (2026-06-27):**
+
+- [x] Pass 1 — **order schema, numbering & idempotency** (RPC-only deny-all tables:
+      orders / order_items / order_status_history / payments / payment_screenshots /
+      idempotency_keys; integer-BDT balanced-total CHECK; append-only status history;
+      verified-TrxID uniqueness fraud guard; `order_no_seq`). Migration
+      `20260627130000`. Structure only — no behavior.
+- [x] Pass 1r — **inventory reservations**: `inventory_reservations` soft holds,
+      lazy-backstop `private.available_qty` (counts only unexpired holds), `pg_cron`
+      TTL sweep `api.expire_reservations`. Migration `20260627140000`.
+- [x] Pass 3a — **server-authoritative pricing/order RPCs**: `api.quote_order`
+      (public; per-line availability + `quote_token` drift fingerprint) and
+      `api.place_order` (service-role only; race-safe idempotency via ON CONFLICT,
+      deterministic product locks, server pricing, oversell + price-drift guards,
+      reservation + guest token; stable error codes). Migration `20260627150000`.
+- [~] Pass 3b — **checkout app integration** (in progress): admin-configurable
+  payment methods (`cod_enabled` + `payment_methods_enabled[]`, migration
+  `20260627160000`) + admin "Payment methods" UI + isomorphic `checkout-shared`
+  module shipped. **Remaining:** checkout/cart server fns, checkout-route rewire
+  (method selector, quote-driven total, inline TrxID, remove the F-04 gate), cart
+  reconciliation, order-success refresh, pass3 DB integration tests.
+- [ ] Pass 4+ — payment evidence (`submit_payment_evidence` + private Storage),
+      order tracking/read RPCs, admin orders board.
+
 **Exit:** one order per submission under retry; totals recomputed server-side;
-payment evidence in private Storage.
+payment evidence in private Storage. (Pass 3b+ outstanding.)
 
 ## Stage 4 — Customer accounts
 
