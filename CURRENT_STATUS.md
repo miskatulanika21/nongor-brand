@@ -3,8 +3,8 @@
 Authoritative record of verified project state. Code and live-environment
 behavior are the source of truth; this file is updated after every stage.
 
-_Last updated: 2026-06-27 — **Stage 3 checkout backend live; app integration in
-progress.** Stage 3 Pass 1 created the order schema (orders / order_items /
+_Last updated: 2026-06-28 — **Stage 3 checkout complete (backend + app
+integration).** Stage 3 Pass 1 created the order schema (orders / order_items /
 order_status_history / payments / payment_screenshots / idempotency_keys — RPC-only
 deny-all; integer-BDT pricing with a balanced-total CHECK; append-only status
 history) and the `NGR-YYYY-######` sequence. The reservations pass added soft
@@ -15,13 +15,18 @@ pricing/order RPCs: `api.quote_order` (public; per-line availability + a
 `quote_token` drift guard) and `api.place_order` (service-role only; race-safe
 idempotency via INSERT … ON CONFLICT, deterministic product-lock ordering,
 server-side pricing, oversell + price-drift guards, reservation + guest-token
-issuance; COD → `pending_confirmation`, manual → `pending_payment`). **Pass 3b (in
-progress)** is the app integration: migration 34 added admin-configurable payment
+issuance; COD → `pending_confirmation`, manual → `pending_payment`). **Pass 3b
+(complete)** is the app integration: migration 34 added admin-configurable payment
 methods (`cod_enabled` + `payment_methods_enabled[]`, public-projected), the admin
-Settings "Payment methods" toggles, and the isomorphic `checkout-shared` module
-(cart→lines, error-code map, method derivation, idempotency key). The checkout/cart
-UI wiring, cart reconciliation, and removal of the F-04 fail-closed gate follow. 34
-migrations applied; 344 Vitest + DB integration green; build clean. Prior context:_
+Settings "Payment methods" toggles, the isomorphic `checkout-shared` module
+(cart→lines, error-code map, method derivation, idempotency key), `checkout.server.ts`
+repository + `checkout.api.ts` server fns, checkout-route rewire (method selector,
+quote-driven totals, placeOrderFn with CSRF + rate-limit + identity, idempotency
+key minting + quoteToken drift guard), cart reconciliation (quoteOrderFn on mount,
+per-item stock warnings, auto-correct quantities), order-success page refresh
+(ServerOrderSuccess component with search-param routing), and removal of the F-04
+demo gate. 34 migrations applied; 344 Vitest + DB integration green; build clean;
+all 4 CI checks green. Prior context:_
 
 _Earlier (2026-06-27) — **Stage 2 closed.** GPT-audit remediation continued:
 F-05 (in-use media delete guard, `media_in_use` — migration 30 applied + prod-
@@ -74,7 +79,7 @@ verification complete · (4) operator action pending.**
 | 3 (Pass 1)   | **Order schema, numbering & idempotency** (RPC-only tables, no behavior)  | **Implemented + live**                                                   |
 | 3 (Pass 1r)  | **Inventory reservations** (soft holds + lazy availability + cron sweep)  | **Implemented + live**                                                   |
 | 3 (Pass 3a)  | **Server-authoritative pricing/order RPCs** (`quote_order`/`place_order`) | **Implemented + live**                                                   |
-| 3 (Pass 3b)  | **Checkout app integration** (payment-method settings + checkout-shared)  | **In progress** (settings + shared module live; UI wiring next)          |
+| 3 (Pass 3b)  | **Checkout app integration** (payment settings + checkout-shared + server fns + checkout rewire + cart reconciliation + order-success)  | **Implemented + live + CI-green**          |
 | 4            | Customer accounts / addresses / measurements                              | Not started (localStorage)                                               |
 | 5            | Courier adapters, shipments, webhooks, outbox                             | Not started                                                              |
 | 6            | Banners, CMS, contact, newsletter, reports, settings                      | Not started (mock)                                                       |
@@ -108,7 +113,7 @@ ledger matches the 34 repo files exactly (versions + names), in order:
                                           …627130000 orders_schema
                                           …627140000 reservations
                                           …627150000 order_rpcs
-                                          …627160000 payment_method_settings
+                                          …627085345 payment_method_settings
 ```
 
 Note: `apply_migration` (MCP) stamps its own version, so after every MCP apply the

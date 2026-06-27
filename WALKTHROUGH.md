@@ -1,8 +1,7 @@
 # WALKTHROUGH — actual data flows
 
-Reflects what the code does today (Stage 2 closed; Stage 3 checkout backend live,
-app integration in progress). Updated each stage. Where a flow depends on a pending
-migration, that is called out.
+Reflects what the code does today (Stage 2 closed; Stage 3 checkout complete —
+backend + app integration live). Updated each stage.
 
 ## Request → response security wrapper
 
@@ -108,17 +107,17 @@ All admin catalog mutations share one guard: `guardAdminWrite(permission, op)`
   / `remove_product_variant`. DB-level guarantees verified by reproducible
   rolled-back SQL proofs (see the Stage-2 hardening report).
 
-## Checkout & orders (Stage 3) — backend live, app wiring in progress
+## Checkout & orders (Stage 3) — complete
 
-The server-authoritative order backend exists in the database; the storefront UI is
-being wired to it in Pass 3b.
+The checkout flow is fully server-authoritative: quote-driven pricing, real order
+creation via RPCs, cart reconciliation, and server order display.
 
-- **Pricing/quote (live, public):** `api.quote_order(lines, zone)` prices a cart
+- **Pricing/quote (public):** `api.quote_order(lines, zone)` prices a cart
   from the DB via `private.price_lines` (the single source shared with placement),
   returning per-line availability/visibility + `subtotal/shipping/total` and a
   `quote_token` (md5 of the visible-line snapshot) used to detect drift at submit.
-- **Placement (live, service-role only):** `api.place_order(lines, customer, zone,
-method, idempotency_key, actor?, quote_token?)` runs one transaction: race-safe
+- **Placement (service-role only):** `api.place_order(lines, customer, zone,
+  method, idempotency_key, actor?, quote_token?)` runs one transaction: race-safe
   idempotency (INSERT … ON CONFLICT — a replay returns the original order, a
   hash-mismatch throws `idempotency_conflict`), deterministic product locking
   (sorted ids, deadlock-free), server-side re-pricing (client totals ignored),
@@ -127,19 +126,29 @@ method, idempotency_key, actor?, quote_token?)` runs one transaction: race-safe
   items + payment + append-only status-history writes. COD → `pending_confirmation`,
   manual (bkash/nagad) → `pending_payment`. Guests get a one-time `guest_token`
   (only its sha256 hash is stored). The RPC is REVOKE-d from anon/authenticated; the
-  app server fn (Pass 3b) adds CSRF + rate limit + optional identity and calls it
-  with the service-role client.
+  app server fn adds CSRF + rate limit + optional identity and calls it with the
+  service-role client.
 - **Reservation TTL:** `api.expire_reservations()` (pg_cron, every 5 min) expires
   stale pending orders; correctness does not depend on it — `available_qty` counts
   only unexpired holds (lazy backstop).
-- **Payment methods config (live):** `site_settings.cod_enabled` +
+- **Payment methods config:** `site_settings.cod_enabled` +
   `payment_methods_enabled[]` are projected by `api.get_public_settings` and edited
   in the admin "Payment methods" section; `checkout-shared.ts` derives the offered
   methods (COD first) for the storefront.
-- **In progress (Pass 3b):** the checkout/cart routes still use the localStorage
-  demo path gated by `isDemoCommerceEnabled()` (F-04). The rewire to call
-  `quote_order`/`place_order`, add cart reconciliation, collect TrxID inline (stashed
-  locally for P4), and **remove the F-04 gate** is the remaining work.
+- **App integration (Pass 3b, complete):**
+  - `checkout.server.ts` repository + `checkout.api.ts` server fns (TanStack Start).
+  - `_site.checkout.tsx` rewired: quote-driven totals on mount + zone/cart change,
+    payment method selector (COD + bKash/Nagad from `publicSettings`),
+    `placeOrderFn` with CSRF + rate-limit + identity + method validation,
+    idempotency key minting + `quoteToken` drift guard.
+  - `_site.cart.tsx` reconciliation: `quoteOrderFn` on mount to verify
+    stock/availability, per-item warnings (not found, not visible, out of stock,
+    low stock), auto-corrects quantity to available max.
+  - `_site.order-success.tsx`: accepts `order_id`, `order_no`, `status`, `total`
+    from search params; `ServerOrderSuccess` component for real orders; legacy
+    localStorage path preserved for backward compat.
+  - F-04 demo gate (`isDemoCommerceEnabled()`) removed from checkout gating.
+  - Rate-limit buckets: `quoteOrder` (60/min), `placeOrder` (10/10min).
 
 ## CI
 
@@ -147,9 +156,9 @@ method, idempotency_key, actor?, quote_token?)` runs one transaction: race-safe
 1.3.14) frozen install → typecheck → lint → format:check → test → build (all
 mandatory). A `migrations-local` job applies every migration to a fresh LOCAL
 Supabase DB (Docker, no creds) — the authoritative migrate-from-empty check —
-then runs the DB integration tests (`pass2_db.test.sql`) and the two-connection
-concurrency test (`concurrency.test.sh`). A separate job runs
-`supabase db lint --linked` against the DEPLOYED DB using the
+then runs the DB integration tests (`pass2_db.test.sql`, `pass3_db.test.sql`)
+and the two-connection concurrency test (`concurrency.test.sh`). A separate job
+runs `supabase db lint --linked` against the DEPLOYED DB using the
 `SUPABASE_ACCESS_TOKEN` + `SUPABASE_PROJECT_ID` + `SUPABASE_DB_PASSWORD`
 repository secrets (now configured); it skips with a visible notice only if a
 secret is missing. Note it lints the deployed DB and does not validate pending
@@ -157,8 +166,8 @@ migrations — that is the `migrations-local` job's role.
 
 ## Still mock / localStorage (later stages)
 
-The checkout/cart/order-success UI (the order backend is live but not yet wired —
-Pass 3b), cart, wishlist, coupons (display-only until P5), payment verification +
-evidence (P4), customer profiles/addresses/measurements, courier, CMS, newsletter,
-reports. (Reviews moderation and site settings are DB-backed since Stage 2.) See
-`CURRENT_STATUS.md`.
+Cart and wishlist hold item IDs in `localStorage` only (no server-side cart).
+Coupons (display-only until Stage 5), payment verification + evidence (Stage 4),
+customer profiles/addresses/measurements (Stage 4), courier adapters (Stage 5),
+CMS/banners/newsletter (Stage 6), reports (Stage 6). (Reviews moderation and
+site settings are DB-backed since Stage 2.) See `CURRENT_STATUS.md`.
