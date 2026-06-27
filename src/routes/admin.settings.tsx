@@ -2,7 +2,7 @@ import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { AdminHeader } from "@/components/admin/AdminUI";
 import { loadAdminSettings, saveSettings } from "@/lib/settings.api";
-import type { AdminSettings } from "@/lib/settings.schema";
+import type { AdminSettings, ManualPaymentMethod } from "@/lib/settings.schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,9 +32,18 @@ function Settings() {
   return <SettingsForm initial={res.settings} />;
 }
 
-/** Form mirror of AdminSettings: text/number fields as strings, the toggle as a boolean. */
-type FormState = Record<Exclude<keyof FormFields, "announcement_enabled">, string> & {
+/**
+ * Form mirror of AdminSettings: text/number fields as strings, toggles as
+ * booleans, and the enabled manual-method set as an array.
+ */
+type StringFields = Exclude<
+  keyof FormFields,
+  "announcement_enabled" | "cod_enabled" | "payment_methods_enabled"
+>;
+type FormState = Record<StringFields, string> & {
   announcement_enabled: boolean;
+  cod_enabled: boolean;
+  payment_methods_enabled: ManualPaymentMethod[];
 };
 type FormFields = {
   store_name: string;
@@ -54,10 +63,18 @@ type FormFields = {
   tiktok: string;
   return_window_days: string;
   order_hold_hours: string;
+  cod_enabled: boolean;
+  payment_methods_enabled: ManualPaymentMethod[];
   bkash_number: string;
   nagad_number: string;
   payment_instructions: string;
 };
+
+/** Manual (non-COD) methods in canonical display order. */
+const MANUAL_METHOD_OPTIONS: { value: ManualPaymentMethod; label: string }[] = [
+  { value: "bkash", label: "bKash" },
+  { value: "nagad", label: "Nagad" },
+];
 
 const txt = (v: string | null | undefined) => v ?? "";
 const numTxt = (v: number | null | undefined) => (v == null ? "" : String(v));
@@ -81,6 +98,8 @@ function toFormState(s: AdminSettings): FormState {
     tiktok: txt(s.tiktok),
     return_window_days: numTxt(s.return_window_days),
     order_hold_hours: numTxt(s.order_hold_hours),
+    cod_enabled: s.cod_enabled,
+    payment_methods_enabled: s.payment_methods_enabled,
     bkash_number: txt(s.bkash_number),
     nagad_number: txt(s.nagad_number),
     payment_instructions: txt(s.payment_instructions),
@@ -95,6 +114,23 @@ function SettingsForm({ initial }: { initial: AdminSettings }) {
   function set<K extends keyof FormState>(k: K, v: FormState[K]) {
     setS((prev) => ({ ...prev, [k]: v }));
   }
+
+  /** Add/remove a manual method, keeping the canonical display order. */
+  function toggleMethod(m: ManualPaymentMethod, on: boolean) {
+    setS((prev) => {
+      const enabled = new Set(prev.payment_methods_enabled);
+      if (on) enabled.add(m);
+      else enabled.delete(m);
+      return {
+        ...prev,
+        payment_methods_enabled: MANUAL_METHOD_OPTIONS.map((o) => o.value).filter((v) =>
+          enabled.has(v),
+        ),
+      };
+    });
+  }
+
+  const noMethodEnabled = !s.cod_enabled && s.payment_methods_enabled.length === 0;
 
   async function save(section: string, patch: Record<string, unknown>) {
     setSaving(section);
@@ -134,6 +170,50 @@ function SettingsForm({ initial }: { initial: AdminSettings }) {
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Logo &amp; favicon uploads arrive with
             the media library.
           </p>
+        </Section>
+
+        {/* Payment methods (which options appear at checkout) */}
+        <Section
+          title="Payment methods"
+          busy={saving === "Payment methods"}
+          onSave={() =>
+            save("Payment methods", {
+              cod_enabled: s.cod_enabled,
+              payment_methods_enabled: s.payment_methods_enabled,
+            })
+          }
+        >
+          <p className="text-xs text-muted-foreground">
+            Choose which options customers see at checkout. Manual methods (bKash / Nagad) ask the
+            customer to send money and submit a TrxID; Cash on Delivery is confirmed by your team.
+          </p>
+          <label className="flex items-center justify-between rounded-lg border border-border p-3">
+            <span className="text-sm text-foreground">Cash on Delivery (COD)</span>
+            <Switch
+              checked={s.cod_enabled}
+              onCheckedChange={(v) => set("cod_enabled", v)}
+              aria-label="Enable Cash on Delivery"
+            />
+          </label>
+          {MANUAL_METHOD_OPTIONS.map((o) => (
+            <label
+              key={o.value}
+              className="flex items-center justify-between rounded-lg border border-border p-3"
+            >
+              <span className="text-sm text-foreground">{o.label} (manual)</span>
+              <Switch
+                checked={s.payment_methods_enabled.includes(o.value)}
+                onCheckedChange={(v) => toggleMethod(o.value, v)}
+                aria-label={`Enable ${o.label}`}
+              />
+            </label>
+          ))}
+          {noMethodEnabled && (
+            <p className="flex items-start gap-2 text-xs text-destructive">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" /> No payment method is enabled —
+              customers won&apos;t be able to check out until you turn one on.
+            </p>
+          )}
         </Section>
 
         {/* Payment (admin-only fields) */}
