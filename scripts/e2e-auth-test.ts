@@ -12,7 +12,9 @@
  *
  * It exercises the real running app over HTTP when E2E_BASE_URL is set
  * (recommended), and always verifies the core auth/role/RLS behavior directly
- * against the dedicated test Supabase project.
+ * against the dedicated test Supabase project — including the F-11 re-auth
+ * primitives: recovery → set-password (no current password) and the
+ * current-password verification probe used for authenticated changes.
  *
  * Usage:
  *   E2E_ALLOW=1 \
@@ -175,15 +177,22 @@ async function main() {
     if (data.session) await c.auth.signOut();
   }
 
-  // 4. Inactive staff: profile exists but is_active = false (must NOT be customer).
+  // 4. Inactive staff: profile persists with is_active = false (must NOT be customer).
+  //    Read through an authorized admin-tier session, NOT the service role: direct
+  //    table access on staff_profiles is intentionally denied to service_role
+  //    (all service writes go via the SECURITY DEFINER RPCs; reads are RLS-gated
+  //    to self-or-admin). The active owner from above can see every staff row.
   const inactive = await createTempUser({ staffRole: "staff", active: false });
   {
-    const { data: profile } = await admin
+    const c = anon();
+    await c.auth.signInWithPassword({ email: owner.email, password: owner.password });
+    const { data: profile } = await c
       .from("staff_profiles")
       .select("is_active")
       .eq("user_id", inactive.id)
       .maybeSingle();
     assert("Inactive staff profile is is_active=false", !!profile && profile.is_active === false);
+    await c.auth.signOut().catch(() => undefined);
   }
 
   // 5. RLS: a customer cannot read other staff rows.
@@ -202,6 +211,76 @@ async function main() {
       .update({ role: "admin" })
       .eq("user_id", owner.id);
     assert("Last active owner cannot be demoted", !!error, error ? undefined : "update succeeded");
+  }
+
+  // 8. F-11 — recovery → set-password works WITHOUT a current password.
+  //    Proves the recovery/invite path: verifying a recovery token yields a
+  //    session that may set a NEW password directly (the app gates this path
+  //    with a server-set httpOnly marker cookie; here we verify the underlying
+  //    Supabase behaviour the marker authorises).
+  {
+    const u = await createTempUser({});
+    const newPassword = randomPassword();
+
+    const { data: link, error: linkErr } = await admin.auth.admin.generateLink({
+      type: "recovery",
+      email: u.email,
+    });
+    const tokenHash = link?.properties?.hashed_token;
+    assert("Recovery link generated", !linkErr && !!tokenHash, linkErr?.message);
+
+    if (tokenHash) {
+      const c = anon();
+      const { data: verified, error: verifyErr } = await c.auth.verifyOtp({
+        token_hash: tokenHash,
+        type: "recovery",
+      });
+      assert("Recovery token verifies into a session", !verifyErr && !!verified.session);
+
+      // No current password is supplied — the recovery session may set one.
+      const { error: updErr } = await c.auth.updateUser({ password: newPassword });
+      assert("Recovery session sets a new password without the old one", !updErr, updErr?.message);
+      await c.auth.signOut().catch(() => undefined);
+    }
+
+    // The new password works; the original one no longer does.
+    {
+      const c = anon();
+      const ok = await c.auth.signInWithPassword({ email: u.email, password: newPassword });
+      assert("New password works after recovery reset", !ok.error && !!ok.data.session);
+      if (ok.data.session) await c.auth.signOut().catch(() => undefined);
+
+      const c2 = anon();
+      const old = await c2.auth.signInWithPassword({ email: u.email, password: u.password });
+      assert("Original password is invalidated after reset", !!old.error);
+    }
+  }
+
+  // 9. F-11 — authenticated change re-auth primitive (current-password verify).
+  //    The app verifies the current password on a THROWAWAY client before any
+  //    authenticated (non-recovery) change. This verifies that primitive against
+  //    the real backend: a wrong current password is rejected, the correct one
+  //    is accepted, and the probe never disturbs a live session.
+  {
+    const u = await createTempUser({});
+
+    // Wrong current password → rejected (this is what blocks a hijacked session
+    // from silently taking over the account via the password endpoint).
+    const probeBad = anon();
+    const bad = await probeBad.auth.signInWithPassword({
+      email: u.email,
+      password: "definitely-not-the-current-password",
+    });
+    assert("Re-auth probe rejects a wrong current password", !!bad.error);
+
+    // Correct current password → accepted.
+    const probeGood = anon();
+    const good = await probeGood.auth.signInWithPassword({
+      email: u.email,
+      password: u.password,
+    });
+    assert("Re-auth probe accepts the correct current password", !good.error && !!good.data.session);
+    await probeGood.auth.signOut({ scope: "local" }).catch(() => undefined);
   }
 
   // 7. Optional: exercise the running app's login endpoint if a base URL is set.

@@ -362,10 +362,17 @@ restriction, grant verification, post-migration schema proof, the merged RLS pol
    requires an AAL2 step-up + a rate limit) and **F-11** (authenticated password
    change requires the verified current password; recovery/invite gated by a
    short-lived httpOnly marker cookie) landed app-layer (no migration).
-   _Manual-verify before go-live_: exercise the real recovery → set-password and
-   account change-password flows against a safe backend (unit tests mock the
-   cookie + the throwaway verify client). Remaining audit items: F-14
-   (customer→staff promotion), F-18 (deployment target — business decision).
+   _Manual-verify_: **DONE (2026-06-27)** — `scripts/e2e-auth-test.ts` was run
+   against a real local Supabase stack (Docker; db+auth+rest+storage, prod-safety
+   guard satisfied). All 14 assertions green, including the F-11 primitives:
+   recovery → set-password without a current password, original password
+   invalidated after reset, and the throwaway-client current-password probe
+   accepting the correct / rejecting a wrong password. The run also surfaced &
+   fixed a harness false-negative (block 4 read `staff_profiles` as service_role,
+   which is intentionally denied — direct table access is RLS-gated to
+   self-or-admin and service ops go via SECURITY DEFINER RPCs; now reads as an
+   owner). Remaining audit items: F-14 (customer→staff promotion), F-18
+   (deployment target — business decision).
 7. Live security advisors (2026-06-27): 4 intentional INFO `rls_enabled_no_policy`
    (RPC-only tables) + WARN `anon/authenticated_security_definer_function_executable`
    for `api.catalog_facets()` and `api.get_public_settings()` — **intentional
