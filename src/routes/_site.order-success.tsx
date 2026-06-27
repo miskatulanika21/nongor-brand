@@ -33,11 +33,17 @@ export const Route = createFileRoute("/_site/order-success")({
       {
         name: "description",
         content:
-          "Your Nongorr order has been received. We'll verify your bKash payment and confirm shortly.",
+          "Your Nongorr order has been received. We'll verify your payment and confirm shortly.",
       },
       { name: "robots", content: "noindex,nofollow" },
     ],
     links: [{ rel: "canonical", href: "/order-success" }],
+  }),
+  validateSearch: (search: Record<string, unknown>) => ({
+    order_id: (search.order_id as string) ?? undefined,
+    order_no: (search.order_no as string) ?? undefined,
+    status: (search.status as string) ?? undefined,
+    total: search.total ? Number(search.total) : undefined,
   }),
   component: OrderSuccess,
 });
@@ -52,14 +58,30 @@ function OrderSuccess() {
   const { sessionSummary } = useRouteContext({ from: "/_site" }) as {
     sessionSummary: { userId: string | null };
   };
+  const search = Route.useSearch();
   const scope = orderScope(sessionSummary.userId);
   const [hydrated, setHydrated] = useState(false);
   const [order, setOrder] = useState<UIOrder | null>(null);
 
+  // Server-created order data from search params (checkout rewire P3b)
+  const serverOrder = search.order_id
+    ? {
+        id: search.order_no ?? search.order_id,
+        orderId: search.order_id,
+        orderNo: search.order_no ?? search.order_id,
+        status: search.status ?? "pending_confirmation",
+        total: search.total ?? 0,
+      }
+    : null;
+
   useEffect(() => {
-    setOrder(readLastStoredOrder(scope));
+    // Prefer localStorage order for full details (items, address etc.)
+    // but fall back to empty if not present (server data is minimal)
+    if (!serverOrder) {
+      setOrder(readLastStoredOrder(scope));
+    }
     setHydrated(true);
-  }, [scope]);
+  }, [scope, serverOrder]);
 
   if (!hydrated) {
     return (
@@ -72,6 +94,12 @@ function OrderSuccess() {
     );
   }
 
+  // If we have server data, show the server-created order summary
+  if (serverOrder) {
+    return <ServerOrderSuccess serverOrder={serverOrder} />;
+  }
+
+  // Legacy path: localStorage demo order
   if (!order) return <NoOrderFallback />;
 
   // Fall back to a safe local status if missing.
@@ -274,6 +302,158 @@ function OrderSuccess() {
       <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-center">
         <Button asChild>
           <Link to="/track" search={{ id: order.id } as never}>
+            <Truck className="h-4 w-4" /> Track Your Order
+          </Link>
+        </Button>
+        <Button variant="outline" asChild>
+          <a href={waLink} target="_blank" rel="noreferrer">
+            <MessageCircle className="h-4 w-4" /> Chat on WhatsApp
+          </a>
+        </Button>
+        <Button variant="ghost" asChild>
+          <Link to="/shop">Continue Shopping</Link>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Status labels for server order statuses. */
+const SERVER_STATUS_LABEL: Record<string, string> = {
+  pending_confirmation: "Pending Confirmation",
+  pending_payment: "Pending Payment Verification",
+  confirmed: "Confirmed",
+};
+
+function ServerOrderSuccess({
+  serverOrder,
+}: {
+  serverOrder: {
+    id: string;
+    orderId: string;
+    orderNo: string;
+    status: string;
+    total: number;
+  };
+}) {
+  const statusLabel = SERVER_STATUS_LABEL[serverOrder.status] ?? serverOrder.status;
+  const isCod = serverOrder.status === "pending_confirmation";
+
+  const waText = `Hi Nongorr! 🛍️ My order ${serverOrder.orderNo} is placed. Please confirm! 💕`;
+  const waLink = `https://wa.me/${BRAND.whatsapp}?text=${encodeURIComponent(waText)}`;
+
+  const copyId = async () => {
+    try {
+      await navigator.clipboard.writeText(serverOrder.orderNo);
+      toast.success("Order number copied");
+    } catch {
+      toast.error("Could not copy the order number");
+    }
+  };
+
+  return (
+    <div className="mx-auto max-w-2xl px-4 py-14 sm:px-6">
+      <div className="flex flex-col items-center text-center">
+        <div className="success-pop grid h-24 w-24 place-items-center rounded-full bg-success/15">
+          <svg viewBox="0 0 52 52" className="h-14 w-14 text-success">
+            <circle
+              className="check-circle"
+              cx="26"
+              cy="26"
+              r="24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3"
+            />
+            <path
+              className="check-mark"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M14 27l8 8 16-16"
+            />
+          </svg>
+        </div>
+        <h1 className="mt-6 font-display text-3xl text-foreground sm:text-4xl">
+          Order Placed Successfully! 🎉
+        </h1>
+        <p className="mt-2 text-muted-foreground">Thank you for shopping with Nongorr 💕</p>
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+          <span className="font-display text-lg text-foreground">{serverOrder.orderNo}</span>
+          <Button variant="outline" size="sm" onClick={copyId}>
+            <Copy className="h-4 w-4" /> Copy
+          </Button>
+          <Badge
+            variant="outline"
+            className={
+              isCod
+                ? "border-success/30 bg-success/15 text-success"
+                : "border-gold/40 bg-gold/20 text-gold-foreground"
+            }
+          >
+            {statusLabel}
+          </Badge>
+        </div>
+      </div>
+
+      {/* Total */}
+      {serverOrder.total > 0 && (
+        <div className="mt-8 rounded-xl border border-border bg-card p-6 text-center">
+          <p className="text-sm text-muted-foreground">Order Total</p>
+          <p className="font-display text-2xl text-primary">{formatBDT(serverOrder.total)}</p>
+        </div>
+      )}
+
+      {/* What happens next */}
+      <div className="mt-6 rounded-xl border border-border bg-card p-6">
+        <h2 className="font-display text-xl text-foreground">What happens next</h2>
+        <ol className="mt-4 space-y-3 text-sm text-muted-foreground">
+          {isCod ? (
+            <>
+              <li className="flex items-start gap-2">
+                <Check className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+                <span>
+                  Your order has been placed. We&apos;ll confirm and schedule delivery shortly.
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-border text-xs">
+                  2
+                </span>
+                <span>Our courier will collect the payment when your order is delivered.</span>
+              </li>
+            </>
+          ) : (
+            <>
+              <li className="flex items-start gap-2">
+                <Check className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+                <span>Your order has been submitted.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-primary text-xs font-medium text-primary">
+                  2
+                </span>
+                <span>
+                  We&apos;ll verify your payment and confirm the order — usually within a few hours.
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-border text-xs">
+                  3
+                </span>
+                <span>Once confirmed, we&apos;ll prepare and ship your order.</span>
+              </li>
+            </>
+          )}
+        </ol>
+      </div>
+
+      {/* Actions */}
+      <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-center">
+        <Button asChild>
+          <Link to="/track" search={{ id: serverOrder.orderNo } as never}>
             <Truck className="h-4 w-4" /> Track Your Order
           </Link>
         </Button>
