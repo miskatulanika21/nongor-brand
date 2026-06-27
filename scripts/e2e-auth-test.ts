@@ -279,7 +279,10 @@ async function main() {
       email: u.email,
       password: u.password,
     });
-    assert("Re-auth probe accepts the correct current password", !good.error && !!good.data.session);
+    assert(
+      "Re-auth probe accepts the correct current password",
+      !good.error && !!good.data.session,
+    );
     await probeGood.auth.signOut({ scope: "local" }).catch(() => undefined);
   }
 
