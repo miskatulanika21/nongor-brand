@@ -30,7 +30,14 @@ export type PublicSettings = {
   tiktok: string | null;
   return_window_days: number;
   order_hold_hours: number;
+  /** Is Cash-on-Delivery offered? */
+  cod_enabled: boolean;
+  /** Which MANUAL payment methods are live (subset of {bkash, nagad}). */
+  payment_methods_enabled: ManualPaymentMethod[];
 };
+
+/** Manual (non-COD) payment methods the storefront can offer. */
+export type ManualPaymentMethod = "bkash" | "nagad";
 
 export type AdminSettings = PublicSettings & {
   bkash_number: string | null;
@@ -114,6 +121,8 @@ export const settingsSaveSchema = z.object({
   tiktok: optUrl(300),
   return_window_days: nonNegInt(365),
   order_hold_hours: nonNegInt(720),
+  cod_enabled: z.boolean().optional(),
+  payment_methods_enabled: z.array(z.enum(["bkash", "nagad"])).optional(),
   bkash_number: optText(40),
   nagad_number: optText(40),
   payment_instructions: optText(500),
@@ -173,7 +182,19 @@ export function normalizePublicSettings(raw: unknown): PublicSettings | null {
     tiktok: str(raw.tiktok),
     return_window_days: num(raw.return_window_days, 7),
     order_hold_hours: num(raw.order_hold_hours, 24),
+    cod_enabled: bool(raw.cod_enabled, true),
+    payment_methods_enabled: manualMethods(raw.payment_methods_enabled),
   };
+}
+
+/** Keep only known manual methods, de-duplicated, order preserved. */
+function manualMethods(v: unknown): ManualPaymentMethod[] {
+  if (!Array.isArray(v)) return ["bkash"];
+  const out: ManualPaymentMethod[] = [];
+  for (const x of v) {
+    if ((x === "bkash" || x === "nagad") && !out.includes(x)) out.push(x);
+  }
+  return out;
 }
 
 /** Coerce the admin-settings jsonb (public fields + payment) into the type. */
