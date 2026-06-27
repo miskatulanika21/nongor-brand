@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
-import { formatBDT, BRAND, paymentConfigured, PAYMENT_NOTICE } from "@/lib/brand";
+import { formatBDT, BRAND, PAYMENT_NOTICE } from "@/lib/brand";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,8 +25,6 @@ import {
 } from "@/components/ui/dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { EmptyState } from "@/components/states";
-import { isDemoCommerceEnabled } from "@/lib/checkout-mode";
-import { storeDeviceOrder, orderScope } from "@/lib/order-ui";
 import { WhatsappIcon } from "@/components/site/social-icons";
 import {
   Copy,
@@ -37,6 +35,8 @@ import {
   X,
   ShieldCheck,
   ChevronDown,
+  CreditCard,
+  Banknote,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -47,6 +47,17 @@ import {
   suggestDeliveryZoneForDistrict,
   zoneLabel,
 } from "@/lib/checkout-ui";
+import {
+  enabledMethodList,
+  isManualMethod,
+  cartToQuoteLines,
+  newIdempotencyKey,
+  checkoutErrorMessage,
+  type PaymentMethod,
+  type QuoteResult,
+} from "@/lib/checkout-shared";
+import { quoteOrderFn, placeOrderFn } from "@/lib/checkout.api";
+import type { PublicSettings } from "@/lib/settings.schema";
 
 export const Route = createFileRoute("/_site/checkout")({
   head: () => ({
@@ -55,7 +66,7 @@ export const Route = createFileRoute("/_site/checkout")({
       {
         name: "description",
         content:
-          "Complete your Nongorr purchase with manual bKash payment. Enter delivery details and share your TrxID for verification.",
+          "Complete your Nongorr purchase. Enter delivery details, choose your payment method, and place your order.",
       },
       { name: "robots", content: "noindex,nofollow" },
     ],
@@ -83,7 +94,18 @@ interface Errors {
   [k: string]: string | undefined;
 }
 
-const STEPS = ["Delivery", "Payment", "Review", "Submit"] as const;
+/** Human-readable label for each payment method. */
+const METHOD_LABEL: Record<PaymentMethod, string> = {
+  cod: "Cash on Delivery",
+  bkash: "bKash (Send Money)",
+  nagad: "Nagad (Send Money)",
+};
+
+const METHOD_ICON: Record<PaymentMethod, React.ElementType> = {
+  cod: Banknote,
+  bkash: CreditCard,
+  nagad: CreditCard,
+};
 
 function Checkout() {
   const {
@@ -100,6 +122,25 @@ function Checkout() {
   } = useStore();
   const navigate = useNavigate();
 
+  const { sessionSummary, publicSettings } = useRouteContext({ from: "/_site" }) as {
+    sessionSummary: { userId: string | null };
+    publicSettings: PublicSettings | null;
+  };
+
+  // ── Payment method ──────────────────────────────────────────────────────
+  const methods = enabledMethodList(publicSettings);
+  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>(methods[0] ?? "cod");
+
+  // Keep selection valid if methods change (e.g. settings update)
+  useEffect(() => {
+    if (!methods.includes(selectedMethod)) {
+      setSelectedMethod(methods[0] ?? "cod");
+    }
+  }, [methods, selectedMethod]);
+
+  const isManual = isManualMethod(selectedMethod);
+
+  // ── Form state ──────────────────────────────────────────────────────────
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [district, setDistrict] = useState("");
@@ -112,15 +153,14 @@ function Checkout() {
   const [dragOver, setDragOver] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
   const [submitting, setSubmitting] = useState(false);
-  // Simulated checkout is allowed only in dev / explicit preview; in production
-  // the form fails closed and offers a real WhatsApp ordering channel instead.
-  const demoCommerce = isDemoCommerceEnabled();
-  const { sessionSummary } = useRouteContext({ from: "/_site" }) as {
-    sessionSummary: { userId: string | null };
-  };
+
+  // ── Server-authoritative quote ──────────────────────────────────────────
+  const [quote, setQuote] = useState<QuoteResult | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const idemKeyRef = useRef<string>(newIdempotencyKey());
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const submitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const screenshotRef = useRef<ScreenshotPreview | null>(null);
   screenshotRef.current = screenshot;
 
@@ -133,16 +173,48 @@ function Checkout() {
     trxId: useRef<HTMLDivElement>(null),
   };
 
-  // Cleanup timer + object URL on unmount.
+  // Cleanup object URL on unmount.
   useEffect(() => {
     return () => {
-      if (submitTimer.current) clearTimeout(submitTimer.current);
       if (screenshotRef.current) URL.revokeObjectURL(screenshotRef.current.url);
     };
   }, []);
 
-  const shipping = computeShipping(deliveryZone, cartSubtotal);
-  const total = Math.max(0, cartSubtotal - discount) + shipping;
+  // ── Fetch quote on mount + when cart/zone changes ──────────────────────
+  const fetchQuote = useCallback(async () => {
+    const lines = cartToQuoteLines(cart);
+    if (lines.length === 0) return;
+    setQuoteLoading(true);
+    setQuoteError(null);
+    try {
+      const result = await quoteOrderFn({ data: { lines, zone: deliveryZone } });
+      if (result.success) {
+        setQuote(result.quote);
+      } else {
+        setQuoteError(result.error);
+      }
+    } catch {
+      setQuoteError("Could not verify prices. Client-side totals are shown.");
+    } finally {
+      setQuoteLoading(false);
+    }
+  }, [cart, deliveryZone]);
+
+  useEffect(() => {
+    fetchQuote();
+  }, [fetchQuote]);
+
+  // ── Totals (prefer server quote, fall back to client) ──────────────────
+  const serverSubtotal = quote?.subtotal ?? null;
+  const serverShipping = quote?.shipping_fee ?? null;
+  const serverTotal = quote?.total ?? null;
+
+  const clientShipping = computeShipping(deliveryZone, cartSubtotal);
+  const clientTotal = Math.max(0, cartSubtotal - discount) + clientShipping;
+
+  const displaySubtotal = serverSubtotal ?? cartSubtotal;
+  const displayShipping = serverShipping ?? clientShipping;
+  const displayTotal = serverTotal ?? clientTotal;
 
   const baseSubtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
   const customChargesTotal = cart.reduce(
@@ -158,8 +230,17 @@ function Checkout() {
   const deliveryComplete = Boolean(
     name.trim() && phoneValid && district && locality && address.trim(),
   );
-  const paymentComplete = trxValid;
-  const activeStep = !deliveryComplete ? 1 : !paymentComplete ? 2 : submitting ? 4 : 3;
+  const paymentComplete = isManual ? trxValid : true; // COD needs no TrxID
+  const STEPS = isManual
+    ? (["Delivery", "Payment", "Review", "Submit"] as const)
+    : (["Delivery", "Review", "Submit"] as const);
+  const activeStep = !deliveryComplete
+    ? 1
+    : isManual && !paymentComplete
+      ? 2
+      : submitting
+        ? STEPS.length
+        : STEPS.length - 1;
 
   if (!cart.length) {
     return (
@@ -213,12 +294,14 @@ function Checkout() {
   }
 
   async function copyNumber() {
-    if (!paymentConfigured) {
+    const num =
+      selectedMethod === "bkash" ? BRAND.bkashNumber : selectedMethod === "nagad" ? "" : "";
+    if (!num) {
       toast.info("Payment number is not set up yet — please contact us on WhatsApp.");
       return;
     }
     try {
-      await navigator.clipboard.writeText(BRAND.bkashNumber);
+      await navigator.clipboard.writeText(num);
       toast.success("Number copied");
     } catch {
       toast.error("Could not copy the number");
@@ -234,7 +317,7 @@ function Checkout() {
       err.locality =
         district === "Dhaka" ? "Please select your area" : "Please enter thana / upazila";
     if (!address.trim()) err.address = "Please enter your full address";
-    if (!trxValid) err.trxId = "TrxID must be at least 10 characters";
+    if (isManual && !trxValid) err.trxId = "TrxID must be at least 10 characters";
     return err;
   }
 
@@ -246,13 +329,9 @@ function Checkout() {
     }
   }
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (submitting) return; // ignore repeated submits
-    // Fail closed in production: the real order backend (Stage 3) does not exist,
-    // so never fabricate a "successful" order for a real customer. Demo commerce
-    // is on only in dev / explicit preview; otherwise the WhatsApp CTA is shown.
-    if (!demoCommerce) return;
+    if (submitting) return;
     const err = validate();
     setErrors(err);
     if (Object.keys(err).length) {
@@ -261,47 +340,94 @@ function Checkout() {
     }
 
     setSubmitting(true);
-    submitTimer.current = setTimeout(() => {
-      const id = "NGR-" + Math.floor(100000 + Math.random() * 900000);
-      const order = {
-        id,
-        total,
-        subtotal: cartSubtotal,
-        shipping,
-        discount,
-        couponCode: appliedCoupon?.code ?? null,
-        deliveryZone,
-        trxId: trxId.trim().toUpperCase(),
-        customerName: name.trim(),
-        phone: phoneValue,
-        district,
-        locality,
-        address: address.trim(),
-        orderNote: orderNote.trim(),
-        deliveryNote: deliveryNote.trim(),
-        screenshotAttached: Boolean(screenshot),
-        screenshotFileName: screenshot?.file.name,
-        status: "Payment Pending",
-        date: new Date().toISOString(),
-        items: cart.map((i) => ({
-          productId: i.productId,
-          name: i.name,
-          image: i.image,
-          qty: i.qty,
-          price: i.price,
-          size: i.size,
-          customSize: i.customSize,
-          customCharge: i.customCharge,
-        })),
-      };
 
-      storeDeviceOrder(orderScope(sessionSummary.userId), order);
+    try {
+      const lines = cartToQuoteLines(cart);
+      const result = await placeOrderFn({
+        data: {
+          lines,
+          customer: {
+            name: name.trim(),
+            phone: phoneValue,
+            district,
+            address: address.trim(),
+            area: locality || undefined,
+          },
+          zone: deliveryZone,
+          method: selectedMethod,
+          idempotencyKey: idemKeyRef.current,
+          quoteToken: quote?.quote_token,
+        },
+      });
 
-      clearCart();
+      if (result.success) {
+        // Stash TrxID locally for future payment-evidence submission (P4)
+        if (isManual && trxId.trim()) {
+          try {
+            localStorage.setItem(
+              `nongorr_trxid_${result.order.order_id}`,
+              JSON.stringify({
+                trxId: trxId.trim().toUpperCase(),
+                method: selectedMethod,
+                screenshotName: screenshot?.file.name ?? null,
+              }),
+            );
+          } catch {
+            /* localStorage full — non-critical */
+          }
+        }
+
+        clearCart();
+        // Navigate to order-success with server data in search params
+        navigate({
+          to: "/order-success",
+          search: {
+            order_id: result.order.order_id,
+            order_no: result.order.order_no,
+            status: result.order.status,
+            total: result.order.total,
+          },
+        });
+      } else {
+        // Handle known checkout errors
+        const code = "code" in result ? result.code : undefined;
+        const message = result.error || checkoutErrorMessage(code);
+
+        if (code === "price_changed") {
+          // Re-fetch the quote to get updated prices
+          toast.warning(message);
+          await fetchQuote();
+          // Mint a new idempotency key for the retry
+          idemKeyRef.current = newIdempotencyKey();
+        } else if (code === "out_of_stock" || code === "product_not_purchasable") {
+          toast.error(message);
+          // Redirect to cart so the customer can fix their cart
+          navigate({ to: "/cart" });
+          return;
+        } else {
+          toast.error(message);
+          // Mint a new idempotency key for the next attempt
+          idemKeyRef.current = newIdempotencyKey();
+        }
+      }
+    } catch {
+      toast.error("Something went wrong. Please try again.");
+      idemKeyRef.current = newIdempotencyKey();
+    } finally {
       setSubmitting(false);
-      navigate({ to: "/order-success" });
-    }, 900);
+    }
   }
+
+  // ── Payment number to display for manual methods ───────────────────────
+  const paymentNumber =
+    selectedMethod === "bkash"
+      ? BRAND.bkashNumber
+      : selectedMethod === "nagad"
+        ? "" // nagad number comes from admin settings; not in BRAND yet
+        : null;
+  const hasPaymentNumber = Boolean(
+    paymentNumber && !/0{6,}/.test(paymentNumber.replace(/\D/g, "")),
+  );
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
@@ -450,171 +576,226 @@ function Checkout() {
               <p className="text-xs text-muted-foreground">
                 Delivery zone:{" "}
                 <span className="font-medium text-foreground">{zoneLabel(deliveryZone)}</span> ·{" "}
-                {shipping === 0 ? "Free delivery" : formatBDT(shipping)}
+                {displayShipping === 0 ? "Free delivery" : formatBDT(displayShipping)}
               </p>
             )}
           </section>
 
-          {/* Payment */}
+          {/* Payment method selector */}
           <section className="space-y-4 rounded-xl border border-gold/40 bg-gold/5 p-6">
             <div className="flex items-center gap-2">
-              <h2 className="font-display text-2xl text-foreground">Payment — Manual bKash</h2>
+              <h2 className="font-display text-2xl text-foreground">Payment Method</h2>
               <ShieldCheck className="h-5 w-5 text-gold" />
             </div>
-            <p className="text-xs text-muted-foreground">
-              The shield indicates we manually check each payment — it is not a bKash verification
-              badge.
-            </p>
 
-            <Card className="space-y-3 bg-background p-5">
-              <div className="rounded-lg bg-gold/10 p-3 text-center">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Send this exact amount
-                </p>
-                <p className="font-display text-3xl text-primary">{formatBDT(total)}</p>
+            {/* Method selector — only show if more than one option */}
+            {methods.length > 1 && (
+              <div className="grid gap-2 sm:grid-cols-3">
+                {methods.map((m) => {
+                  const Icon = METHOD_ICON[m];
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setSelectedMethod(m)}
+                      className={cn(
+                        "flex items-center gap-2 rounded-lg border-2 p-3 text-left text-sm transition-all",
+                        selectedMethod === m
+                          ? "border-primary bg-primary/5 font-medium text-foreground"
+                          : "border-border bg-background text-muted-foreground hover:border-primary/50",
+                      )}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      {METHOD_LABEL[m]}
+                    </button>
+                  );
+                })}
               </div>
-              {paymentConfigured ? (
-                <div className="flex items-center justify-between rounded-lg border border-border p-3">
-                  <div>
-                    <p className="text-xs text-muted-foreground">
-                      Nongorr bKash payment number (Personal)
+            )}
+
+            {/* COD — simple confirmation */}
+            {selectedMethod === "cod" && (
+              <Card className="space-y-3 bg-background p-5">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Banknote className="h-5 w-5 text-success" />
+                  <span>Pay with cash when your order is delivered.</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Our courier will collect the payment at your doorstep. Please keep the exact
+                  amount ready.
+                </p>
+              </Card>
+            )}
+
+            {/* Manual payment (bKash / Nagad) */}
+            {isManual && (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  The shield indicates we manually check each payment — it is not a{" "}
+                  {selectedMethod === "bkash" ? "bKash" : "Nagad"} verification badge.
+                </p>
+
+                <Card className="space-y-3 bg-background p-5">
+                  <div className="rounded-lg bg-gold/10 p-3 text-center">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Send this exact amount
                     </p>
-                    <p className="font-mono text-xl font-semibold tracking-wider text-foreground">
-                      {BRAND.bkashNumber}
+                    <p className="font-display text-3xl text-primary">
+                      {quoteLoading ? (
+                        <Loader2 className="mx-auto h-6 w-6 animate-spin" />
+                      ) : (
+                        formatBDT(displayTotal)
+                      )}
                     </p>
                   </div>
-                  <Button type="button" variant="outline" size="sm" onClick={copyNumber}>
-                    <Copy className="h-4 w-4" /> Copy
-                  </Button>
-                </div>
-              ) : (
-                <div className="rounded-lg border border-gold/40 bg-gold/5 p-3">
-                  <p className="text-xs font-medium uppercase tracking-wide text-gold">
-                    Payment number not set up yet
-                  </p>
-                  <p className="mt-1 text-sm text-muted-foreground">{PAYMENT_NOTICE}</p>
-                </div>
-              )}
-              <p className="text-sm text-muted-foreground">
-                Reference:{" "}
-                <span className="font-medium text-foreground">{name.trim() || "Your name"}</span>
-              </p>
-            </Card>
-
-            {paymentConfigured ? (
-              <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
-                <li>Open bKash → Send Money</li>
-                <li>
-                  Enter {BRAND.bkashNumber} and the exact amount {formatBDT(total)}
-                </li>
-                <li>Complete payment and copy the TrxID</li>
-                <li>Enter your TrxID below</li>
-              </ol>
-            ) : (
-              <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
-                <li>Message us on WhatsApp to receive the current payment number</li>
-                <li>Send the exact amount {formatBDT(total)}</li>
-                <li>Complete payment and copy the TrxID</li>
-                <li>Enter your TrxID below</li>
-              </ol>
-            )}
-            <p className="text-xs text-muted-foreground">
-              Your payment is confirmed manually by our team after you place the order — there is no
-              automatic gateway.
-            </p>
-
-            <Field
-              label="Transaction ID (TrxID)"
-              required
-              error={errors.trxId}
-              fieldRef={refs.trxId}
-            >
-              <Input
-                value={trxId}
-                onChange={(e) => setTrxId(e.target.value.toUpperCase())}
-                placeholder="E.G. 8N7A6B5C4D"
-                className={cn(
-                  "font-mono uppercase tracking-wider",
-                  trxId && (trxValid ? "border-green-500" : "border-destructive"),
-                )}
-              />
-            </Field>
-
-            <Field label="Payment screenshot (optional, recommended)">
-              {screenshot ? (
-                <div className="flex items-center gap-3 rounded-lg border border-border bg-background p-3">
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <button type="button" className="shrink-0">
-                        <img
-                          src={screenshot.url}
-                          alt="Payment screenshot preview"
-                          className="h-16 w-16 rounded object-cover"
-                        />
-                      </button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-lg">
-                      <DialogHeader>
-                        <DialogTitle>Payment screenshot</DialogTitle>
-                      </DialogHeader>
-                      <img
-                        src={screenshot.url}
-                        alt="Payment screenshot enlarged"
-                        className="max-h-[70vh] w-full rounded object-contain"
-                      />
-                    </DialogContent>
-                  </Dialog>
-                  <span className="flex-1 truncate text-sm text-muted-foreground">
-                    {screenshot.file.name}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    Replace
-                  </Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={removeScreenshot}>
-                    <X className="h-4 w-4" /> Remove
-                  </Button>
-                </div>
-              ) : (
-                <label
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setDragOver(true);
-                  }}
-                  onDragLeave={() => setDragOver(false)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDragOver(false);
-                    acceptFile(e.dataTransfer.files?.[0]);
-                  }}
-                  className={cn(
-                    "flex cursor-pointer flex-col items-center gap-1 rounded-lg border border-dashed border-border bg-background p-5 text-center text-sm text-muted-foreground hover:border-primary",
-                    dragOver && "border-primary bg-primary/5",
+                  {hasPaymentNumber ? (
+                    <div className="flex items-center justify-between rounded-lg border border-border p-3">
+                      <div>
+                        <p className="text-xs text-muted-foreground">
+                          Nongorr {selectedMethod === "bkash" ? "bKash" : "Nagad"} payment number
+                          (Personal)
+                        </p>
+                        <p className="font-mono text-xl font-semibold tracking-wider text-foreground">
+                          {paymentNumber}
+                        </p>
+                      </div>
+                      <Button type="button" variant="outline" size="sm" onClick={copyNumber}>
+                        <Copy className="h-4 w-4" /> Copy
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-gold/40 bg-gold/5 p-3">
+                      <p className="text-xs font-medium uppercase tracking-wide text-gold">
+                        Payment number not set up yet
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">{PAYMENT_NOTICE}</p>
+                    </div>
                   )}
+                  <p className="text-sm text-muted-foreground">
+                    Reference:{" "}
+                    <span className="font-medium text-foreground">
+                      {name.trim() || "Your name"}
+                    </span>
+                  </p>
+                </Card>
+
+                {hasPaymentNumber ? (
+                  <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+                    <li>Open {selectedMethod === "bkash" ? "bKash" : "Nagad"} → Send Money</li>
+                    <li>
+                      Enter {paymentNumber} and the exact amount {formatBDT(displayTotal)}
+                    </li>
+                    <li>Complete payment and copy the TrxID</li>
+                    <li>Enter your TrxID below</li>
+                  </ol>
+                ) : (
+                  <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+                    <li>Message us on WhatsApp to receive the current payment number</li>
+                    <li>Send the exact amount {formatBDT(displayTotal)}</li>
+                    <li>Complete payment and copy the TrxID</li>
+                    <li>Enter your TrxID below</li>
+                  </ol>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Your payment is confirmed manually by our team after you place the order — there
+                  is no automatic gateway.
+                </p>
+
+                <Field
+                  label="Transaction ID (TrxID)"
+                  required
+                  error={errors.trxId}
+                  fieldRef={refs.trxId}
                 >
-                  <Upload className="h-5 w-5" />
-                  <span>Drag & drop or tap to upload</span>
-                  <span className="text-xs">JPEG, PNG or WebP · up to 5 MB</span>
-                </label>
-              )}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-                onChange={onPickFile}
-              />
-              {screenshotError && (
-                <p className="mt-1 text-xs text-destructive">{screenshotError}</p>
-              )}
-              <p className="mt-1 text-xs text-muted-foreground">
-                Previewed in your browser only — nothing is uploaded yet.
-              </p>
-            </Field>
+                  <Input
+                    value={trxId}
+                    onChange={(e) => setTrxId(e.target.value.toUpperCase())}
+                    placeholder="E.G. 8N7A6B5C4D"
+                    className={cn(
+                      "font-mono uppercase tracking-wider",
+                      trxId && (trxValid ? "border-green-500" : "border-destructive"),
+                    )}
+                  />
+                </Field>
+
+                <Field label="Payment screenshot (optional, recommended)">
+                  {screenshot ? (
+                    <div className="flex items-center gap-3 rounded-lg border border-border bg-background p-3">
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <button type="button" className="shrink-0">
+                            <img
+                              src={screenshot.url}
+                              alt="Payment screenshot preview"
+                              className="h-16 w-16 rounded object-cover"
+                            />
+                          </button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-lg">
+                          <DialogHeader>
+                            <DialogTitle>Payment screenshot</DialogTitle>
+                          </DialogHeader>
+                          <img
+                            src={screenshot.url}
+                            alt="Payment screenshot enlarged"
+                            className="max-h-[70vh] w-full rounded object-contain"
+                          />
+                        </DialogContent>
+                      </Dialog>
+                      <span className="flex-1 truncate text-sm text-muted-foreground">
+                        {screenshot.file.name}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        Replace
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" onClick={removeScreenshot}>
+                        <X className="h-4 w-4" /> Remove
+                      </Button>
+                    </div>
+                  ) : (
+                    <label
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setDragOver(true);
+                      }}
+                      onDragLeave={() => setDragOver(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setDragOver(false);
+                        acceptFile(e.dataTransfer.files?.[0]);
+                      }}
+                      className={cn(
+                        "flex cursor-pointer flex-col items-center gap-1 rounded-lg border border-dashed border-border bg-background p-5 text-center text-sm text-muted-foreground hover:border-primary",
+                        dragOver && "border-primary bg-primary/5",
+                      )}
+                    >
+                      <Upload className="h-5 w-5" />
+                      <span>Drag & drop or tap to upload</span>
+                      <span className="text-xs">JPEG, PNG or WebP · up to 5 MB</span>
+                    </label>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={onPickFile}
+                    aria-label="Upload payment screenshot"
+                  />
+                  {screenshotError && (
+                    <p className="mt-1 text-xs text-destructive">{screenshotError}</p>
+                  )}
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Previewed in your browser only — nothing is uploaded yet.
+                  </p>
+                </Field>
+              </>
+            )}
           </section>
         </div>
 
@@ -688,7 +869,10 @@ function Checkout() {
             )}
             <div className="flex justify-between">
               <span className="text-muted-foreground">Subtotal</span>
-              <span>{formatBDT(cartSubtotal)}</span>
+              <span>
+                {formatBDT(displaySubtotal)}
+                {quote && <span className="ml-1 text-xs text-success">✓</span>}
+              </span>
             </div>
             {discount > 0 && (
               <div className="flex justify-between text-gold">
@@ -698,14 +882,27 @@ function Checkout() {
             )}
             <div className="flex justify-between">
               <span className="text-muted-foreground">Delivery ({zoneLabel(deliveryZone)})</span>
-              <span>{shipping === 0 ? "Free" : formatBDT(shipping)}</span>
+              <span>{displayShipping === 0 ? "Free" : formatBDT(displayShipping)}</span>
             </div>
           </div>
           <Separator />
           <div className="flex justify-between">
             <span className="font-display text-lg">Total</span>
-            <span className="font-display text-xl text-primary">{formatBDT(total)}</span>
+            <span className="font-display text-xl text-primary">
+              {quoteLoading ? (
+                <Loader2 className="inline h-4 w-4 animate-spin" />
+              ) : (
+                formatBDT(displayTotal)
+              )}
+            </span>
           </div>
+
+          {/* Quote error warning */}
+          {quoteError && (
+            <p className="rounded-lg border border-gold/40 bg-gold/5 p-2 text-xs text-muted-foreground">
+              {quoteError}
+            </p>
+          )}
 
           {/* Notes + payment meta */}
           {orderNote.trim() && (
@@ -719,61 +916,37 @@ function Checkout() {
               {deliveryNote.trim()}
             </p>
           )}
-          {paymentConfigured && (
+          <p className="text-xs text-muted-foreground">
+            Payment:{" "}
+            <span className="font-medium text-foreground">{METHOD_LABEL[selectedMethod]}</span>
+          </p>
+          {isManual && (
             <p className="text-xs text-muted-foreground">
-              bKash number: <span className="font-mono">{BRAND.bkashNumber}</span>
+              TrxID:{" "}
+              <span className="font-mono">{trxId.trim() ? trxId.trim().toUpperCase() : "—"}</span>
             </p>
           )}
-          <p className="text-xs text-muted-foreground">
-            TrxID:{" "}
-            <span className="font-mono">{trxId.trim() ? trxId.trim().toUpperCase() : "—"}</span>
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Payment screenshot: {screenshot ? "Attached" : "Not attached"}
-          </p>
-
-          {demoCommerce ? (
-            <Button type="submit" size="lg" className="w-full" disabled={submitting}>
-              {submitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Placing order…
-                </>
-              ) : (
-                "Place Order for Verification"
-              )}
-            </Button>
-          ) : (
-            <div className="space-y-3">
-              <div className="rounded-xl border border-gold/40 bg-primary/5 p-4">
-                <p className="text-sm font-medium text-foreground">
-                  Online checkout is launching soon
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  We&apos;re finishing secure online ordering. To place this order now, message us
-                  on WhatsApp with your details below — we&apos;ll confirm payment and delivery
-                  personally.
-                </p>
-              </div>
-              <Button asChild size="lg" className="w-full">
-                <a
-                  href={`https://wa.me/${BRAND.whatsapp}?text=${encodeURIComponent(
-                    `Hi Nongorr! I'd like to place an order — ${cart.length} item${
-                      cart.length === 1 ? "" : "s"
-                    }, total ${formatBDT(total)}.\n\n${cart
-                      .map((i) => `• ${i.name}${i.size ? ` (${i.size})` : ""} ×${i.qty}`)
-                      .join("\n")}`,
-                  )}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <WhatsappIcon className="h-4 w-4" /> Order on WhatsApp
-                </a>
-              </Button>
-            </div>
+          {isManual && (
+            <p className="text-xs text-muted-foreground">
+              Payment screenshot: {screenshot ? "Attached" : "Not attached"}
+            </p>
           )}
+
+          <Button type="submit" size="lg" className="w-full" disabled={submitting || quoteLoading}>
+            {submitting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" /> Placing order…
+              </>
+            ) : selectedMethod === "cod" ? (
+              "Place Order (Cash on Delivery)"
+            ) : (
+              "Place Order for Verification"
+            )}
+          </Button>
           <p className="text-center text-xs text-muted-foreground">
-            Your order will be confirmed after manual payment verification. We may contact you
-            through WhatsApp if clarification is needed.
+            {selectedMethod === "cod"
+              ? "Your order will be confirmed and scheduled for delivery."
+              : "Your order will be confirmed after manual payment verification. We may contact you through WhatsApp if clarification is needed."}
           </p>
           <p className="text-center text-xs text-muted-foreground">
             Questions about payment or delivery? See our{" "}
