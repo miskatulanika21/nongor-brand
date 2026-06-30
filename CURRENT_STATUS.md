@@ -62,28 +62,28 @@ verification complete · (4) operator action pending.**
 
 ## Stage status
 
-| Stage        | Scope                                                                     | Status                                                                   |
-| ------------ | ------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| 1            | Auth, RBAC, CSRF, headers, rate limit, MFA scaffold, audit, owner-safety  | Implemented                                                              |
-| 1.5          | Security closure (4 bugs + A–E + follow-up hardening)                     | **Operationally closed** (migrations applied; `api` exposed; proofs run) |
-| 2 (Pass 1)   | DB-backed **public catalog read** path                                    | Implemented + live                                                       |
-| 2 (Pass 2)   | Admin **product / category / inventory** writes (DB-backed + hardened)    | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3a)  | **Reviews moderation + rating/review_count sync** (DB-backed)             | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3b)  | **Authenticated customer review submission** (persisted + moderated)      | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3c)  | **DB-backed catalog facets & counts** (shop filter sidebar)               | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3d)  | **DB-backed site settings** (announcement bar live; audited admin form)   | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3e)  | **Storage-backed media library** (real uploads via signed URLs)           | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3f)  | **Product gallery management** (attach library media; atomic replace)     | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3g)  | **Admin dashboard cut off mock `PRODUCTS`** (live catalog widgets)        | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3g+) | Delete the `PRODUCTS` constant itself                                     | Gated on Stage 3 (order mocks are its only remaining consumer)           |
-| 3 (Pass 1)   | **Order schema, numbering & idempotency** (RPC-only tables, no behavior)  | **Implemented + live**                                                   |
-| 3 (Pass 1r)  | **Inventory reservations** (soft holds + lazy availability + cron sweep)  | **Implemented + live**                                                   |
-| 3 (Pass 3a)  | **Server-authoritative pricing/order RPCs** (`quote_order`/`place_order`) | **Implemented + live**                                                   |
-| 3 (Pass 3b)  | **Checkout app integration** (payment settings + checkout-shared + server fns + checkout rewire + cart reconciliation + order-success)  | **Implemented + live + CI-green**          |
-| 4            | Customer accounts / addresses / measurements                              | Not started (localStorage)                                               |
-| 5            | Courier adapters, shipments, webhooks, outbox                             | Not started                                                              |
-| 6            | Banners, CMS, contact, newsletter, reports, settings                      | Not started (mock)                                                       |
-| 7            | Hardening, perf/a11y, CI/CD, backups                                      | Not started                                                              |
+| Stage        | Scope                                                                                                                                  | Status                                                                   |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| 1            | Auth, RBAC, CSRF, headers, rate limit, MFA scaffold, audit, owner-safety                                                               | Implemented                                                              |
+| 1.5          | Security closure (4 bugs + A–E + follow-up hardening)                                                                                  | **Operationally closed** (migrations applied; `api` exposed; proofs run) |
+| 2 (Pass 1)   | DB-backed **public catalog read** path                                                                                                 | Implemented + live                                                       |
+| 2 (Pass 2)   | Admin **product / category / inventory** writes (DB-backed + hardened)                                                                 | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3a)  | **Reviews moderation + rating/review_count sync** (DB-backed)                                                                          | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3b)  | **Authenticated customer review submission** (persisted + moderated)                                                                   | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3c)  | **DB-backed catalog facets & counts** (shop filter sidebar)                                                                            | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3d)  | **DB-backed site settings** (announcement bar live; audited admin form)                                                                | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3e)  | **Storage-backed media library** (real uploads via signed URLs)                                                                        | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3f)  | **Product gallery management** (attach library media; atomic replace)                                                                  | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3g)  | **Admin dashboard cut off mock `PRODUCTS`** (live catalog widgets)                                                                     | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3g+) | Delete the `PRODUCTS` constant itself                                                                                                  | Gated on Stage 3 (order mocks are its only remaining consumer)           |
+| 3 (Pass 1)   | **Order schema, numbering & idempotency** (RPC-only tables, no behavior)                                                               | **Implemented + live**                                                   |
+| 3 (Pass 1r)  | **Inventory reservations** (soft holds + lazy availability + cron sweep)                                                               | **Implemented + live**                                                   |
+| 3 (Pass 3a)  | **Server-authoritative pricing/order RPCs** (`quote_order`/`place_order`)                                                              | **Implemented + live**                                                   |
+| 3 (Pass 3b)  | **Checkout app integration** (payment settings + checkout-shared + server fns + checkout rewire + cart reconciliation + order-success) | **Implemented + live + CI-green**                                        |
+| 4            | Customer accounts / addresses / measurements                                                                                           | Not started (localStorage)                                               |
+| 5            | Courier adapters, shipments, webhooks, outbox                                                                                          | Not started                                                              |
+| 6            | Banners, CMS, contact, newsletter, reports, settings                                                                                   | Not started (mock)                                                       |
+| 7            | Hardening, perf/a11y, CI/CD, backups                                                                                                   | Not started                                                              |
 
 ## Migrations (live project xomjxtmhkglhuiccekld)
 
@@ -416,11 +416,12 @@ public catalog read (`product_*`); **admin product/category writes**; **inventor
 (ledger + stock)**; **review moderation + product rating/review_count**;
 **customer review submission** (authenticated → pending → moderated); **shop
 filter facets + category counts** (`api.catalog_facets()`); **site settings +
-announcement bar** (`api.get_public_settings` / `save_settings`); **media library
-+ Storage uploads** (`product-media` bucket / `media_assets`); **product galleries**
-(`api.set_product_media` — library-backed, atomic replace); **checkout + orders**
-(server-authoritative pricing via `quote_order`, order placement via `place_order`,
-cart reconciliation, payment method selection — all wired to the storefront UI).
+announcement bar** (`api.get_public_settings` / `save_settings`); \*\*media library
+
+- Storage uploads** (`product-media` bucket / `media_assets`); **product galleries**
+  (`api.set_product_media` — library-backed, atomic replace); **checkout + orders\*\*
+  (server-authoritative pricing via `quote_order`, order placement via `place_order`,
+  cart reconciliation, payment method selection — all wired to the storefront UI).
 
 **Still mock / localStorage (later passes):** the legacy `PRODUCTS` array (still
 exported for order mocks, until Pass 3g+ removes it); cart and wishlist hold item
@@ -449,19 +450,20 @@ first-variant conservation, owner-only purge, reorder validation, bulk idempoten
 actor-deletion restriction, grant verification, post-migration schema proof, the
 merged RLS policy + FK index, stable error-code assertions, review moderation +
 rating sync, customer submission → pending → approve → rating, catalog-facet counts
-+ visibility filtering, site-settings public/admin projection + audit + single-row
-invariant + grants, media-library bucket + register/upsert/delete/audit + usage
-count + grants, product-gallery atomic replace + library-only + one-primary +
-bounds + audit + grants + duplicate/alt/concurrency, `staff_profiles` direct-write
-lockdown, **Stage 3 order-schema invariants** — pricing balance, owner XOR,
-line-total, append-only status, verified-TrxID guard, idempotency uniqueness,
-RPC-only RLS). The migrate-from-empty job **exposes the `api` schema** in the local
-stack config (never `private`) and runs a **REST smoke test (F-08)** against
-PostgREST on the fresh stack: anon can reach a public `api` RPC (`catalog_facets`),
-anon **cannot** reach a privileged RPC (`set_product_media`), and the service role
-can. The **linked deployed-DB lint step runs** in CI (using `SUPABASE_ACCESS_TOKEN`,
-`SUPABASE_PROJECT_ID`, and `SUPABASE_DB_PASSWORD` repository secrets). All **4 CI
-checks** green (Quality + Migrations + DB Lint + Supabase Preview).
+
+- visibility filtering, site-settings public/admin projection + audit + single-row
+  invariant + grants, media-library bucket + register/upsert/delete/audit + usage
+  count + grants, product-gallery atomic replace + library-only + one-primary +
+  bounds + audit + grants + duplicate/alt/concurrency, `staff_profiles` direct-write
+  lockdown, **Stage 3 order-schema invariants** — pricing balance, owner XOR,
+  line-total, append-only status, verified-TrxID guard, idempotency uniqueness,
+  RPC-only RLS). The migrate-from-empty job **exposes the `api` schema** in the local
+  stack config (never `private`) and runs a **REST smoke test (F-08)** against
+  PostgREST on the fresh stack: anon can reach a public `api` RPC (`catalog_facets`),
+  anon **cannot** reach a privileged RPC (`set_product_media`), and the service role
+  can. The **linked deployed-DB lint step runs** in CI (using `SUPABASE_ACCESS_TOKEN`,
+  `SUPABASE_PROJECT_ID`, and `SUPABASE_DB_PASSWORD` repository secrets). All **4 CI
+  checks** green (Quality + Migrations + DB Lint + Supabase Preview).
 
 ## Outstanding follow-ups
 

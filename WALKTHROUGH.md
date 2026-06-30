@@ -117,7 +117,7 @@ creation via RPCs, cart reconciliation, and server order display.
   returning per-line availability/visibility + `subtotal/shipping/total` and a
   `quote_token` (md5 of the visible-line snapshot) used to detect drift at submit.
 - **Placement (service-role only):** `api.place_order(lines, customer, zone,
-  method, idempotency_key, actor?, quote_token?)` runs one transaction: race-safe
+method, idempotency_key, actor?, quote_token?)` runs one transaction: race-safe
   idempotency (INSERT … ON CONFLICT — a replay returns the original order, a
   hash-mismatch throws `idempotency_conflict`), deterministic product locking
   (sorted ids, deadlock-free), server-side re-pricing (client totals ignored),
