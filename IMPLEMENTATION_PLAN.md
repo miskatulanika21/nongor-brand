@@ -144,15 +144,15 @@ idempotency_keys. localStorage migration per the V3 table (one-time flag).
       deterministic product locks, server pricing, oversell + price-drift guards,
       reservation + guest token; stable error codes). Migration `20260627150000`.
 - [x] Pass 3b (2026-06-27) — **checkout app integration** (complete): admin-configurable
-  payment methods (`cod_enabled` + `payment_methods_enabled[]`, migration
-  `20260627085345`) + admin "Payment methods" UI + isomorphic `checkout-shared`
-  module + `checkout.server.ts` repository + `checkout.api.ts` server fns +
-  checkout-route rewire (method selector, quote-driven totals, placeOrderFn with
-  CSRF + rate-limit + identity + method validation, idempotency key minting +
-  quoteToken drift guard) + cart reconciliation (quoteOrderFn on mount, per-item
-  warnings, auto-correct quantities) + order-success page refresh
-  (ServerOrderSuccess component with search-param routing) + F-04 gate removed.
-  Rate-limit buckets: `quoteOrder` (60/min), `placeOrder` (10/10min).
+      payment methods (`cod_enabled` + `payment_methods_enabled[]`, migration
+      `20260627085345`) + admin "Payment methods" UI + isomorphic `checkout-shared`
+      module + `checkout.server.ts` repository + `checkout.api.ts` server fns +
+      checkout-route rewire (method selector, quote-driven totals, placeOrderFn with
+      CSRF + rate-limit + identity + method validation, idempotency key minting +
+      quoteToken drift guard) + cart reconciliation (quoteOrderFn on mount, per-item
+      warnings, auto-correct quantities) + order-success page refresh
+      (ServerOrderSuccess component with search-param routing) + F-04 gate removed.
+      Rate-limit buckets: `quoteOrder` (60/min), `placeOrder` (10/10min).
 - [ ] Pass 4+ — payment evidence (`submit_payment_evidence` + private Storage),
       order tracking/read RPCs, admin orders board.
 
