@@ -722,10 +722,15 @@ END $$;
 DO $$
 DECLARE pub jsonb; adm jsonb; got text; v_keys jsonb;
 BEGIN
-  -- public read excludes payment secrets
+  -- public read EXPOSES the customer-facing receive numbers (bkash/nagad) — a
+  -- buyer must see where to send money (GAP-09) — but still NEVER the admin-only
+  -- payment_instructions field.
   pub := api.get_public_settings();
-  IF pub ? 'bkash_number' OR pub ? 'nagad_number' OR pub ? 'payment_instructions' THEN
-    RAISE EXCEPTION 'FAIL: public settings leaked a payment field';
+  IF pub ? 'payment_instructions' THEN
+    RAISE EXCEPTION 'FAIL: public settings leaked an admin-only payment field';
+  END IF;
+  IF NOT (pub ? 'bkash_number') OR NOT (pub ? 'nagad_number') THEN
+    RAISE EXCEPTION 'FAIL: public settings missing customer-facing receive numbers';
   END IF;
   IF NOT (pub ? 'announcement_text') THEN RAISE EXCEPTION 'FAIL: public missing announcement_text'; END IF;
 
@@ -749,7 +754,10 @@ BEGIN
 
   pub := api.get_public_settings();
   IF pub->>'announcement_text' <> 'Test bar' THEN RAISE EXCEPTION 'FAIL: public announcement not updated'; END IF;
-  IF pub ? 'bkash_number' THEN RAISE EXCEPTION 'FAIL: public leaked bkash after save'; END IF;
+  -- the saved customer-facing bKash receive number is now reflected publicly...
+  IF pub->>'bkash_number' <> '01711111111' THEN RAISE EXCEPTION 'FAIL: public did not reflect saved receive number'; END IF;
+  -- ...but the admin-only instructions field still never leaks.
+  IF pub ? 'payment_instructions' THEN RAISE EXCEPTION 'FAIL: public leaked payment_instructions after save'; END IF;
 
   -- audit row recorded the changed keys
   SELECT metadata->'keys' INTO v_keys FROM public.audit_logs
