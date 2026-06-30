@@ -162,15 +162,29 @@ idempotency_keys. localStorage migration per the V3 table (one-time flag).
       admin reads (`list_orders`, `get_order_detail`), customer reads
       (`list_my_orders`, `get_my_order`, `track_order`). Migrations
       `20260627210911`–`20260627211152`. **All service-role-only; no app wiring yet.**
-- [ ] Pass 4 (app integration) — admin **orders board** (list/detail/transition
-      controls calling the RPCs via server fns), customer **order history +
-      tracking** pages (replace the mock `ORDERS` views), **payment-evidence
-      submission UI** (TrxID/screenshot upload to private Storage). This is the next
-      app-layer work.
+- Pass 4 (app integration) — wiring the live Pass-4 RPCs into the UI. Master plan:
+  `docs/stage-3-pass4-admin-orders-plan.md`. Sub-passes:
+  - [x] **P4a** (2026-07-01) — shared 15-status model (`orders-shared.ts`: meta,
+        lanes, `ALLOWED_TRANSITIONS` in lockstep with `api.transition_order`,
+        `nextActions`, DTOs, error map, zod) + server layer (`orders.server.ts`
+        service-role repo, `orders.api.ts` guarded server fns: list/detail +
+        transition/verify/reject/confirm-cod/cancel/return) + unit tests. No UI.
+  - [x] **P4b** (2026-07-01) — DB-backed **admin orders board** (`admin.orders.tsx`):
+        URL-as-state loader on `listOrdersFn`, lane-grouped status filter, debounced
+        server search, pagination, tone badges, read-only summary sheet. Replaces the
+        mock `ORDERS` board.
+  - [ ] **P4c** — order detail + lifecycle action buttons (`getOrderDetailFn` +
+        `nextActions` → the matching server fn, optimistic `expected_version`).
+  - [ ] **P4d** — payments review (filtered view of the board).
+  - [ ] **P4e** — payment-evidence: private Storage bucket + customer submit + admin
+        signed-URL view (first Pass-4 prod migration).
+  - [ ] **P4f** — customer order history + tracking; retire mock `ORDERS`/`PRODUCTS`.
+  - [ ] **P4g** — custom-order measurements captured server-side.
+  - [ ] **P4h** — DB lifecycle tests + E2E + advisors + doc refresh.
 
 **Exit:** one order per submission under retry; totals recomputed server-side;
-checkout fully server-authoritative. (Pass-4 DB layer done; Pass-4 app integration
-outstanding.)
+checkout fully server-authoritative. (Pass-4 DB layer done; app integration in
+progress — P4a + P4b shipped, P4c+ outstanding.)
 
 ## Stage 4 — Customer accounts
 
