@@ -20,6 +20,7 @@ import {
   cancelOrderFn,
   returnOrderFn,
 } from "@/lib/orders.api";
+import { getEvidenceUrlFn } from "@/lib/evidence.api";
 import {
   nextActions,
   ORDER_STATUS_META,
@@ -87,6 +88,7 @@ export function OrderDetailSheet({ orderId, onClose, onMutated }: Props) {
   const [reason, setReason] = useState("");
   const [restock, setRestock] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [shotBusy, setShotBusy] = useState<string | null>(null);
 
   const resetAction = () => {
     setActiveAction(null);
@@ -156,6 +158,20 @@ export function OrderDetailSheet({ orderId, onClose, onMutated }: Props) {
       toast.error("Could not complete the change. Please try again.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function openScreenshot(path: string) {
+    if (!detail) return;
+    setShotBusy(path);
+    try {
+      const res = await getEvidenceUrlFn({ data: { orderId: detail.order.id, path } });
+      if (res.success) window.open(res.url, "_blank", "noopener,noreferrer");
+      else toast.error(res.error);
+    } catch {
+      toast.error("Could not load the screenshot.");
+    } finally {
+      setShotBusy(null);
     }
   }
 
@@ -261,12 +277,30 @@ export function OrderDetailSheet({ orderId, onClose, onMutated }: Props) {
                     <p className="text-destructive">Rejected: {detail.payment.rejectReason}</p>
                   )}
                   {detail.screenshots.length > 0 && (
-                    <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Paperclip className="h-3.5 w-3.5" />
-                      {detail.screenshots.length} payment screenshot
-                      {detail.screenshots.length > 1 ? "s" : ""} on file — secure preview coming
-                      soon.
-                    </p>
+                    <div className="mt-2 space-y-1.5">
+                      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Paperclip className="h-3.5 w-3.5" />
+                        Payment proof ({detail.screenshots.length})
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {detail.screenshots.map((s, i) => (
+                          <Button
+                            key={s.id}
+                            size="sm"
+                            variant="outline"
+                            disabled={shotBusy === s.storagePath}
+                            onClick={() => openScreenshot(s.storagePath)}
+                          >
+                            {shotBusy === s.storagePath ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Paperclip className="h-3.5 w-3.5" />
+                            )}
+                            Screenshot {i + 1}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
 
