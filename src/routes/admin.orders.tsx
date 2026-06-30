@@ -1,6 +1,8 @@
 import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AdminHeader } from "@/components/admin/AdminUI";
+import { StatusBadge, PaymentBadge, fmtDate } from "@/components/admin/order-status";
+import { OrderDetailSheet } from "@/components/admin/OrderDetailSheet";
 import { listOrdersFn } from "@/lib/orders.api";
 import {
   ORDER_STATUSES,
@@ -9,12 +11,8 @@ import {
   ORDER_LANE_LABEL,
   isOrderStatus,
   type OrderStatus,
-  type OrderListRow,
-  type PaymentStatus,
-  type StatusTone,
 } from "@/lib/orders-shared";
 import { formatBDT } from "@/lib/brand";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -25,7 +23,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -35,8 +32,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
-import { cn } from "@/lib/utils";
 import { AlertTriangle, ChevronLeft, ChevronRight, PackageOpen, Search } from "lucide-react";
 
 // Page size — must match the loader's `limit` so pagination math is correct.
@@ -77,46 +72,12 @@ export const Route = createFileRoute("/admin/orders")({
   component: OrdersAdmin,
 });
 
-// Abstract status tone → brand badge classes (single mapping for all 6 tones).
-const TONE_BADGE: Record<StatusTone, string> = {
-  amber: "bg-gold/20 text-gold-foreground border-gold/40",
-  blue: "bg-secondary text-secondary-foreground border-border",
-  violet: "bg-primary/10 text-primary border-primary/30",
-  green: "bg-success/15 text-success border-success/30",
-  red: "bg-destructive/10 text-destructive border-destructive/30",
-  slate: "bg-muted text-muted-foreground border-border",
-};
-
-const PAYMENT_BADGE: Record<PaymentStatus, string> = {
-  verified: "border-success/40 text-success",
-  rejected: "border-destructive/40 text-destructive",
-  pending: "border-gold/40 text-primary",
-};
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-// Deterministic (UTC) date — avoids SSR/client locale-timezone hydration drift.
-function fmtDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
-  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
-}
-
-function StatusBadge({ status }: { status: OrderStatus }) {
-  const meta = ORDER_STATUS_META[status];
-  return (
-    <Badge variant="outline" className={cn(TONE_BADGE[meta.tone])}>
-      {meta.label}
-    </Badge>
-  );
-}
-
 function OrdersAdmin() {
   const { orders, total, loadError } = Route.useLoaderData();
   const search = Route.useSearch();
   const navigate = useNavigate();
   const router = useRouter();
-  const [active, setActive] = useState<OrderListRow | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [term, setTerm] = useState(search.q ?? "");
 
   // Keep the input in sync when the URL changes elsewhere (back/forward, reset).
@@ -212,7 +173,7 @@ function OrdersAdmin() {
               </TableHeader>
               <TableBody>
                 {orders.map((o) => (
-                  <TableRow key={o.id} className="cursor-pointer" onClick={() => setActive(o)}>
+                  <TableRow key={o.id} className="cursor-pointer" onClick={() => setActiveId(o.id)}>
                     <TableCell>
                       <p className="font-medium text-foreground">{o.orderNo}</p>
                       <p className="text-xs text-muted-foreground">{fmtDate(o.placedAt)}</p>
@@ -227,14 +188,7 @@ function OrdersAdmin() {
                         <span className="text-xs uppercase text-muted-foreground">
                           {o.paymentMethod}
                         </span>
-                        {o.payment && (
-                          <Badge
-                            variant="outline"
-                            className={cn("w-fit capitalize", PAYMENT_BADGE[o.payment.status])}
-                          >
-                            {o.payment.status}
-                          </Badge>
-                        )}
+                        {o.payment && <PaymentBadge status={o.payment.status} />}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -280,7 +234,11 @@ function OrdersAdmin() {
         </>
       )}
 
-      <OrderSummarySheet order={active} onClose={() => setActive(null)} />
+      <OrderDetailSheet
+        orderId={activeId}
+        onClose={() => setActiveId(null)}
+        onMutated={() => router.invalidate()}
+      />
     </div>
   );
 }
@@ -314,111 +272,6 @@ function ErrorPanel({ onRetry }: { onRetry: () => void }) {
       <Button variant="outline" onClick={onRetry}>
         Retry
       </Button>
-    </div>
-  );
-}
-
-// Read-only summary built from the list row. Full detail (status history, payment
-// evidence) and lifecycle actions arrive with the order detail surface (P4c).
-function OrderSummarySheet({
-  order,
-  onClose,
-}: {
-  order: OrderListRow | null;
-  onClose: () => void;
-}) {
-  return (
-    <Sheet open={!!order} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
-        {order && (
-          <>
-            <SheetHeader>
-              <SheetTitle className="font-display text-2xl">{order.orderNo}</SheetTitle>
-            </SheetHeader>
-            <div className="mt-4 space-y-4 text-sm">
-              <div className="flex items-center justify-between">
-                <StatusBadge status={order.status} />
-                <span className="text-xs text-muted-foreground">{fmtDate(order.placedAt)}</span>
-              </div>
-
-              <div className="rounded-lg bg-secondary p-3">
-                <p className="font-medium text-foreground">{order.customerName}</p>
-                <p className="text-muted-foreground">{order.customerPhone}</p>
-                <p className="text-muted-foreground">
-                  {order.shipDistrict} · {order.shipZone}
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                {order.items.map((it, i) => (
-                  <div key={i} className="flex items-center gap-3">
-                    {it.image ? (
-                      <img src={it.image} alt="" className="h-12 w-10 rounded object-cover" />
-                    ) : (
-                      <div className="grid h-12 w-10 place-items-center rounded bg-muted text-muted-foreground">
-                        <PackageOpen className="h-4 w-4" />
-                      </div>
-                    )}
-                    <div className="flex-1">
-                      <p className="line-clamp-1 text-foreground">{it.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Qty {it.qty}
-                        {it.variantSize ? ` · ${it.variantSize}` : ""}
-                      </p>
-                    </div>
-                    <span className="font-medium">{formatBDT(it.lineTotal)}</span>
-                  </div>
-                ))}
-              </div>
-
-              <Separator />
-              <div className="space-y-1">
-                <Row label="Subtotal" value={formatBDT(order.subtotal)} />
-                {order.discount > 0 && (
-                  <Row label="Discount" value={`− ${formatBDT(order.discount)}`} />
-                )}
-                <Row
-                  label="Delivery"
-                  value={order.shippingFee === 0 ? "Free" : formatBDT(order.shippingFee)}
-                />
-                <div className="flex justify-between pt-1 text-base font-semibold text-primary">
-                  <span>Total</span>
-                  <span>{formatBDT(order.total)}</span>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-border p-3">
-                <p className="mb-1 font-medium">Payment</p>
-                <p className="capitalize text-muted-foreground">
-                  {order.paymentMethod}
-                  {order.payment ? ` · ${order.payment.status}` : ""}
-                </p>
-                {order.payment?.senderNumber && (
-                  <p className="text-muted-foreground">Sender: {order.payment.senderNumber}</p>
-                )}
-                {order.payment?.trxId && (
-                  <p className="text-muted-foreground">
-                    TrxID:{" "}
-                    <span className="font-medium text-foreground">{order.payment.trxId}</span>
-                  </p>
-                )}
-                {order.payment?.rejectReason && (
-                  <p className="text-destructive">Rejected: {order.payment.rejectReason}</p>
-                )}
-              </div>
-            </div>
-          </>
-        )}
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between text-muted-foreground">
-      <span>{label}</span>
-      <span className="text-foreground">{value}</span>
     </div>
   );
 }
