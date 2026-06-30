@@ -3,7 +3,28 @@
 Authoritative record of verified project state. Code and live-environment
 behavior are the source of truth; this file is updated after every stage.
 
-_Last updated: 2026-06-30 (later) — **Deep-review remediation (43 migrations).**
+_Last updated: 2026-07-01 — **Stage 3 Pass-4 app integration: P4a + P4b shipped
+(CI-green).** Began wiring the live, service-role-only Pass-4 order RPCs into the
+app (master plan `docs/stage-3-pass4-admin-orders-plan.md`). **P4a** (`f76f009`):
+`orders-shared.ts` — the single isomorphic 15-status model (admin/customer labels,
+tones, four lanes, `ALLOWED_TRANSITIONS` kept in lockstep with
+`api.transition_order` via a parity test, `nextActions`, camelCase DTOs, stable
+`orderErrorMessage`, zod validators) — plus `server/orders.server.ts` (service-role
+repo: list/detail + transition/verify/reject/confirm-cod/cancel/return, stable
+`OrderError`) and `orders.api.ts` (guarded server fns: reads gate `orders.view`,
+writes via `guardAdminWrite`; verify/reject → `payments.verify`, lifecycle →
+`orders.manage`; generic transition carries `expected_version`). **P4b**
+(`475ce76`): `admin.orders.tsx` rewritten DB-backed — URL-as-state loader on
+`listOrdersFn` (status / search / page in the URL), lane-grouped status filter,
+debounced server search, offset/limit pagination, status+payment tone badges, and a
+read-only summary sheet; the mock `ORDERS` board is gone. No new migrations (still
+43). Also fixed a pre-existing red `migrations-local` CI job (`afeb0b9`): the
+pass-2 DB test still asserted bkash/nagad receive numbers were absent from
+`get_public_settings`, but GAP-09 intentionally projects those customer-facing
+numbers — assertions updated (public exposes them, still never `payment_instructions`).
+Next = P4c (order detail + lifecycle action buttons). Prior context:_
+
+_2026-06-30 (later) — **Deep-review remediation (43 migrations).**
 Independently verified an external file-by-file review and fixed the genuinely-real
 findings (several auditor claims were wrong/stale/already-fixed — verified, not
 trusted). DB (3 new migrations, prod-applied + ledger-realigned):
@@ -100,29 +121,32 @@ verification complete · (4) operator action pending.**
 
 ## Stage status
 
-| Stage        | Scope                                                                                                                                                                     | Status                                                                   |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| 1            | Auth, RBAC, CSRF, headers, rate limit, MFA scaffold, audit, owner-safety                                                                                                  | Implemented                                                              |
-| 1.5          | Security closure (4 bugs + A–E + follow-up hardening)                                                                                                                     | **Operationally closed** (migrations applied; `api` exposed; proofs run) |
-| 2 (Pass 1)   | DB-backed **public catalog read** path                                                                                                                                    | Implemented + live                                                       |
-| 2 (Pass 2)   | Admin **product / category / inventory** writes (DB-backed + hardened)                                                                                                    | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3a)  | **Reviews moderation + rating/review_count sync** (DB-backed)                                                                                                             | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3b)  | **Authenticated customer review submission** (persisted + moderated)                                                                                                      | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3c)  | **DB-backed catalog facets & counts** (shop filter sidebar)                                                                                                               | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3d)  | **DB-backed site settings** (announcement bar live; audited admin form)                                                                                                   | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3e)  | **Storage-backed media library** (real uploads via signed URLs)                                                                                                           | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3f)  | **Product gallery management** (attach library media; atomic replace)                                                                                                     | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3g)  | **Admin dashboard cut off mock `PRODUCTS`** (live catalog widgets)                                                                                                        | **Implemented + live + CI-green**                                        |
-| 2 (Pass 3g+) | Delete the `PRODUCTS` constant itself                                                                                                                                     | Gated on Stage 3 (order mocks are its only remaining consumer)           |
-| 3 (Pass 1)   | **Order schema, numbering & idempotency** (RPC-only tables, no behavior)                                                                                                  | **Implemented + live**                                                   |
-| 3 (Pass 1r)  | **Inventory reservations** (soft holds + lazy availability + cron sweep)                                                                                                  | **Implemented + live**                                                   |
-| 3 (Pass 3a)  | **Server-authoritative pricing/order RPCs** (`quote_order`/`place_order`)                                                                                                 | **Implemented + live**                                                   |
-| 3 (Pass 3b)  | **Checkout app integration** (payment settings + checkout-shared + server fns + checkout rewire + cart reconciliation + order-success)                                    | **Implemented + live + CI-green**                                        |
-| 3 (Pass 4)   | **Order-lifecycle / payment / read RPCs** (transition_order + verify/reject/confirm/cancel/return + submit_payment_evidence + admin & customer reads) — **DB layer only** | **RPCs live + in repo (recovered `df207c9`); app integration NOT built** |
-| 4            | Customer accounts / addresses / measurements                                                                                                                              | Not started (localStorage)                                               |
-| 5            | Courier adapters, shipments, webhooks, outbox                                                                                                                             | Not started                                                              |
-| 6            | Banners, CMS, contact, newsletter, reports, settings                                                                                                                      | Not started (mock)                                                       |
-| 7            | Hardening, perf/a11y, CI/CD, backups                                                                                                                                      | Not started                                                              |
+| Stage        | Scope                                                                                                                                                                | Status                                                                   |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| 1            | Auth, RBAC, CSRF, headers, rate limit, MFA scaffold, audit, owner-safety                                                                                             | Implemented                                                              |
+| 1.5          | Security closure (4 bugs + A–E + follow-up hardening)                                                                                                                | **Operationally closed** (migrations applied; `api` exposed; proofs run) |
+| 2 (Pass 1)   | DB-backed **public catalog read** path                                                                                                                               | Implemented + live                                                       |
+| 2 (Pass 2)   | Admin **product / category / inventory** writes (DB-backed + hardened)                                                                                               | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3a)  | **Reviews moderation + rating/review_count sync** (DB-backed)                                                                                                        | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3b)  | **Authenticated customer review submission** (persisted + moderated)                                                                                                 | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3c)  | **DB-backed catalog facets & counts** (shop filter sidebar)                                                                                                          | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3d)  | **DB-backed site settings** (announcement bar live; audited admin form)                                                                                              | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3e)  | **Storage-backed media library** (real uploads via signed URLs)                                                                                                      | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3f)  | **Product gallery management** (attach library media; atomic replace)                                                                                                | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3g)  | **Admin dashboard cut off mock `PRODUCTS`** (live catalog widgets)                                                                                                   | **Implemented + live + CI-green**                                        |
+| 2 (Pass 3g+) | Delete the `PRODUCTS` constant itself                                                                                                                                | Gated on Stage 3 (order mocks are its only remaining consumer)           |
+| 3 (Pass 1)   | **Order schema, numbering & idempotency** (RPC-only tables, no behavior)                                                                                             | **Implemented + live**                                                   |
+| 3 (Pass 1r)  | **Inventory reservations** (soft holds + lazy availability + cron sweep)                                                                                             | **Implemented + live**                                                   |
+| 3 (Pass 3a)  | **Server-authoritative pricing/order RPCs** (`quote_order`/`place_order`)                                                                                            | **Implemented + live**                                                   |
+| 3 (Pass 3b)  | **Checkout app integration** (payment settings + checkout-shared + server fns + checkout rewire + cart reconciliation + order-success)                               | **Implemented + live + CI-green**                                        |
+| 3 (Pass 4)   | **Order-lifecycle / payment / read RPCs** (transition_order + verify/reject/confirm/cancel/return + submit_payment_evidence + admin & customer reads) — **DB layer** | **RPCs live + in repo (recovered `df207c9`)**                            |
+| 3 (Pass 4a)  | **Shared 15-status model + admin order server fns** (`orders-shared` + `orders.server` + `orders.api`, guarded; unit tests)                                          | **Implemented + CI-green** (no UI)                                       |
+| 3 (Pass 4b)  | **DB-backed admin orders board** (`admin.orders.tsx` on `listOrdersFn`: lanes, server search, pagination, summary sheet) — replaces mock                             | **Implemented + CI-green**                                               |
+| 3 (Pass 4c+) | Order detail + lifecycle actions, payments review, evidence UI, customer order/track, measurements, tests                                                            | Not started (next app-layer work)                                        |
+| 4            | Customer accounts / addresses / measurements                                                                                                                         | Not started (localStorage)                                               |
+| 5            | Courier adapters, shipments, webhooks, outbox                                                                                                                        | Not started                                                              |
+| 6            | Banners, CMS, contact, newsletter, reports, settings                                                                                                                 | Not started (mock)                                                       |
+| 7            | Hardening, perf/a11y, CI/CD, backups                                                                                                                                 | Not started                                                              |
 
 ## Migrations (live project xomjxtmhkglhuiccekld)
 
@@ -498,6 +522,39 @@ sender_number, scope, screenshot_path)`: owner/guest-scope check, status guard,
   `api.get_my_order` (owner-scoped detail), `api.track_order(order_no, token_hash)`
   (guest tracking by order number + token hash).
 
+## Stage 3 Pass 4a/4b — order-management app integration (done, CI-green)
+
+Wiring the Pass-4 RPCs into the app (master plan
+`docs/stage-3-pass4-admin-orders-plan.md`). No new migrations — these passes are
+pure app layer over the live RPCs above.
+
+- **P4a — shared model + admin server fns (`f76f009`).**
+  - `src/lib/orders-shared.ts` — the single isomorphic source of truth for the
+    15-status lifecycle: `ORDER_STATUS_META` (admin label, customer label, tone,
+    lane), the four lanes, `ALLOWED_TRANSITIONS` (asserted in lockstep with
+    `api.transition_order`'s CASE arms by a parity test), `nextActions(status)`,
+    camelCase DTOs, the stable `orderErrorMessage` map, and zod validators.
+  - `src/lib/server/orders.server.ts` — SERVER-ONLY service-role repo over
+    `list_orders / get_order_detail / transition_order` + the convenience wrappers;
+    `OrderError` carries a stable code; snake→camel mapping; raw SQL never reaches
+    the client.
+  - `src/lib/orders.api.ts` — `createServerFn` handlers: reads gate `orders.view`;
+    writes go through `guardAdminWrite` (CSRF + strict permission + step-up + rate
+    limit + denial audit). Payment verify/reject gate on `payments.verify`,
+    lifecycle moves on `orders.manage`; the generic `transitionOrderFn` carries
+    `expected_version` for optimistic concurrency (the convenience wrappers do not —
+    the RPC signatures lack it).
+  - Tests: status-set exhaustiveness, transition-table parity, `nextActions`
+    invariants, error mapping, validator bounds, API/server wiring.
+- **P4b — DB-backed admin orders board (`475ce76`).** `admin.orders.tsx` rewritten:
+  URL-as-state via `validateSearch` + `loaderDeps` + `loader` on `listOrdersFn`
+  (status / search / page are the source of truth → shareable, server-queried);
+  status filter is a Select grouped by the four lanes; debounced server search by
+  order-no / name / phone; offset/limit pagination with an accurate "showing X–Y of
+  N"; status + payment tone badges; deterministic UTC dates (no hydration drift); a
+  read-only summary sheet from the list row. The mock `ORDERS` board is gone. Full
+  detail + lifecycle action buttons are P4c.
+
 ## Real vs mock (data flow)
 
 **Real / persistent (DB-backed):** auth, staff RBAC (`staff_profiles`), audit logs;
@@ -512,11 +569,18 @@ announcement bar** (`api.get_public_settings` / `save_settings`); \*\*media libr
   (server-authoritative pricing via `quote_order`, order placement via `place_order`,
   cart reconciliation, payment method selection — all wired to the storefront UI).
 
+**Real / persistent — order management (Pass 4a/4b):** the **admin orders board**
+(`admin.orders.tsx`) now reads live orders via `listOrdersFn` → `api.list_orders`
+(server search / status / pagination); the shared status model + guarded
+transition/verify/reject/confirm/cancel/return server fns exist (`orders.api.ts`).
+
 **Still mock / localStorage (later passes):** the legacy `PRODUCTS` array (still
-exported for order mocks, until Pass 3g+ removes it); cart and wishlist hold item
+exported for order mocks, until Pass 4f removes it); cart and wishlist hold item
 IDs in localStorage only (no server-side cart); coupons (display-only until Stage
-5); payment verification + evidence (**DB RPCs live — Pass 4 above — but no admin/customer
-UI wired yet**); customer profiles/addresses/measurements (Stage 4); courier (Stage 5); banners, CMS,
+5); order **detail + lifecycle action buttons** (P4c), **payment-evidence
+submit/view** UI (P4e — DB RPC live, no UI yet), and **customer order history /
+tracking** views (P4f — still on the mock `ORDERS` seed); customer
+profiles/addresses/measurements (Stage 4); courier (Stage 5); banners, CMS,
 contact, newsletter, reports (Stage 6).
 
 **Privacy / fail-closed guardrails (F-03 / F-04):** customer account PII

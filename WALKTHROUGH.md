@@ -1,7 +1,8 @@
 # WALKTHROUGH — actual data flows
 
 Reflects what the code does today (Stage 2 closed; Stage 3 checkout complete —
-backend + app integration live). Updated each stage.
+backend + app integration live; Stage 3 Pass-4 order-management app integration
+under way — admin orders board DB-backed). Updated each stage.
 
 ## Request → response security wrapper
 
@@ -150,6 +151,35 @@ method, idempotency_key, actor?, quote_token?)` runs one transaction: race-safe
   - F-04 demo gate (`isDemoCommerceEnabled()`) removed from checkout gating.
   - Rate-limit buckets: `quoteOrder` (60/min), `placeOrder` (10/10min).
 
+## Order management (Stage 3 Pass 4a/4b) — admin board live
+
+The Pass-4 order RPCs are `SECURITY DEFINER`, `service_role`-only, so the app
+reaches them only through guarded server fns — the same spine as the catalog
+admin path.
+
+- **Shared model (isomorphic):** `orders-shared.ts` is the single source of truth
+  for the 15-status lifecycle — `ORDER_STATUS_META` (admin + customer labels, tone,
+  one of four lanes), `ALLOWED_TRANSITIONS` (kept in lockstep with
+  `api.transition_order`'s CASE arms by a parity test), and `nextActions(status)`
+  (which admin action drives each transition). It carries no server imports.
+- **Server fns (`orders.api.ts` → `server/orders.server.ts`):** reads
+  (`listOrdersFn`, `getOrderDetailFn`) set no-store + gate `orders.view`; writes
+  (`transition/verify/reject/confirmCod/cancel/returnOrderFn`) go through
+  `guardAdminWrite` (CSRF + strict permission + MFA step-up + rate limit + denial
+  audit) — payment verify/reject on `payments.verify`, lifecycle on `orders.manage`.
+  The repo uses the service-role client to call the `api.*` RPC with the verified
+  actor id as `p_actor`; `OrderError` maps each stable DB code to a safe message,
+  and the generic `transitionOrderFn` forwards `expected_version` so two admins
+  acting at once get a `version_conflict` instead of a silent clobber. The canonical
+  `order.transition` audit is written inside the RPC's transaction.
+- **Board (`admin.orders.tsx`):** the URL is the source of truth — `validateSearch`
+  parses `status` / `q` / `page`, `loaderDeps` feeds them to the `loader`, and the
+  loader calls `listOrdersFn` → `api.list_orders` (server-side status filter, ILIKE
+  search over order-no/name/phone, offset/limit). The status filter is a Select
+  grouped by lane; search is debounced into the URL; pagination shows an accurate
+  "X–Y of N". A row opens a read-only summary sheet built from the list row. Order
+  detail + the lifecycle action buttons (calling the write fns above) land in P4c.
+
 ## CI
 
 `.github/workflows/ci.yml` runs on push to `main` and all PRs: Bun (pinned
@@ -167,7 +197,10 @@ migrations — that is the `migrations-local` job's role.
 ## Still mock / localStorage (later stages)
 
 Cart and wishlist hold item IDs in `localStorage` only (no server-side cart).
-Coupons (display-only until Stage 5), payment verification + evidence (Stage 4),
-customer profiles/addresses/measurements (Stage 4), courier adapters (Stage 5),
-CMS/banners/newsletter (Stage 6), reports (Stage 6). (Reviews moderation and
-site settings are DB-backed since Stage 2.) See `CURRENT_STATUS.md`.
+Coupons (display-only until Stage 5); order **detail + lifecycle action buttons**
+(P4c), **payment-evidence** submit/view (P4e), and **customer order history /
+tracking** (P4f, still on the mock `ORDERS` seed); customer
+profiles/addresses/measurements (Stage 4), courier adapters (Stage 5),
+CMS/banners/newsletter (Stage 6), reports (Stage 6). (Reviews moderation, site
+settings, checkout, and the admin orders board are DB-backed.) See
+`CURRENT_STATUS.md`.
