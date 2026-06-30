@@ -307,16 +307,23 @@ implements `verify` off a webhook handler that writes to the same
   auto-correct quantities) + order-success page (ServerOrderSuccess component) +
   F-04 demo gate removed. Rate-limit buckets: `quoteOrder` (60/min), `placeOrder`
   (10/10min).
-- **P4 — Payment evidence + verification.** Private bucket, submit/verify/reject,
-  duplicate-TrxID guard, COD confirm, consume guard, ledger decrement.
+- **P4 — Payment evidence + verification.** 🟡 **DB layer DONE** (live + in repo
+  2026-06-30, migrations `…210911`/`…210936`/`…210959`/`…211019`): submit/verify/reject,
+  duplicate-TrxID guard, COD confirm, consume guard, ledger decrement
+  (`submit_payment_evidence`, `verify_payment`, `reject_payment`, `confirm_cod`,
+  `transition_order`, `private.consume_reservations`). **Outstanding:** private
+  Storage bucket for screenshots + the app/UI to call these RPCs.
 - **P5 — Real coupons.** `coupons` + `coupon_usages`, race-safe validation +
   rate-limited application, minimal admin/seed (full coupon admin is Stage 6).
-- **P6 — Admin order lifecycle.** DB-backed `admin.orders`/`admin.payments`:
-  queue, verify/reject/confirm/cancel/return, status history, refund status +
-  restock, evidence view (signed download), transition concurrency.
-- **P7 — Guest tracking + customer reads.** Rate-limited track-by-token, scoped
-  read RPCs; retire localStorage `ORDERS`; **delete legacy `PRODUCTS`** (Pass 3g
-  done).
+- **P6 — Admin order lifecycle.** 🟡 **RPCs DONE** (live + in repo 2026-06-30,
+  migrations `…210936`/`…211045`): `transition_order` (verify/reject/confirm/cancel/
+  return, status history, restock, transition concurrency via `expected_version`),
+  `list_orders`, `get_order_detail`. **Outstanding:** the DB-backed
+  `admin.orders`/`admin.payments` UI (queue, evidence signed-download view).
+- **P7 — Guest tracking + customer reads.** 🟡 **RPCs DONE** (live + in repo
+  2026-06-30, migration `…211152`): `track_order` (rate-limit to add at the server-fn
+  layer), `list_my_orders`, `get_my_order`. **Outstanding:** wire the UI; retire
+  localStorage `ORDERS`; **delete legacy `PRODUCTS`** (Pass 3g done).
 - **P8 — Hardening + concurrency tests** (below) + docs/CURRENT_STATUS refresh.
 
 ## 12. Testing (mandatory — matches the spec’s exit bar)
