@@ -3,8 +3,11 @@
  * Pass 3d). Shared by the server repository, the server fns, and the admin UI.
  *
  * Two projections mirror the DB RPCs:
- *   - PublicSettings  ← api.get_public_settings()  (NO payment secrets)
- *   - AdminSettings   ← api.get_admin_settings()   (full row, incl. payment)
+ *   - PublicSettings  ← api.get_public_settings()  (includes the bKash/Nagad
+ *     RECEIVE numbers — these are customer-facing, shown at checkout so the
+ *     buyer knows where to send money; they are not secrets. No real secrets
+ *     (keys/tokens) are ever projected here.)
+ *   - AdminSettings   ← api.get_admin_settings()   (full row + audit fields)
  *
  * `settingsSaveSchema` validates an admin patch before it reaches the DB; it
  * mirrors the table CHECK bounds and normalises empty strings to null so a
@@ -34,14 +37,16 @@ export type PublicSettings = {
   cod_enabled: boolean;
   /** Which MANUAL payment methods are live (subset of {bkash, nagad}). */
   payment_methods_enabled: ManualPaymentMethod[];
+  /** Customer-facing bKash receive number (shown at checkout). */
+  bkash_number: string | null;
+  /** Customer-facing Nagad receive number (shown at checkout). */
+  nagad_number: string | null;
 };
 
 /** Manual (non-COD) payment methods the storefront can offer. */
 export type ManualPaymentMethod = "bkash" | "nagad";
 
 export type AdminSettings = PublicSettings & {
-  bkash_number: string | null;
-  nagad_number: string | null;
   payment_instructions: string | null;
   updated_at: string | null;
   updated_by: string | null;
@@ -184,6 +189,8 @@ export function normalizePublicSettings(raw: unknown): PublicSettings | null {
     order_hold_hours: num(raw.order_hold_hours, 24),
     cod_enabled: bool(raw.cod_enabled, true),
     payment_methods_enabled: manualMethods(raw.payment_methods_enabled),
+    bkash_number: str(raw.bkash_number),
+    nagad_number: str(raw.nagad_number),
   };
 }
 
@@ -202,9 +209,7 @@ export function normalizeAdminSettings(raw: unknown): AdminSettings | null {
   const pub = normalizePublicSettings(raw);
   if (!pub || !isRecord(raw)) return null;
   return {
-    ...pub,
-    bkash_number: str(raw.bkash_number),
-    nagad_number: str(raw.nagad_number),
+    ...pub, // includes bkash_number / nagad_number (now public, customer-facing)
     payment_instructions: str(raw.payment_instructions),
     updated_at: str(raw.updated_at),
     updated_by: str(raw.updated_by),
