@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
-import { formatBDT, BRAND, PAYMENT_NOTICE } from "@/lib/brand";
+import { formatBDT, PAYMENT_NOTICE } from "@/lib/brand";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -295,7 +295,11 @@ function Checkout() {
 
   async function copyNumber() {
     const num =
-      selectedMethod === "bkash" ? BRAND.bkashNumber : selectedMethod === "nagad" ? "" : "";
+      selectedMethod === "bkash"
+        ? (publicSettings?.bkash_number ?? "")
+        : selectedMethod === "nagad"
+          ? (publicSettings?.nagad_number ?? "")
+          : "";
     if (!num) {
       toast.info("Payment number is not set up yet — please contact us on WhatsApp.");
       return;
@@ -419,11 +423,13 @@ function Checkout() {
   }
 
   // ── Payment number to display for manual methods ───────────────────────
+  // Customer-facing receive number for the selected manual method, from live
+  // settings (admin-managed). Falls back to null → the UI shows the WhatsApp CTA.
   const paymentNumber =
     selectedMethod === "bkash"
-      ? BRAND.bkashNumber
+      ? (publicSettings?.bkash_number ?? null)
       : selectedMethod === "nagad"
-        ? "" // nagad number comes from admin settings; not in BRAND yet
+        ? (publicSettings?.nagad_number ?? null)
         : null;
   const hasPaymentNumber = Boolean(
     paymentNumber && !/0{6,}/.test(paymentNumber.replace(/\D/g, "")),
