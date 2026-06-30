@@ -106,11 +106,16 @@ describe("settingsErrorMessage", () => {
 });
 
 describe("normalizePublicSettings / normalizeAdminSettings", () => {
-  it("coerces a full payload and never exposes payment on the public type", () => {
-    const pub = normalizePublicSettings(fullPublic);
+  it("coerces a full payload; receive numbers are public, admin/audit fields are not", () => {
+    const pub = normalizePublicSettings({ ...fullPublic, bkash_number: "01711111111" });
     expect(pub?.store_name).toBe("Nongorr");
     expect(pub?.free_delivery_threshold).toBe(3000);
-    expect(pub && "bkash_number" in pub).toBe(false);
+    // bKash/Nagad RECEIVE numbers are customer-facing → present on the public type.
+    expect(pub?.bkash_number).toBe("01711111111");
+    expect(pub?.nagad_number).toBeNull();
+    // Admin-only / audit fields never leak onto the public projection.
+    expect(pub && "payment_instructions" in pub).toBe(false);
+    expect(pub && "updated_by" in pub).toBe(false);
   });
 
   it("returns null for junk and defaults missing numbers", () => {
