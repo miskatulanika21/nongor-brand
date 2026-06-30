@@ -33,7 +33,18 @@ export default tseslint.config(
         },
       ],
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
-      "@typescript-eslint/no-unused-vars": "off",
+      // Surface dead code as a warning (tsconfig keeps noUnusedLocals/Parameters
+      // off to avoid blocking builds; this gives visibility without failing CI).
+      // `_`-prefixed names are intentional throwaways and are ignored.
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+          ignoreRestSiblings: true,
+        },
+      ],
     },
   },
   eslintPluginPrettier,
