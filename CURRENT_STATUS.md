@@ -34,8 +34,9 @@ pricing/order RPCs: `api.quote_order` (public; per-line availability + a
 idempotency via INSERT … ON CONFLICT, deterministic product-lock ordering,
 server-side pricing, oversell + price-drift guards, reservation + guest-token
 issuance; COD → `pending_confirmation`, manual → `pending_payment`). **Pass 3b
-(complete)** is the app integration: migration 34 added admin-configurable payment
-methods (`cod_enabled` + `payment_methods_enabled[]`, public-projected), the admin
+(complete)** is the app integration: the `payment_method_settings` migration
+(`…085345`) added admin-configurable payment methods (`cod_enabled` +
+`payment_methods_enabled[]`, public-projected), the admin
 Settings "Payment methods" toggles, the isomorphic `checkout-shared` module
 (cart→lines, error-code map, method derivation, idempotency key), `checkout.server.ts`
 repository + `checkout.api.ts` server fns, checkout-route rewire (method selector,
