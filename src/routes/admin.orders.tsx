@@ -1,21 +1,22 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { AdminHeader } from "@/components/admin/AdminUI";
-import { ORDERS, ORDER_PIPELINE, STATUS_TONE, type Order, type OrderStatus } from "@/lib/orders";
-import { formatBDT } from "@/lib/brand";
+import { listOrdersFn } from "@/lib/orders.api";
 import {
-  buildWaMessage,
-  DATE_RANGES,
-  inRange,
-  printInvoice,
-  waLink,
-  WA_TEMPLATES,
-  type DateRange,
-} from "@/lib/admin-ops";
+  ORDER_STATUSES,
+  ORDER_STATUS_META,
+  ORDER_LANES,
+  ORDER_LANE_LABEL,
+  isOrderStatus,
+  type OrderStatus,
+  type OrderListRow,
+  type PaymentStatus,
+  type StatusTone,
+} from "@/lib/orders-shared";
+import { formatBDT } from "@/lib/brand";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -28,257 +29,357 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { Search, Printer, MessageCircle, ImageIcon, Ruler } from "lucide-react";
-import { toast } from "sonner";
+import { AlertTriangle, ChevronLeft, ChevronRight, PackageOpen, Search } from "lucide-react";
+
+// Page size — must match the loader's `limit` so pagination math is correct.
+const PAGE_SIZE = 20;
+
+interface OrdersSearch {
+  status?: OrderStatus;
+  q?: string;
+  // Optional so links elsewhere (e.g. the dashboard) can target /admin/orders
+  // without supplying search; validateSearch always normalizes it to >= 1.
+  page?: number;
+}
 
 export const Route = createFileRoute("/admin/orders")({
+  head: () => ({ meta: [{ title: "Orders · Nongorr Admin" }] }),
+  // URL is the source of truth for filters → shareable, back-button friendly, and
+  // every change re-runs the loader against the server (no client-side guessing).
+  validateSearch: (s: Record<string, unknown>): OrdersSearch => {
+    const status = typeof s.status === "string" && isOrderStatus(s.status) ? s.status : undefined;
+    const q = typeof s.q === "string" && s.q.trim() ? s.q.trim().slice(0, 100) : undefined;
+    const pageNum = Number(s.page);
+    const page = Number.isFinite(pageNum) && pageNum >= 1 ? Math.floor(pageNum) : 1;
+    return { status, q, page };
+  },
+  loaderDeps: ({ search }) => ({ status: search.status, q: search.q, page: search.page }),
+  loader: async ({ deps }) => {
+    const page = deps.page ?? 1;
+    const res = await listOrdersFn({
+      data: {
+        status: deps.status,
+        search: deps.q,
+        limit: PAGE_SIZE,
+        offset: (page - 1) * PAGE_SIZE,
+      },
+    });
+    return { orders: res.orders, total: res.total, loadError: !res.success };
+  },
   component: OrdersAdmin,
 });
 
-const ALL_STATUSES: OrderStatus[] = [
-  "New Order",
-  "Payment Pending",
-  "Payment Verified",
-  "Confirmed",
-  "Processing",
-  "Courier Booked",
-  "Shipped",
-  "Delivered",
-  "Completed",
-  "Cancelled",
-  "Returned",
-  "Refund Pending",
-  "Refund Done",
-];
+// Abstract status tone → brand badge classes (single mapping for all 6 tones).
+const TONE_BADGE: Record<StatusTone, string> = {
+  amber: "bg-gold/20 text-gold-foreground border-gold/40",
+  blue: "bg-secondary text-secondary-foreground border-border",
+  violet: "bg-primary/10 text-primary border-primary/30",
+  green: "bg-success/15 text-success border-success/30",
+  red: "bg-destructive/10 text-destructive border-destructive/30",
+  slate: "bg-muted text-muted-foreground border-border",
+};
 
-// Extended mock dataset so every status/filter has something to show.
-const sampleOrders: Order[] = [
-  ...ORDERS,
-  {
-    ...ORDERS[0],
-    id: "NGR-100260",
-    date: "2026-06-14",
-    status: "New Order",
-    customer: "Mim Chowdhury",
-    paymentStatus: "Pending",
-    note: "Wants delivery before Eid.",
-  },
-  {
-    ...ORDERS[2],
-    id: "NGR-100261",
-    date: "2026-06-14",
-    status: "Confirmed",
-    customer: "Lamia Haque",
-  },
-  {
-    ...ORDERS[1],
-    id: "NGR-100262",
-    date: "2026-06-10",
-    status: "Processing",
-    customer: "Sadia Islam",
-    measurements: "Bust 36, Waist 30, Length 42",
-  } as Order,
-  {
-    ...ORDERS[0],
-    id: "NGR-100258",
-    date: "2026-06-02",
-    status: "Completed",
-    customer: "Farzana Yasmin",
-  },
-  {
-    ...ORDERS[1],
-    id: "NGR-100240",
-    date: "2026-05-22",
-    status: "Refund Pending",
-    customer: "Tania Rahman",
-    paymentStatus: "Verified",
-  },
-];
+const PAYMENT_BADGE: Record<PaymentStatus, string> = {
+  verified: "border-success/40 text-success",
+  rejected: "border-destructive/40 text-destructive",
+  pending: "border-gold/40 text-primary",
+};
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// Deterministic (UTC) date — avoids SSR/client locale-timezone hydration drift.
+function fmtDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+function StatusBadge({ status }: { status: OrderStatus }) {
+  const meta = ORDER_STATUS_META[status];
+  return (
+    <Badge variant="outline" className={cn(TONE_BADGE[meta.tone])}>
+      {meta.label}
+    </Badge>
+  );
+}
 
 function OrdersAdmin() {
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<string>("all");
-  const [range, setRange] = useState<DateRange>("all");
-  const [active, setActive] = useState<Order | null>(null);
+  const { orders, total, loadError } = Route.useLoaderData();
+  const search = Route.useSearch();
+  const navigate = useNavigate();
+  const router = useRouter();
+  const [active, setActive] = useState<OrderListRow | null>(null);
+  const [term, setTerm] = useState(search.q ?? "");
 
-  const counts = useMemo(() => {
-    const c: Record<string, number> = {};
-    sampleOrders.forEach((o) => (c[o.status] = (c[o.status] ?? 0) + 1));
-    return c;
-  }, []);
+  // Keep the input in sync when the URL changes elsewhere (back/forward, reset).
+  useEffect(() => {
+    setTerm(search.q ?? "");
+  }, [search.q]);
 
-  const list = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return sampleOrders.filter((o) => {
-      if (status !== "all" && o.status !== status) return false;
-      if (!inRange(o.date, range)) return false;
-      if (!q) return true;
-      return (
-        o.customer.toLowerCase().includes(q) ||
-        o.phone.toLowerCase().includes(q) ||
-        o.id.toLowerCase().includes(q)
-      );
+  // Debounce the search box → push `q` into the URL (resetting to page 1). The
+  // equality guard stops this from looping against the sync effect above.
+  useEffect(() => {
+    const next = term.trim() || undefined;
+    if (next === (search.q ?? undefined)) return;
+    const id = setTimeout(() => {
+      navigate({
+        to: "/admin/orders",
+        search: { status: search.status, q: next, page: 1 },
+      });
+    }, 350);
+    return () => clearTimeout(id);
+  }, [term, search.q, search.status, navigate]);
+
+  const setStatus = (status: OrderStatus | undefined) =>
+    navigate({ to: "/admin/orders", search: { status, q: search.q, page: 1 } });
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const page = Math.min(search.page ?? 1, totalPages);
+  const goto = (p: number) =>
+    navigate({
+      to: "/admin/orders",
+      search: { status: search.status, q: search.q, page: Math.min(Math.max(1, p), totalPages) },
     });
-  }, [query, status, range]);
+
+  const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(page * PAGE_SIZE, total);
 
   return (
     <div>
       <AdminHeader
         title="Orders"
-        description="Search, filter and manage your order pipeline end to end."
+        description="Search, filter and work the order pipeline end to end."
       />
 
-      <div className="mb-4 grid gap-3 lg:grid-cols-[1fr_auto]">
+      <div className="mb-4 grid gap-3 sm:grid-cols-[1fr_auto]">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by name, phone or order ID…"
+            value={term}
+            onChange={(e) => setTerm(e.target.value)}
+            placeholder="Search by order no, name or phone…"
             className="pl-9"
           />
         </div>
-        <div className="flex flex-wrap gap-2">
-          {DATE_RANGES.map((r) => (
-            <Chip
-              key={r.key}
-              active={range === r.key}
-              onClick={() => setRange(r.key)}
-              label={r.label}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div className="mb-4 flex flex-wrap gap-2">
-        <Chip
-          active={status === "all"}
-          onClick={() => setStatus("all")}
-          label={`All (${sampleOrders.length})`}
-        />
-        {ALL_STATUSES.map((s) => (
-          <Chip
-            key={s}
-            active={status === s}
-            onClick={() => setStatus(s)}
-            label={`${s}${counts[s] ? ` (${counts[s]})` : ""}`}
-          />
-        ))}
-      </div>
-
-      <div className="overflow-x-auto rounded-xl border border-border bg-card">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Order</TableHead>
-              <TableHead>Customer</TableHead>
-              <TableHead>Total</TableHead>
-              <TableHead>Payment</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Action</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {list.map((o) => (
-              <TableRow key={o.id} className="cursor-pointer" onClick={() => setActive(o)}>
-                <TableCell>
-                  <p className="font-medium text-foreground">{o.id}</p>
-                  <p className="text-xs text-muted-foreground">{o.date}</p>
-                </TableCell>
-                <TableCell>
-                  <p className="text-foreground">{o.customer}</p>
-                  <p className="text-xs text-muted-foreground">{o.phone}</p>
-                </TableCell>
-                <TableCell className="font-medium text-primary">{formatBDT(o.total)}</TableCell>
-                <TableCell>
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      o.paymentStatus === "Verified"
-                        ? "border-success/40 text-success"
-                        : o.paymentStatus === "Rejected"
-                          ? "border-destructive/40 text-destructive"
-                          : "border-gold/40 text-primary",
-                    )}
-                  >
-                    {o.paymentStatus}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="outline" className={cn(STATUS_TONE[o.status] ?? "")}>
-                    {o.status}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  <Button variant="ghost" size="sm">
-                    Manage
-                  </Button>
-                </TableCell>
-              </TableRow>
+        <Select
+          value={search.status ?? "all"}
+          onValueChange={(v) => setStatus(v === "all" ? undefined : (v as OrderStatus))}
+        >
+          <SelectTrigger className="sm:w-[230px]">
+            <SelectValue placeholder="All statuses" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            {ORDER_LANES.map((lane) => (
+              <SelectGroup key={lane}>
+                <SelectLabel>{ORDER_LANE_LABEL[lane]}</SelectLabel>
+                {ORDER_STATUSES.filter((s) => ORDER_STATUS_META[s].lane === lane).map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {ORDER_STATUS_META[s].label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
             ))}
-            {list.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
-                  No orders match your filters.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+          </SelectContent>
+        </Select>
       </div>
 
-      <OrderSheet order={active} onClose={() => setActive(null)} />
+      {loadError ? (
+        <ErrorPanel onRetry={() => router.invalidate()} />
+      ) : orders.length === 0 ? (
+        <EmptyPanel filtered={Boolean(search.status || search.q)} />
+      ) : (
+        <>
+          <div className="overflow-x-auto rounded-xl border border-border bg-card">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Order</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Total</TableHead>
+                  <TableHead>Payment</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {orders.map((o) => (
+                  <TableRow key={o.id} className="cursor-pointer" onClick={() => setActive(o)}>
+                    <TableCell>
+                      <p className="font-medium text-foreground">{o.orderNo}</p>
+                      <p className="text-xs text-muted-foreground">{fmtDate(o.placedAt)}</p>
+                    </TableCell>
+                    <TableCell>
+                      <p className="text-foreground">{o.customerName}</p>
+                      <p className="text-xs text-muted-foreground">{o.customerPhone}</p>
+                    </TableCell>
+                    <TableCell className="font-medium text-primary">{formatBDT(o.total)}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1">
+                        <span className="text-xs uppercase text-muted-foreground">
+                          {o.paymentMethod}
+                        </span>
+                        {o.payment && (
+                          <Badge
+                            variant="outline"
+                            className={cn("w-fit capitalize", PAYMENT_BADGE[o.payment.status])}
+                          >
+                            {o.payment.status}
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={o.status} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="sm">
+                        Manage
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
+            <p>
+              Showing {rangeStart}–{rangeEnd} of {total}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1}
+                onClick={() => goto(page - 1)}
+              >
+                <ChevronLeft className="h-4 w-4" /> Prev
+              </Button>
+              <span>
+                Page {page} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages}
+                onClick={() => goto(page + 1)}
+              >
+                Next <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+
+      <OrderSummarySheet order={active} onClose={() => setActive(null)} />
     </div>
   );
 }
 
-function OrderSheet({ order, onClose }: { order: Order | null; onClose: () => void }) {
+function EmptyPanel({ filtered }: { filtered: boolean }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-card/50 px-6 py-16 text-center">
+      <div className="grid h-14 w-14 place-items-center rounded-full bg-secondary text-primary">
+        <PackageOpen className="h-6 w-6" />
+      </div>
+      <h3 className="font-display text-xl text-foreground">No orders found</h3>
+      <p className="max-w-sm text-sm text-muted-foreground">
+        {filtered
+          ? "No orders match the current filters. Try clearing the search or status."
+          : "Orders will appear here as soon as customers start placing them."}
+      </p>
+    </div>
+  );
+}
+
+function ErrorPanel({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-6 py-16 text-center">
+      <div className="grid h-14 w-14 place-items-center rounded-full bg-destructive/10 text-destructive">
+        <AlertTriangle className="h-6 w-6" />
+      </div>
+      <h3 className="font-display text-xl text-foreground">Could not load orders</h3>
+      <p className="max-w-sm text-sm text-muted-foreground">
+        Something went wrong loading the order list. Please retry.
+      </p>
+      <Button variant="outline" onClick={onRetry}>
+        Retry
+      </Button>
+    </div>
+  );
+}
+
+// Read-only summary built from the list row. Full detail (status history, payment
+// evidence) and lifecycle actions arrive with the order detail surface (P4c).
+function OrderSummarySheet({
+  order,
+  onClose,
+}: {
+  order: OrderListRow | null;
+  onClose: () => void;
+}) {
   return (
     <Sheet open={!!order} onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
         {order && (
           <>
             <SheetHeader>
-              <SheetTitle className="font-display text-2xl">{order.id}</SheetTitle>
+              <SheetTitle className="font-display text-2xl">{order.orderNo}</SheetTitle>
             </SheetHeader>
             <div className="mt-4 space-y-4 text-sm">
-              {/* Customer */}
+              <div className="flex items-center justify-between">
+                <StatusBadge status={order.status} />
+                <span className="text-xs text-muted-foreground">{fmtDate(order.placedAt)}</span>
+              </div>
+
               <div className="rounded-lg bg-secondary p-3">
-                <p className="font-medium text-foreground">{order.customer}</p>
-                <p className="text-muted-foreground">{order.phone}</p>
+                <p className="font-medium text-foreground">{order.customerName}</p>
+                <p className="text-muted-foreground">{order.customerPhone}</p>
                 <p className="text-muted-foreground">
-                  {order.address}, {order.district}
+                  {order.shipDistrict} · {order.shipZone}
                 </p>
               </div>
 
-              {/* Items */}
               <div className="space-y-2">
                 {order.items.map((it, i) => (
                   <div key={i} className="flex items-center gap-3">
-                    <img src={it.image} alt="" className="h-12 w-10 rounded object-cover" />
+                    {it.image ? (
+                      <img src={it.image} alt="" className="h-12 w-10 rounded object-cover" />
+                    ) : (
+                      <div className="grid h-12 w-10 place-items-center rounded bg-muted text-muted-foreground">
+                        <PackageOpen className="h-4 w-4" />
+                      </div>
+                    )}
                     <div className="flex-1">
                       <p className="line-clamp-1 text-foreground">{it.name}</p>
                       <p className="text-xs text-muted-foreground">
                         Qty {it.qty}
-                        {it.size ? ` · ${it.size}` : ""}
+                        {it.variantSize ? ` · ${it.variantSize}` : ""}
                       </p>
                     </div>
-                    <span className="font-medium">{formatBDT(it.price * it.qty)}</span>
+                    <span className="font-medium">{formatBDT(it.lineTotal)}</span>
                   </div>
                 ))}
               </div>
+
               <Separator />
               <div className="space-y-1">
                 <Row label="Subtotal" value={formatBDT(order.subtotal)} />
+                {order.discount > 0 && (
+                  <Row label="Discount" value={`− ${formatBDT(order.discount)}`} />
+                )}
                 <Row
                   label="Delivery"
-                  value={order.shipping === 0 ? "Free" : formatBDT(order.shipping)}
+                  value={order.shippingFee === 0 ? "Free" : formatBDT(order.shippingFee)}
                 />
                 <div className="flex justify-between pt-1 text-base font-semibold text-primary">
                   <span>Total</span>
@@ -286,104 +387,25 @@ function OrderSheet({ order, onClose }: { order: Order | null; onClose: () => vo
                 </div>
               </div>
 
-              {/* Payment */}
               <div className="rounded-lg border border-border p-3">
                 <p className="mb-1 font-medium">Payment</p>
-                <p className="text-muted-foreground">
-                  {order.paymentMethod} · {order.paymentStatus}
+                <p className="capitalize text-muted-foreground">
+                  {order.paymentMethod}
+                  {order.payment ? ` · ${order.payment.status}` : ""}
                 </p>
-                <p className="text-muted-foreground">Sender bKash: {order.senderNumber}</p>
-                <p className="text-muted-foreground">
-                  TrxID: <span className="font-medium text-foreground">{order.trxId}</span>
-                </p>
-                <div className="mt-2 grid h-28 place-items-center rounded-md border border-dashed border-border bg-secondary text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1.5">
-                    <ImageIcon className="h-4 w-4" /> Payment screenshot preview
-                  </span>
-                </div>
-              </div>
-
-              {/* Custom measurements */}
-              {(order as Order & { measurements?: string }).measurements && (
-                <div className="rounded-lg border border-gold/40 bg-gold/5 p-3">
-                  <p className="mb-1 flex items-center gap-1.5 font-medium text-primary">
-                    <Ruler className="h-4 w-4" /> Custom measurements
-                  </p>
+                {order.payment?.senderNumber && (
+                  <p className="text-muted-foreground">Sender: {order.payment.senderNumber}</p>
+                )}
+                {order.payment?.trxId && (
                   <p className="text-muted-foreground">
-                    {(order as Order & { measurements?: string }).measurements}
+                    TrxID:{" "}
+                    <span className="font-medium text-foreground">{order.payment.trxId}</span>
                   </p>
-                </div>
-              )}
-
-              {/* Admin note */}
-              <div className="space-y-1.5">
-                <p className="font-medium">Admin note</p>
-                <Textarea
-                  defaultValue={order.note}
-                  placeholder="Internal note (not visible to customer)…"
-                />
+                )}
+                {order.payment?.rejectReason && (
+                  <p className="text-destructive">Rejected: {order.payment.rejectReason}</p>
+                )}
               </div>
-
-              {/* Status update */}
-              <div className="space-y-1.5">
-                <p className="font-medium">Update status</p>
-                <Select
-                  defaultValue={order.status}
-                  onValueChange={() => toast.success("Status updated (demo)")}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ORDER_PIPELINE.concat([
-                      "Cancelled",
-                      "Returned",
-                      "Refund Pending",
-                      "Refund Done",
-                    ] as OrderStatus[]).map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* WhatsApp templates */}
-              <div className="space-y-1.5">
-                <p className="flex items-center gap-1.5 font-medium">
-                  <MessageCircle className="h-4 w-4 text-success" /> WhatsApp templates
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  {WA_TEMPLATES.map((t) => (
-                    <Button
-                      key={t.key}
-                      variant="outline"
-                      size="sm"
-                      asChild
-                      className="justify-start"
-                    >
-                      <a
-                        href={waLink(order.phone, buildWaMessage(t.key, order))}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        {t.label}
-                      </a>
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex gap-2 pt-1">
-                <Button className="flex-1" onClick={() => toast.success("Order confirmed (demo)")}>
-                  Confirm
-                </Button>
-                <Button variant="outline" className="flex-1" onClick={() => printInvoice(order)}>
-                  <Printer className="h-4 w-4" /> Print invoice
-                </Button>
-              </div>
-              {/* TODO: persist status, note and notifications via backend */}
             </div>
           </>
         )}
@@ -398,21 +420,5 @@ function Row({ label, value }: { label: string; value: string }) {
       <span>{label}</span>
       <span className="text-foreground">{value}</span>
     </div>
-  );
-}
-
-function Chip({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "rounded-full border px-3.5 py-1.5 text-sm transition-colors",
-        active
-          ? "border-primary bg-primary text-primary-foreground"
-          : "border-border bg-card text-muted-foreground hover:border-primary",
-      )}
-    >
-      {label}
-    </button>
   );
 }
