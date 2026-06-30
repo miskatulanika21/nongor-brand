@@ -64,3 +64,13 @@ export function PaymentBadge({ status }: { status: PaymentStatus }) {
     </Badge>
   );
 }
+
+/** Customer-facing status badge — uses the softer customerLabel + the same tone. */
+export function CustomerStatusBadge({ status }: { status: OrderStatus }) {
+  const meta = ORDER_STATUS_META[status];
+  return (
+    <Badge variant="outline" className={cn(TONE_BADGE[meta.tone])}>
+      {meta.customerLabel}
+    </Badge>
+  );
+}
