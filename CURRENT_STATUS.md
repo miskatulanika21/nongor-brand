@@ -3,7 +3,26 @@
 Authoritative record of verified project state. Code and live-environment
 behavior are the source of truth; this file is updated after every stage.
 
-_Last updated: 2026-06-30 — **Repo↔DB parity restored + CI green.** A multi-PC
+_Last updated: 2026-06-30 (later) — **Deep-review remediation (43 migrations).**
+Independently verified an external file-by-file review and fixed the genuinely-real
+findings (several auditor claims were wrong/stale/already-fixed — verified, not
+trusted). DB (3 new migrations, prod-applied + ledger-realigned):
+**custom-size server pricing** — a `size='Custom'` line was priced at base only
+AND ran through ready-size availability (0 for 'Custom'), so EVERY custom order
+failed `out_of_stock`; now priced base+`custom_size_charge` and treated
+made-to-order (not stock-gated, no ready reservation, valid only for
+`custom_size` products); **`order_hold_hours`** is now honoured by `place_order`
+(was hardcoded 24h); **payment-rejected reservation lifecycle** —
+`transition_order` refreshes the hold window on reject (retry-safe; the auditor's
+"release on reject" would have broken resubmit→confirm stock decrement) and
+`expire_reservations` now reclaims abandoned rejected orders; **bKash/Nagad
+receive numbers** are now projected by `get_public_settings` (customer-facing, not
+secrets) so checkout shows them. App/types: audit-action union aligned with
+SQL-written actions; mock coupons gated out of prod; eslint `no-unused-vars` at
+warn; assorted JSDoc/.env.example. All prod-applied + validated (rolled-back) +
+pass3_db.test.sql coverage added. Prior context:_
+
+_2026-06-30 — **Repo↔DB parity restored + CI green.** A multi-PC
 audit found the repo was carrying only **34** migration files while the live
 project had **40**: six Stage-3 **Pass-4 order-lifecycle/read RPC** migrations
 (`order_lifecycle_rpcs`, `order_transition_rpc`, `order_convenience_rpcs`,
@@ -107,11 +126,11 @@ verification complete · (4) operator action pending.**
 
 ## Migrations (live project xomjxtmhkglhuiccekld)
 
-**40 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
-ledger matches the 40 repo files exactly (versions + names), in order. _(Until
-2026-06-30 the repo held only the first 34: the final six Pass-4 RPC migrations had
-been applied to prod but not committed — see the header note. Parity is now
-restored.)_ In order:
+**43 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
+ledger matches the 43 repo files exactly (versions + names), in order. _(The
+final three `…630*` fix-pass migrations were MCP-applied then ledger-realigned to
+the repo filenames; the six `…627211*` Pass-4 RPCs were recovered earlier — see
+the header notes. Parity is verified.)_ In order:
 
 ```
 …143927 create_private_schema            …623000000 advisor_hardening
@@ -143,6 +162,9 @@ restored.)_ In order:
                                           …627211019 submit_payment_evidence_rpc
                                           …627211045 order_read_rpcs_admin
                                           …627211152 order_read_rpcs_customer
+                                          …630120000 order_custom_pricing_and_hold_hours
+                                          …630120100 reject_retry_window_and_expiry
+                                          …630120200 public_payment_numbers
 ```
 
 Note: `apply_migration` (MCP) stamps its own version, so after every MCP apply the
@@ -509,7 +531,7 @@ these with DB reads).
 ## CI (honest)
 
 `ci.yml` runs (genuinely): frozen Bun install, typecheck, lint, format, test, build,
-**migrate-from-empty** (boots a local Supabase, applies all 40 migrations to a
+**migrate-from-empty** (boots a local Supabase, applies all 43 migrations to a
 blank DB — incl. the Stage 3 order schema/reservations/RPCs/payment-method
 settings and the Pass-4 order-lifecycle/read RPCs), and **DB integration tests** (`pass2_db.test.sql` + `pass3_db.test.sql`
 — stock write-guard, set_inventory validation, ledger immutability, FK RESTRICT,
