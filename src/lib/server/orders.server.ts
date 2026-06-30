@@ -1,0 +1,422 @@
+/**
+ * Order administration repository — SERVER ONLY.
+ *
+ * Wraps the service-role admin client over the api.* order RPCs, which are all
+ * REVOKE-d from anon/authenticated. Authorization (CSRF + strict permission +
+ * step-up + rate limit) is enforced upstream by the API handlers (orders.api.ts
+ * via guardAdminWrite / requirePermission); this layer assumes a verified actor
+ * and only does the narrowly-scoped system call + snake→camel mapping.
+ *
+ * Every RPC raises a STABLE snake_case code AS the exception message; we accept
+ * it only when it is a known code, else collapse to `internal_error`, so raw SQL
+ * context can never reach the client (pattern: checkout.server / catalog-admin).
+ */
+import { createAdminSupabaseClient } from "./supabase-admin.server";
+import {
+  KNOWN_ORDER_ERROR_CODES,
+  type OrderListResult,
+  type OrderListRow,
+  type OrderListItemLine,
+  type OrderPaymentSummary,
+  type OrderDetail,
+  type OrderRecord,
+  type OrderDetailItem,
+  type OrderPaymentDetail,
+  type OrderScreenshot,
+  type OrderHistoryEntry,
+  type OrderStatus,
+  type PaymentStatus,
+  type OrderTransitionResult,
+} from "@/lib/orders-shared";
+import type { PaymentMethod } from "@/lib/checkout-shared";
+
+export class OrderError extends Error {
+  constructor(public readonly code: string) {
+    super(code);
+    this.name = "OrderError";
+  }
+}
+
+/** Map a Postgres/PostgREST error to a stable OrderError (unknowns → internal_error). */
+function throwOrderError(error: { message?: string }): never {
+  const raw = (error.message ?? "").trim();
+  throw new OrderError(KNOWN_ORDER_ERROR_CODES.has(raw) ? raw : "internal_error");
+}
+
+// ── Raw RPC row shapes (snake_case JSON) ─────────────────────────────────────
+
+interface RawListLine {
+  name: string;
+  image: string | null;
+  qty: number;
+  unit_price: number;
+  line_total: number;
+  variant_size: string | null;
+}
+
+interface RawPaymentSummary {
+  id: string;
+  method: PaymentMethod;
+  amount: number;
+  trx_id: string | null;
+  sender_number: string | null;
+  status: PaymentStatus;
+  verified_at: string | null;
+  reject_reason: string | null;
+}
+
+interface RawListRow {
+  id: string;
+  order_no: string;
+  customer_name: string;
+  customer_phone: string;
+  ship_district: string;
+  ship_zone: string;
+  subtotal: number;
+  discount: number;
+  shipping_fee: number;
+  total: number;
+  payment_method: PaymentMethod;
+  status: OrderStatus;
+  placed_at: string;
+  confirmed_at: string | null;
+  version: number;
+  items: RawListLine[] | null;
+  payment: RawPaymentSummary | null;
+}
+
+function mapListLine(l: RawListLine): OrderListItemLine {
+  return {
+    name: l.name,
+    image: l.image,
+    qty: l.qty,
+    unitPrice: l.unit_price,
+    lineTotal: l.line_total,
+    variantSize: l.variant_size,
+  };
+}
+
+function mapPaymentSummary(p: RawPaymentSummary): OrderPaymentSummary {
+  return {
+    id: p.id,
+    method: p.method,
+    amount: p.amount,
+    trxId: p.trx_id,
+    senderNumber: p.sender_number,
+    status: p.status,
+    verifiedAt: p.verified_at,
+    rejectReason: p.reject_reason,
+  };
+}
+
+function mapListRow(r: RawListRow): OrderListRow {
+  return {
+    id: r.id,
+    orderNo: r.order_no,
+    customerName: r.customer_name,
+    customerPhone: r.customer_phone,
+    shipDistrict: r.ship_district,
+    shipZone: r.ship_zone,
+    subtotal: r.subtotal,
+    discount: r.discount,
+    shippingFee: r.shipping_fee,
+    total: r.total,
+    paymentMethod: r.payment_method,
+    status: r.status,
+    placedAt: r.placed_at,
+    confirmedAt: r.confirmed_at,
+    version: r.version,
+    items: (r.items ?? []).map(mapListLine),
+    payment: r.payment ? mapPaymentSummary(r.payment) : null,
+  };
+}
+
+// ── Reads ────────────────────────────────────────────────────────────────────
+
+export interface ListOrdersArgs {
+  actorId: string;
+  status?: OrderStatus;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export async function listOrders(args: ListOrdersArgs): Promise<OrderListResult> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin.schema("api").rpc("list_orders", {
+    p_actor: args.actorId,
+    p_status: args.status ?? null,
+    p_search: args.search ?? null,
+    p_limit: args.limit ?? 50,
+    p_offset: args.offset ?? 0,
+  });
+  if (error) throwOrderError(error);
+  const raw = (data ?? { orders: [], total: 0 }) as { orders: RawListRow[] | null; total: number };
+  return {
+    orders: (raw.orders ?? []).map(mapListRow),
+    total: raw.total ?? 0,
+  };
+}
+
+interface RawOrderRecord {
+  id: string;
+  order_no: string;
+  user_id: string | null;
+  customer_name: string;
+  customer_phone: string;
+  customer_email: string | null;
+  ship_district: string;
+  ship_zone: string;
+  ship_address: string;
+  ship_area: string | null;
+  subtotal: number;
+  discount: number;
+  shipping_fee: number;
+  total: number;
+  payment_method: PaymentMethod;
+  status: OrderStatus;
+  coupon_code: string | null;
+  version: number;
+  placed_at: string;
+  confirmed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+function mapOrderRecord(o: RawOrderRecord): OrderRecord {
+  return {
+    id: o.id,
+    orderNo: o.order_no,
+    userId: o.user_id,
+    customerName: o.customer_name,
+    customerPhone: o.customer_phone,
+    customerEmail: o.customer_email,
+    shipDistrict: o.ship_district,
+    shipZone: o.ship_zone,
+    shipAddress: o.ship_address,
+    shipArea: o.ship_area,
+    subtotal: o.subtotal,
+    discount: o.discount,
+    shippingFee: o.shipping_fee,
+    total: o.total,
+    paymentMethod: o.payment_method,
+    status: o.status,
+    couponCode: o.coupon_code,
+    version: o.version,
+    placedAt: o.placed_at,
+    confirmedAt: o.confirmed_at,
+    createdAt: o.created_at,
+    updatedAt: o.updated_at,
+  };
+}
+
+interface RawDetailItem {
+  id: string;
+  product_id: string;
+  variant_size: string | null;
+  name: string;
+  image: string | null;
+  unit_price: number;
+  qty: number;
+  line_total: number;
+}
+
+interface RawPaymentDetail {
+  id: string;
+  method: PaymentMethod;
+  amount: number;
+  sender_number: string | null;
+  trx_id: string | null;
+  status: PaymentStatus;
+  verified_by: string | null;
+  verified_at: string | null;
+  reject_reason: string | null;
+  created_at: string;
+}
+
+interface RawScreenshot {
+  id: string;
+  storage_path: string;
+  created_at: string;
+}
+
+interface RawHistoryEntry {
+  from_status: OrderStatus | null;
+  to_status: OrderStatus;
+  actor_id: string | null;
+  reason: string | null;
+  created_at: string;
+}
+
+interface RawOrderDetail {
+  order: RawOrderRecord;
+  items: RawDetailItem[] | null;
+  payment: RawPaymentDetail | null;
+  screenshots: RawScreenshot[] | null;
+  history: RawHistoryEntry[] | null;
+}
+
+function mapDetailItem(i: RawDetailItem): OrderDetailItem {
+  return {
+    id: i.id,
+    productId: i.product_id,
+    variantSize: i.variant_size,
+    name: i.name,
+    image: i.image,
+    unitPrice: i.unit_price,
+    qty: i.qty,
+    lineTotal: i.line_total,
+  };
+}
+
+function mapPaymentDetail(p: RawPaymentDetail): OrderPaymentDetail {
+  return {
+    id: p.id,
+    method: p.method,
+    amount: p.amount,
+    senderNumber: p.sender_number,
+    trxId: p.trx_id,
+    status: p.status,
+    verifiedBy: p.verified_by,
+    verifiedAt: p.verified_at,
+    rejectReason: p.reject_reason,
+    createdAt: p.created_at,
+  };
+}
+
+function mapScreenshot(s: RawScreenshot): OrderScreenshot {
+  return { id: s.id, storagePath: s.storage_path, createdAt: s.created_at };
+}
+
+function mapHistoryEntry(h: RawHistoryEntry): OrderHistoryEntry {
+  return {
+    fromStatus: h.from_status,
+    toStatus: h.to_status,
+    actorId: h.actor_id,
+    reason: h.reason,
+    createdAt: h.created_at,
+  };
+}
+
+export async function getOrderDetail(orderId: string, actorId: string): Promise<OrderDetail> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin
+    .schema("api")
+    .rpc("get_order_detail", { p_order_id: orderId, p_actor: actorId });
+  if (error) throwOrderError(error);
+  const raw = data as RawOrderDetail;
+  return {
+    order: mapOrderRecord(raw.order),
+    items: (raw.items ?? []).map(mapDetailItem),
+    payment: raw.payment ? mapPaymentDetail(raw.payment) : null,
+    screenshots: (raw.screenshots ?? []).map(mapScreenshot),
+    history: (raw.history ?? []).map(mapHistoryEntry),
+  };
+}
+
+// ── Transitions ──────────────────────────────────────────────────────────────
+
+interface RawTransitionResult {
+  order_id: string;
+  order_no: string;
+  status: OrderStatus;
+  version: number;
+  noop: boolean;
+}
+
+function mapTransitionResult(r: RawTransitionResult): OrderTransitionResult {
+  return {
+    orderId: r.order_id,
+    orderNo: r.order_no,
+    status: r.status,
+    version: r.version,
+    noop: r.noop ?? false,
+  };
+}
+
+export interface TransitionArgs {
+  orderId: string;
+  toStatus: OrderStatus;
+  actorId: string;
+  reason?: string;
+  expectedVersion?: number;
+  restock?: boolean;
+}
+
+export async function transitionOrder(args: TransitionArgs): Promise<OrderTransitionResult> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin.schema("api").rpc("transition_order", {
+    p_order_id: args.orderId,
+    p_to_status: args.toStatus,
+    p_actor: args.actorId,
+    p_reason: args.reason ?? null,
+    p_expected_version: args.expectedVersion ?? null,
+    p_restock: args.restock ?? false,
+  });
+  if (error) throwOrderError(error);
+  return mapTransitionResult(data as RawTransitionResult);
+}
+
+export async function verifyPayment(
+  orderId: string,
+  actorId: string,
+): Promise<OrderTransitionResult> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin
+    .schema("api")
+    .rpc("verify_payment", { p_order_id: orderId, p_actor: actorId });
+  if (error) throwOrderError(error);
+  return mapTransitionResult(data as RawTransitionResult);
+}
+
+export async function rejectPayment(
+  orderId: string,
+  reason: string,
+  actorId: string,
+): Promise<OrderTransitionResult> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin
+    .schema("api")
+    .rpc("reject_payment", { p_order_id: orderId, p_reason: reason, p_actor: actorId });
+  if (error) throwOrderError(error);
+  return mapTransitionResult(data as RawTransitionResult);
+}
+
+export async function confirmCod(orderId: string, actorId: string): Promise<OrderTransitionResult> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin
+    .schema("api")
+    .rpc("confirm_cod", { p_order_id: orderId, p_actor: actorId });
+  if (error) throwOrderError(error);
+  return mapTransitionResult(data as RawTransitionResult);
+}
+
+export async function cancelOrder(
+  orderId: string,
+  actorId: string,
+  reason?: string,
+): Promise<OrderTransitionResult> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin
+    .schema("api")
+    .rpc("cancel_order", { p_order_id: orderId, p_actor: actorId, p_reason: reason ?? null });
+  if (error) throwOrderError(error);
+  return mapTransitionResult(data as RawTransitionResult);
+}
+
+export async function returnOrder(
+  orderId: string,
+  actorId: string,
+  restock: boolean,
+  reason?: string,
+): Promise<OrderTransitionResult> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin.schema("api").rpc("return_order", {
+    p_order_id: orderId,
+    p_actor: actorId,
+    p_restock: restock,
+    p_reason: reason ?? null,
+  });
+  if (error) throwOrderError(error);
+  return mapTransitionResult(data as RawTransitionResult);
+}
