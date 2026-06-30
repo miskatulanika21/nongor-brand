@@ -328,6 +328,57 @@ BEGIN
     IF got <> 'product_not_purchasable' THEN RAISE EXCEPTION 'FAIL: badprod=%', got; END IF; END;
 END $$;
 
+-- §P3-custom — custom (made-to-order) server pricing + configurable hold window
+INSERT INTO public.products (code, slug, name, category_id, price, sale_price, stock, custom_size, custom_size_charge)
+  SELECT 'o-cust', 'o-cust', 'Custom Kurti', id, 2000, 1800, 10, true, 300
+  FROM public.product_categories WHERE slug = 'o-cat';
+
+DO $$
+DECLARE
+  q jsonb; r jsonb; cline jsonb; got text; pid uuid; av_before int; av_after int; hrs numeric;
+  cust jsonb := jsonb_build_object('name','Cathy','phone','01700000000','district','Dhaka','address','12 Rd');
+BEGIN
+  SELECT id INTO pid FROM public.products WHERE code = 'o-cust';
+
+  -- quote: a 'Custom' line is priced base(1800) + custom_size_charge(300) = 2100,
+  -- flagged custom, and made-to-order (available is null, not stock-bound).
+  q := api.quote_order('[{"code":"o-cust","size":"Custom","qty":1}]'::jsonb, 'dhaka');
+  cline := (q->'lines')->0;
+  IF (cline->>'unit_price')::int <> 2100 OR (cline->>'line_total')::int <> 2100
+     OR NOT (cline->>'custom')::bool OR (cline->>'available') IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL: custom quote line %', cline; END IF;
+  IF (q->>'subtotal')::int <> 2100 THEN RAISE EXCEPTION 'FAIL: custom subtotal %', q; END IF;
+
+  -- place a custom order: succeeds (no out_of_stock), records unit=2100, creates
+  -- NO reservation, and never touches ready-size stock.
+  av_before := private.available_qty(pid, NULL);
+  r := api.place_order('[{"code":"o-cust","size":"Custom","qty":2}]'::jsonb, cust, 'dhaka', 'bkash', 'p3-cust-1', NULL, NULL);
+  IF (r->>'status') <> 'pending_payment' OR (r->>'total')::int <> 4200 THEN
+    RAISE EXCEPTION 'FAIL: custom place %', r; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.order_items WHERE order_id=(r->>'order_id')::uuid
+                 AND variant_size='Custom' AND unit_price=2100 AND qty=2 AND line_total=4200) THEN
+    RAISE EXCEPTION 'FAIL: custom order_item'; END IF;
+  IF EXISTS (SELECT 1 FROM public.inventory_reservations WHERE order_id=(r->>'order_id')::uuid) THEN
+    RAISE EXCEPTION 'FAIL: custom line must not reserve ready stock'; END IF;
+  av_after := private.available_qty(pid, NULL);
+  IF av_after <> av_before THEN
+    RAISE EXCEPTION 'FAIL: custom order moved ready stock % -> %', av_before, av_after; END IF;
+
+  -- guard: 'Custom' on a product without custom_size is not purchasable.
+  BEGIN PERFORM api.place_order('[{"code":"o-ord","size":"Custom","qty":1}]'::jsonb, cust, 'dhaka', 'cod', 'p3-badcust', NULL, NULL);
+        RAISE EXCEPTION 'FAIL: custom on non-custom product accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got=MESSAGE_TEXT;
+    IF got <> 'product_not_purchasable' THEN RAISE EXCEPTION 'FAIL: badcust=%', got; END IF; END;
+
+  -- GAP-07: the reservation/hold window honours site_settings.order_hold_hours.
+  UPDATE public.site_settings SET order_hold_hours = 48 WHERE id = 1;
+  r := api.place_order('[{"code":"o-ord","qty":1}]'::jsonb, cust, 'dhaka', 'cod', 'p3-hold-48', NULL, NULL);
+  SELECT round(extract(epoch FROM (reservation_expires_at - now())) / 3600) INTO hrs
+    FROM public.orders WHERE id = (r->>'order_id')::uuid;
+  IF hrs <> 48 THEN RAISE EXCEPTION 'FAIL: order_hold_hours ignored (got % h, want 48)', hrs; END IF;
+  UPDATE public.site_settings SET order_hold_hours = 24 WHERE id = 1;
+END $$;
+
 -- grants: quote_order is public; place_order is service-role only
 DO $$
 BEGIN

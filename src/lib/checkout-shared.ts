@@ -71,7 +71,10 @@ export interface QuoteLine {
   qty: number;
   unit_price?: number;
   line_total?: number;
-  available?: number;
+  /** Ready-size availability. `null` for a made-to-order custom line (unlimited). */
+  available?: number | null;
+  /** True when this is a made-to-measure line (size = "Custom"); not stock-bound. */
+  custom?: boolean;
   visible: boolean;
   found: boolean;
 }

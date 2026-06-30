@@ -127,7 +127,10 @@ function Cart() {
             warnings.set(key, "This item is no longer available.");
           } else if (!line.visible) {
             warnings.set(key, "This item has been removed from the store.");
-          } else if (line.available !== undefined && line.available < line.qty) {
+          } else if (line.custom || line.available == null) {
+            // Made-to-order (custom) lines carry available = null: unlimited, no
+            // ready-stock gate, so they never trigger a stock warning.
+          } else if (line.available < line.qty) {
             if (line.available === 0) {
               warnings.set(key, "Out of stock.");
             } else {
