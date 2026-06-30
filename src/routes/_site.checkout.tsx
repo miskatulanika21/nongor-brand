@@ -57,6 +57,8 @@ import {
   type QuoteResult,
 } from "@/lib/checkout-shared";
 import { quoteOrderFn, placeOrderFn } from "@/lib/checkout.api";
+import { submitPaymentEvidenceFn } from "@/lib/evidence.api";
+import { fileToEvidencePayload } from "@/lib/evidence-shared";
 import type { PublicSettings } from "@/lib/settings.schema";
 
 export const Route = createFileRoute("/_site/checkout")({
@@ -365,19 +367,37 @@ function Checkout() {
       });
 
       if (result.success) {
-        // Stash TrxID locally for future payment-evidence submission (P4)
+        // Submit payment evidence for manual methods. This replaces the old
+        // localStorage TrxID stash: the screenshot is uploaded to the private
+        // evidence bucket and the order flips to payment_submitted server-side.
+        // A failure here never undoes the placed order — we warn and continue.
+        let finalStatus = result.order.status;
         if (isManual && trxId.trim()) {
           try {
-            localStorage.setItem(
-              `nongorr_trxid_${result.order.order_id}`,
-              JSON.stringify({
+            const shot = screenshot ? await fileToEvidencePayload(screenshot.file) : null;
+            const ev = await submitPaymentEvidenceFn({
+              data: {
+                orderId: result.order.order_id,
                 trxId: trxId.trim().toUpperCase(),
-                method: selectedMethod,
-                screenshotName: screenshot?.file.name ?? null,
-              }),
-            );
+                senderNumber: phoneValue || undefined,
+                guestToken: result.order.guest_token ?? undefined,
+                screenshot: shot ?? undefined,
+              },
+            });
+            if (ev.success) {
+              finalStatus = ev.status;
+              if (ev.duplicateWarning) {
+                toast.warning(
+                  "We noticed this TrxID was used before — our team will verify it manually.",
+                );
+              }
+            } else {
+              toast.warning(
+                "Order placed, but we couldn't record your payment proof. You can resend it from your order page.",
+              );
+            }
           } catch {
-            /* localStorage full — non-critical */
+            toast.warning("Order placed, but we couldn't record your payment proof.");
           }
         }
 
@@ -388,7 +408,7 @@ function Checkout() {
           search: {
             order_id: result.order.order_id,
             order_no: result.order.order_no,
-            status: result.order.status,
+            status: finalStatus,
             total: result.order.total,
           },
         });
