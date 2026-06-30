@@ -82,6 +82,14 @@ export interface QuoteResult {
   discount: number;
   shipping_fee: number;
   total: number;
+  /**
+   * Price-drift fingerprint (`md5(canonical_lines || '#' || subtotal)`), carried
+   * from quote → place. This is NOT an authentication token: prices are public,
+   * so anyone can recompute it. The server re-prices and re-validates everything
+   * under the product locks regardless of whether this matches; the token only
+   * lets place_order detect that prices moved between quote and submit and ask
+   * the customer to re-confirm (`price_changed`). md5 is sufficient for that.
+   */
   quote_token: string;
   zone: DeliveryZone;
 }

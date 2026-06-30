@@ -3,6 +3,8 @@
 // This module is the single source of truth for delivery configuration and
 // Bangladesh location data.
 
+import { isDemoCommerceEnabled } from "@/lib/checkout-mode";
+
 export type DeliveryZone = "dhaka" | "major" | "outside";
 
 export interface DeliveryZoneOption {
@@ -37,6 +39,13 @@ export function zoneFee(zone: DeliveryZone): number {
   return DELIVERY_ZONES.find((z) => z.value === zone)?.fee ?? 0;
 }
 
+/**
+ * UI ESTIMATE ONLY — do not use for the authoritative total. These constants are
+ * a client-side preview; the live fees/threshold live in site_settings and are
+ * computed server-side by private.compute_shipping (api.quote_order). Always
+ * prefer the server quote's shipping_fee/total; this exists only for a pre-quote
+ * preview and an offline fallback.
+ */
 export function computeShipping(zone: DeliveryZone, subtotal: number): number {
   if (subtotal <= 0) return 0;
   if (subtotal >= FREE_DELIVERY_THRESHOLD) return 0;
@@ -239,6 +248,11 @@ export const MOCK_COUPONS: Coupon[] = [
 
 export function findCoupon(code: string | null): Coupon | null {
   if (!code) return null;
+  // Coupons are server-validated only from Stage 3 Pass 5. Until then these are
+  // demo-only mocks: api.place_order forces discount = 0, so honouring a mock
+  // code in production would show a phantom discount the order never receives.
+  // Gate behind the demo flag so prod never resolves one. See checkout-mode.ts.
+  if (!isDemoCommerceEnabled()) return null;
   return MOCK_COUPONS.find((c) => c.code === code.trim().toUpperCase()) ?? null;
 }
 

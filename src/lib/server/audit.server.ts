@@ -46,7 +46,7 @@ export type AuditAction =
   | "staff.deactivated"
   | "staff.role_changed"
   | "authz.denied" // permission denial for a sensitive action
-  | "settings.changed"
+  | "settings.updated" // canonical settings change (written by api.save_settings, SQL-side)
   | "integration.changed"
   | "owner.action"
   // catalog admin writes (Stage 2)
@@ -60,7 +60,13 @@ export type AuditAction =
   | "category.reordered"
   | "category.deleted"
   | "inventory.adjusted"
-  | "inventory.bulk_adjusted";
+  | "inventory.bulk_adjusted"
+  // order lifecycle (Stage 3) — these are written SQL-side by the api.* RPCs
+  // (place_order / transition_order / submit_payment_evidence), not via writeAudit;
+  // listed here so the union stays the documented contract for the action column.
+  | "order.placed"
+  | "order.transition"
+  | "payment.evidence_submitted";
 
 export interface AuditEntry {
   action: AuditAction;
