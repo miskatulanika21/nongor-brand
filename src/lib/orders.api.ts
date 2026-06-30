@@ -19,6 +19,8 @@ import {
   rejectPaymentSchema,
   cancelOrderSchema,
   returnOrderSchema,
+  listMyOrdersSchema,
+  trackOrderSchema,
 } from "@/lib/orders-shared";
 
 /** Map any thrown repo error to a safe, granular message via the stable code. */
@@ -176,5 +178,92 @@ export const returnOrderFn = createServerFn({ method: "POST" })
       return { success: true as const, result };
     } catch (e) {
       return { success: false as const, error: await messageFromOrderError(e) };
+    }
+  });
+
+// ── Customer-facing reads ────────────────────────────────────────────────────
+
+export const listMyOrdersFn = createServerFn({ method: "GET" })
+  .validator(listMyOrdersSchema)
+  .handler(async ({ data }) => {
+    const { setNoStore } = await import("@/lib/server/admin-guard.server");
+    await setNoStore();
+    const { createServerSupabaseClient } = await import("@/lib/server/supabase.server");
+    const { getAuthenticatedIdentity } = await import("@/lib/server/identity.server");
+
+    const supabase = createServerSupabaseClient();
+    const idn = await getAuthenticatedIdentity({ strict: false, client: supabase });
+    if (!idn.ok) {
+      return {
+        success: false as const,
+        error: "Please sign in to view your orders.",
+        orders: [],
+        total: 0,
+      };
+    }
+
+    const { listMyOrders } = await import("@/lib/server/orders.server");
+    try {
+      const res = await listMyOrders(idn.identity.userId, data.limit, data.offset);
+      return { success: true as const, orders: res.orders, total: res.total };
+    } catch {
+      return {
+        success: false as const,
+        error: "Could not load your orders.",
+        orders: [],
+        total: 0,
+      };
+    }
+  });
+
+export const getMyOrderFn = createServerFn({ method: "GET" })
+  .validator(orderIdSchema)
+  .handler(async ({ data }) => {
+    const { setNoStore } = await import("@/lib/server/admin-guard.server");
+    await setNoStore();
+    const { createServerSupabaseClient } = await import("@/lib/server/supabase.server");
+    const { getAuthenticatedIdentity } = await import("@/lib/server/identity.server");
+
+    const supabase = createServerSupabaseClient();
+    const idn = await getAuthenticatedIdentity({ strict: false, client: supabase });
+    if (!idn.ok) {
+      return { success: false as const, error: "Please sign in to view this order.", order: null };
+    }
+
+    const { getMyOrder } = await import("@/lib/server/orders.server");
+    try {
+      const order = await getMyOrder(data.orderId, idn.identity.userId);
+      return { success: true as const, order };
+    } catch (e) {
+      return { success: false as const, error: await messageFromOrderError(e), order: null };
+    }
+  });
+
+export const trackOrderFn = createServerFn({ method: "POST" })
+  .validator(trackOrderSchema)
+  .handler(async ({ data }) => {
+    const { getPublicSupabaseEnv } = await import("@/lib/server/env.server");
+    const { checkCsrfOrigin, getClientIp } = await import("@/lib/server/security.server");
+    const { checkIndependentRateLimit, rateLimitMessage } =
+      await import("@/lib/server/rate-limit.server");
+
+    const env = getPublicSupabaseEnv();
+    if (!checkCsrfOrigin(env.siteUrl)) {
+      return { success: false as const, error: "Invalid request origin.", result: null };
+    }
+    const rl = await checkIndependentRateLimit("trackOrder", { ip: getClientIp() });
+    if (!rl.allowed) return { success: false as const, error: rateLimitMessage(), result: null };
+
+    const { trackOrder } = await import("@/lib/server/orders.server");
+    try {
+      const result = await trackOrder(data.orderNo, data.token);
+      return { success: true as const, result };
+    } catch {
+      // Any failure (wrong number/token) collapses to one non-oracular message.
+      return {
+        success: false as const,
+        error: "We couldn't find an order matching those details.",
+        result: null,
+      };
     }
   });

@@ -251,3 +251,71 @@ describe("orders API + server module wiring", () => {
     expect(orderErrorMessage(e.code)).toContain("updated by someone else");
   });
 });
+
+describe("customer progress timeline", () => {
+  it("maps every status to a step or an exception", async () => {
+    const { customerProgress, CUSTOMER_STEPS } = await import("@/lib/orders-shared");
+    for (const status of ORDER_STATUSES) {
+      const p = customerProgress(status);
+      if (p.exception) {
+        expect(p.stepIndex).toBe(-1);
+      } else {
+        expect(p.stepIndex).toBeGreaterThanOrEqual(0);
+        expect(p.stepIndex).toBeLessThan(CUSTOMER_STEPS.length);
+      }
+    }
+  });
+
+  it("advances monotonically across the happy path", async () => {
+    const { customerProgress } = await import("@/lib/orders-shared");
+    const order: OrderStatus[] = [
+      "pending_payment",
+      "payment_submitted",
+      "confirmed",
+      "processing",
+      "shipped",
+      "delivered",
+    ];
+    const idx = order.map((s) => customerProgress(s).stepIndex);
+    expect(idx).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+
+  it("flags off-path states as exceptions", async () => {
+    const { customerProgress } = await import("@/lib/orders-shared");
+    for (const s of [
+      "payment_rejected",
+      "cancelled",
+      "expired",
+      "returned",
+      "refund_done",
+    ] as const) {
+      expect(customerProgress(s).exception).toBe(true);
+    }
+  });
+});
+
+describe("customer read validators + wiring", () => {
+  it("listMyOrdersSchema + trackOrderSchema validate bounds", async () => {
+    const { listMyOrdersSchema, trackOrderSchema } = await import("@/lib/orders-shared");
+    expect(listMyOrdersSchema.safeParse({}).success).toBe(true);
+    expect(listMyOrdersSchema.safeParse({ limit: 99 }).success).toBe(false);
+    expect(trackOrderSchema.safeParse({ orderNo: "NGR-2026-000123", token: "tok" }).success).toBe(
+      true,
+    );
+    expect(trackOrderSchema.safeParse({ orderNo: "", token: "tok" }).success).toBe(false);
+    expect(trackOrderSchema.safeParse({ orderNo: "x", token: "" }).success).toBe(false);
+  });
+
+  it("orders.api exposes the customer read fns", async () => {
+    const api = await import("@/lib/orders.api");
+    for (const fn of ["listMyOrdersFn", "getMyOrderFn", "trackOrderFn"]) {
+      expect(typeof (api as Record<string, unknown>)[fn]).toBe("function");
+    }
+  });
+
+  it("defines a trackOrder rate-limit policy", async () => {
+    const { RATE_LIMITS } = await import("@/lib/server/rate-limit.server");
+    expect(RATE_LIMITS.trackOrder).toBeDefined();
+    expect(RATE_LIMITS.trackOrder.limit).toBeGreaterThan(0);
+  });
+});

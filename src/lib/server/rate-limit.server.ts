@@ -60,6 +60,8 @@ export const RATE_LIMITS = {
   placeOrder: { limit: 10, windowSec: 60 * 10 },
   /** Payment-evidence submission (TrxID + screenshot upload) — strict. */
   paymentEvidence: { limit: 8, windowSec: 60 * 10 },
+  /** Guest order tracking — a public read keyed by order-no + token; per-IP. */
+  trackOrder: { limit: 30, windowSec: 60 * 5 },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 export type RateLimitAction = keyof typeof RATE_LIMITS;
