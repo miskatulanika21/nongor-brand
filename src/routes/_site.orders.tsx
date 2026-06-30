@@ -1,13 +1,10 @@
-import { createFileRoute, Link, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
-import { STATUS_TONE } from "@/lib/orders";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
+import { listMyOrdersFn } from "@/lib/orders.api";
+import { CustomerStatusBadge, fmtDate } from "@/components/admin/order-status";
 import { formatBDT, BRAND } from "@/lib/brand";
-import { useStore } from "@/lib/store";
-
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -16,17 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { EmptyState } from "@/components/states";
-import { cn } from "@/lib/utils";
-import { Search, Truck, MessageCircle, RotateCcw, Eye, PackageSearch, Loader2 } from "lucide-react";
-import { toast } from "sonner";
-import {
-  readStoredOrders,
-  buildOrderList,
-  normalizeBDPhone,
-  reorderItems,
-  orderScope,
-  type UIOrder,
-} from "@/lib/order-ui";
+import { Eye, MessageCircle, PackageSearch, Search } from "lucide-react";
 
 export const Route = createFileRoute("/_site/orders")({
   head: () => ({
@@ -34,111 +21,87 @@ export const Route = createFileRoute("/_site/orders")({
       { title: "My Orders · Nongorr" },
       {
         name: "description",
-        content:
-          "View your Nongorr order history saved in this demo or on this device, track deliveries and check payment status.",
+        content: "View your Nongorr order history, track deliveries and check payment status.",
       },
       { name: "robots", content: "noindex,nofollow" },
     ],
     links: [{ rel: "canonical", href: "/orders" }],
   }),
+  // Identity-gated server read. When not signed in, listMyOrdersFn returns
+  // success:false → we render the sign-in prompt (guests track single orders by
+  // token from /track instead, since the DB has no guest order list).
+  loader: async () => {
+    const res = await listMyOrdersFn({ data: { limit: 50 } });
+    return res.success
+      ? { orders: res.orders, total: res.total, signedIn: true }
+      : { orders: [], total: 0, signedIn: false };
+  },
   component: Orders,
 });
 
-type DateFilter = "all" | "7" | "30";
-
 function Orders() {
-  const navigate = useNavigate();
-  const { addToCart } = useStore();
-  const { sessionSummary } = useRouteContext({ from: "/_site" }) as {
-    sessionSummary: { userId: string | null };
-  };
-  const scope = orderScope(sessionSummary.userId);
-  const [hydrated, setHydrated] = useState(false);
-  const [device, setDevice] = useState<UIOrder[]>([]);
+  const { orders, signedIn } = Route.useLoaderData();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [dateFilter, setDateFilter] = useState<DateFilter>("all");
-  const [reordering, setReordering] = useState<string | null>(null);
 
-  useEffect(() => {
-    setDevice(readStoredOrders(scope));
-    setHydrated(true);
-  }, [scope]);
-
-  const orders = useMemo(() => buildOrderList(device), [device]);
-
-  const statuses = useMemo(() => {
-    const set = new Set(orders.map((o) => o.status));
-    return Array.from(set);
-  }, [orders]);
+  const statuses = useMemo(() => Array.from(new Set(orders.map((o) => o.status))), [orders]);
 
   const filtered = useMemo(() => {
-    const now = Date.now();
     const q = search.trim().toLowerCase();
-    const qPhone = normalizeBDPhone(search);
     return orders.filter((o) => {
       if (statusFilter !== "all" && o.status !== statusFilter) return false;
-
-      if (dateFilter !== "all") {
-        const t = Date.parse(o.date);
-        if (!Number.isFinite(t)) return false;
-        const days = Number(dateFilter);
-        if (now - t > days * 24 * 60 * 60 * 1000) return false;
-      }
-
       if (q) {
-        const matchId = o.id.toLowerCase().includes(q);
-        const matchPhone = qPhone.length >= 4 && normalizeBDPhone(o.phone).includes(qPhone);
-        const matchProduct = o.items.some((i) => i.name.toLowerCase().includes(q));
-        if (!matchId && !matchPhone && !matchProduct) return false;
+        const matchNo = o.orderNo.toLowerCase().includes(q);
+        const matchItem = (o.firstItem?.name ?? "").toLowerCase().includes(q);
+        if (!matchNo && !matchItem) return false;
       }
       return true;
     });
-  }, [orders, search, statusFilter, dateFilter]);
+  }, [orders, search, statusFilter]);
 
-  const clearFilters = () => {
-    setSearch("");
-    setStatusFilter("all");
-    setDateFilter("all");
-  };
-
-  const handleReorder = (order: UIOrder) => {
-    if (reordering) return;
-    setReordering(order.id);
-    const { added, skipped } = reorderItems(order, addToCart);
-    setReordering(null);
-    if (added === 0) {
-      toast.error("None of these items could be reordered right now.");
-      return;
-    }
-    const parts = [`${added} item${added === 1 ? "" : "s"} added using current prices.`];
-    if (skipped > 0) parts.push(`${skipped} unavailable item${skipped === 1 ? "" : "s"} skipped.`);
-    toast.success(parts.join(" "), {
-      action: { label: "View Cart", onClick: () => navigate({ to: "/cart" }) },
-    });
-  };
+  if (!signedIn) {
+    return (
+      <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6">
+        <h1 className="mb-2 font-display text-4xl text-foreground">My Orders</h1>
+        <EmptyState
+          icon={<PackageSearch className="h-6 w-6" />}
+          title="Sign in to see your orders"
+          description="Your order history is tied to your account. Placed an order as a guest? Track it with your order number and tracking code."
+          action={
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button asChild>
+                <Link to="/login" search={{ next: "/orders" }}>
+                  Sign in
+                </Link>
+              </Button>
+              <Button variant="outline" asChild>
+                <Link to="/track">Track an order</Link>
+              </Button>
+            </div>
+          }
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6">
       <h1 className="mb-2 font-display text-4xl text-foreground">My Orders</h1>
-      <p className="mb-8 text-sm text-muted-foreground">
-        Showing orders saved in this demo or on this device.
-      </p>
+      <p className="mb-8 text-sm text-muted-foreground">Your recent orders with Nongorr.</p>
 
-      {/* Filters */}
-      <div className="mb-8 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+      <div className="mb-8 grid gap-3 sm:grid-cols-[1fr_auto]">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by order ID, phone or product"
+            placeholder="Search by order number or product"
             className="bg-card pl-9"
             aria-label="Search orders"
           />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full bg-card sm:w-44" aria-label="Filter by status">
+          <SelectTrigger className="w-full bg-card sm:w-52" aria-label="Filter by status">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
@@ -150,41 +113,21 @@ function Orders() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={dateFilter} onValueChange={(v) => setDateFilter(v as DateFilter)}>
-          <SelectTrigger className="w-full bg-card sm:w-40" aria-label="Filter by date">
-            <SelectValue placeholder="Date" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All dates</SelectItem>
-            <SelectItem value="7">Last 7 days</SelectItem>
-            <SelectItem value="30">Last 30 days</SelectItem>
-          </SelectContent>
-        </Select>
       </div>
 
-      {!hydrated ? (
-        <div className="space-y-4">
-          {[0, 1, 2].map((i) => (
-            <Skeleton key={i} className="h-40 w-full rounded-xl" />
-          ))}
-        </div>
-      ) : filtered.length === 0 ? (
+      {filtered.length === 0 ? (
         <EmptyState
           icon={<PackageSearch className="h-6 w-6" />}
-          title="No orders match your filters"
-          description="Try clearing the filters, tracking an order, or continue shopping."
+          title={orders.length === 0 ? "No orders yet" : "No orders match your filters"}
+          description={
+            orders.length === 0
+              ? "When you place an order it will appear here."
+              : "Try clearing the search or status filter."
+          }
           action={
-            <div className="flex flex-wrap justify-center gap-2">
-              <Button variant="outline" onClick={clearFilters}>
-                Clear Filters
-              </Button>
-              <Button variant="outline" asChild>
-                <Link to="/track">Track Order</Link>
-              </Button>
-              <Button asChild>
-                <Link to="/shop">Shop</Link>
-              </Button>
-            </div>
+            <Button asChild>
+              <Link to="/shop">Shop</Link>
+            </Button>
           }
         />
       ) : (
@@ -193,72 +136,51 @@ function Orders() {
             <div key={o.id} className="rounded-xl border border-border bg-card p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <p className="font-display text-lg text-foreground">{o.id}</p>
-                    {o.source === "demo" ? (
-                      <Badge variant="outline" className="border-border text-muted-foreground">
-                        Demo order
-                      </Badge>
-                    ) : (
-                      <Badge
-                        variant="outline"
-                        className="border-success/30 bg-success/10 text-success"
-                      >
-                        Saved on this device
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground">Placed on {o.date || "—"}</p>
+                  <p className="font-display text-lg text-foreground">{o.orderNo}</p>
+                  <p className="text-xs text-muted-foreground">Placed on {fmtDate(o.placedAt)}</p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline" className="border-border">
-                    Payment {o.paymentStatus}
-                  </Badge>
-                  <Badge variant="outline" className={cn(STATUS_TONE[o.status] ?? "")}>
-                    {o.status}
-                  </Badge>
-                </div>
+                <CustomerStatusBadge status={o.status} />
               </div>
 
-              <div className="my-4 flex gap-2 overflow-x-auto">
-                {o.items.map((it, i) => (
-                  <img
-                    key={i}
-                    src={it.image}
-                    alt={it.name}
-                    loading="lazy"
-                    className="h-16 w-14 shrink-0 rounded-lg object-cover"
-                  />
-                ))}
-              </div>
+              {o.firstItem && (
+                <div className="my-4 flex items-center gap-3">
+                  {o.firstItem.image ? (
+                    <img
+                      src={o.firstItem.image}
+                      alt={o.firstItem.name}
+                      loading="lazy"
+                      className="h-16 w-14 shrink-0 rounded-lg object-cover"
+                    />
+                  ) : (
+                    <div className="grid h-16 w-14 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+                      <PackageSearch className="h-5 w-5" />
+                    </div>
+                  )}
+                  <p className="line-clamp-2 text-sm text-foreground">
+                    {o.firstItem.name}
+                    {o.itemCount > 1 && (
+                      <span className="text-muted-foreground"> +{o.itemCount - 1} more</span>
+                    )}
+                  </p>
+                </div>
+              )}
 
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-muted-foreground">
-                  {o.items.length} item(s) ·{" "}
+                  {o.itemCount} item(s) ·{" "}
                   <span className="font-semibold text-primary">{formatBDT(o.total)}</span>
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" size="sm" asChild>
-                    <Link to="/track" search={{ id: o.id }}>
-                      <Truck className="h-4 w-4" /> Track
-                    </Link>
-                  </Button>
                   <Button variant="outline" size="sm" asChild>
                     <Link to="/orders/$id" params={{ id: o.id }}>
                       <Eye className="h-4 w-4" /> Details
                     </Link>
                   </Button>
-                  <Button size="sm" onClick={() => handleReorder(o)} disabled={reordering === o.id}>
-                    {reordering === o.id ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <RotateCcw className="h-4 w-4" />
-                    )}{" "}
-                    Reorder
-                  </Button>
                   <Button variant="ghost" size="sm" asChild>
                     <a
-                      href={`https://wa.me/${BRAND.whatsapp}?text=${encodeURIComponent(`Hi Nongorr! I need help with my order ${o.id}.`)}`}
+                      href={`https://wa.me/${BRAND.whatsapp}?text=${encodeURIComponent(
+                        `Hi Nongorr! I need help with my order ${o.orderNo}.`,
+                      )}`}
                       target="_blank"
                       rel="noreferrer"
                     >
