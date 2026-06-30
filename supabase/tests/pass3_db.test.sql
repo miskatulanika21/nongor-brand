@@ -253,6 +253,17 @@ BEGIN
     WHERE id = o2;
   n := api.expire_reservations();
   IF n <> 0 THEN RAISE EXCEPTION 'FAIL: payment_submitted auto-expired (n=%)', n; END IF;
+
+  -- BUG-03: an ABANDONED payment_rejected order past its TTL IS reclaimed
+  -- (status → expired, hold released), unlike payment_submitted above.
+  UPDATE public.orders SET status = 'payment_rejected', reservation_expires_at = now() - interval '1 hour'
+    WHERE id = o2;
+  n := api.expire_reservations();
+  IF n <> 1 THEN RAISE EXCEPTION 'FAIL: payment_rejected not swept (n=%)', n; END IF;
+  IF (SELECT status FROM public.orders WHERE id = o2) <> 'expired' THEN
+    RAISE EXCEPTION 'FAIL: rejected order not expired'; END IF;
+  IF (SELECT status FROM public.inventory_reservations WHERE order_id = o2) <> 'released' THEN
+    RAISE EXCEPTION 'FAIL: rejected reservation not released'; END IF;
 END $$;
 
 -- ============================================================
