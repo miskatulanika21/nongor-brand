@@ -27,8 +27,15 @@ import {
   type OrderStatus,
   type PaymentStatus,
   type OrderTransitionResult,
+  type MyOrdersResult,
+  type MyOrderListItem,
+  type MyOrderDetail,
+  type MyOrderLine,
+  type MyOrderHistoryEntry,
+  type TrackOrderResult,
 } from "@/lib/orders-shared";
 import type { PaymentMethod } from "@/lib/checkout-shared";
+import { createHash } from "node:crypto";
 
 export class OrderError extends Error {
   constructor(public readonly code: string) {
@@ -419,4 +426,181 @@ export async function returnOrder(
   });
   if (error) throwOrderError(error);
   return mapTransitionResult(data as RawTransitionResult);
+}
+
+// ── Customer-facing reads (owner-scoped / guest-token) ───────────────────────
+
+interface RawMyListItem {
+  id: string;
+  order_no: string;
+  status: OrderStatus;
+  total: number;
+  payment_method: PaymentMethod;
+  placed_at: string;
+  item_count: number;
+  first_item: { name: string; image: string | null } | null;
+}
+
+function mapMyListItem(r: RawMyListItem): MyOrderListItem {
+  return {
+    id: r.id,
+    orderNo: r.order_no,
+    status: r.status,
+    total: r.total,
+    paymentMethod: r.payment_method,
+    placedAt: r.placed_at,
+    itemCount: r.item_count,
+    firstItem: r.first_item,
+  };
+}
+
+/** The authenticated user's own orders (api.list_my_orders). */
+export async function listMyOrders(
+  actorId: string,
+  limit = 20,
+  offset = 0,
+): Promise<MyOrdersResult> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin
+    .schema("api")
+    .rpc("list_my_orders", { p_actor: actorId, p_limit: limit, p_offset: offset });
+  if (error) throwOrderError(error);
+  const raw = (data ?? { orders: [], total: 0 }) as {
+    orders: RawMyListItem[] | null;
+    total: number;
+  };
+  return { orders: (raw.orders ?? []).map(mapMyListItem), total: raw.total ?? 0 };
+}
+
+interface RawMyLine {
+  name: string;
+  image: string | null;
+  unit_price: number;
+  qty: number;
+  line_total: number;
+  variant_size: string | null;
+}
+
+function mapMyLine(l: RawMyLine): MyOrderLine {
+  return {
+    name: l.name,
+    image: l.image,
+    unitPrice: l.unit_price,
+    qty: l.qty,
+    lineTotal: l.line_total,
+    variantSize: l.variant_size,
+  };
+}
+
+interface RawMyHistory {
+  to_status: OrderStatus;
+  created_at: string;
+}
+
+function mapMyHistory(h: RawMyHistory): MyOrderHistoryEntry {
+  return { toStatus: h.to_status, createdAt: h.created_at };
+}
+
+interface RawMyOrderDetail {
+  order: {
+    id: string;
+    order_no: string;
+    status: OrderStatus;
+    subtotal: number;
+    discount: number;
+    shipping_fee: number;
+    total: number;
+    payment_method: PaymentMethod;
+    placed_at: string;
+    ship_district: string;
+    ship_zone: string;
+    ship_address: string;
+    ship_area: string | null;
+  };
+  items: RawMyLine[] | null;
+  payment: { method: PaymentMethod; status: PaymentStatus; trx_id: string | null } | null;
+  history: RawMyHistory[] | null;
+}
+
+/** Owner-scoped detail for one of the user's orders (api.get_my_order). */
+export async function getMyOrder(orderId: string, actorId: string): Promise<MyOrderDetail> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin
+    .schema("api")
+    .rpc("get_my_order", { p_order_id: orderId, p_actor: actorId });
+  if (error) throwOrderError(error);
+  const raw = data as RawMyOrderDetail;
+  return {
+    order: {
+      id: raw.order.id,
+      orderNo: raw.order.order_no,
+      status: raw.order.status,
+      subtotal: raw.order.subtotal,
+      discount: raw.order.discount,
+      shippingFee: raw.order.shipping_fee,
+      total: raw.order.total,
+      paymentMethod: raw.order.payment_method,
+      placedAt: raw.order.placed_at,
+      shipDistrict: raw.order.ship_district,
+      shipZone: raw.order.ship_zone,
+      shipAddress: raw.order.ship_address,
+      shipArea: raw.order.ship_area,
+    },
+    items: (raw.items ?? []).map(mapMyLine),
+    payment: raw.payment
+      ? { method: raw.payment.method, status: raw.payment.status, trxId: raw.payment.trx_id }
+      : null,
+    history: (raw.history ?? []).map(mapMyHistory),
+  };
+}
+
+interface RawTrackItem {
+  name: string;
+  image: string | null;
+  qty: number;
+  unit_price: number;
+  variant_size: string | null;
+}
+
+interface RawTrackResult {
+  order: {
+    order_no: string;
+    status: OrderStatus;
+    total: number;
+    payment_method: PaymentMethod;
+    placed_at: string;
+  };
+  items: RawTrackItem[] | null;
+  history: RawMyHistory[] | null;
+}
+
+/**
+ * Guest tracking by order number + raw token (api.track_order). The DB stores
+ * only the sha256 hash (= orders.guest_token_hash), so we hash here identically.
+ */
+export async function trackOrder(orderNo: string, token: string): Promise<TrackOrderResult> {
+  const admin = createAdminSupabaseClient();
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const { data, error } = await admin
+    .schema("api")
+    .rpc("track_order", { p_order_no: orderNo, p_token_hash: tokenHash });
+  if (error) throwOrderError(error);
+  const raw = data as RawTrackResult;
+  return {
+    order: {
+      orderNo: raw.order.order_no,
+      status: raw.order.status,
+      total: raw.order.total,
+      paymentMethod: raw.order.payment_method,
+      placedAt: raw.order.placed_at,
+    },
+    items: (raw.items ?? []).map((i) => ({
+      name: i.name,
+      image: i.image,
+      qty: i.qty,
+      unitPrice: i.unit_price,
+      variantSize: i.variant_size,
+    })),
+    history: (raw.history ?? []).map(mapMyHistory),
+  };
 }

@@ -537,3 +537,135 @@ export type TransitionOrderInput = z.infer<typeof transitionOrderSchema>;
 export type RejectPaymentInput = z.infer<typeof rejectPaymentSchema>;
 export type CancelOrderInput = z.infer<typeof cancelOrderSchema>;
 export type ReturnOrderInput = z.infer<typeof returnOrderSchema>;
+
+// ── Customer-facing reads (api.list_my_orders / get_my_order / track_order) ──
+
+/** Validator for listMyOrdersFn (pagination only; owner = the auth user). */
+export const listMyOrdersSchema = z.object({
+  limit: z.number().int().min(1).max(50).optional(),
+  offset: z.number().int().min(0).optional(),
+});
+
+/** Validator for guest order tracking. The raw token is hashed server-side. */
+export const trackOrderSchema = z.object({
+  orderNo: z.string().trim().min(1).max(40),
+  token: z.string().trim().min(1).max(200),
+});
+
+export type TrackOrderInput = z.infer<typeof trackOrderSchema>;
+
+export interface MyOrderListItem {
+  id: string;
+  orderNo: string;
+  status: OrderStatus;
+  total: number;
+  paymentMethod: PaymentMethod;
+  placedAt: string;
+  itemCount: number;
+  firstItem: { name: string; image: string | null } | null;
+}
+
+export interface MyOrdersResult {
+  orders: MyOrderListItem[];
+  total: number;
+}
+
+export interface MyOrderLine {
+  name: string;
+  image: string | null;
+  unitPrice: number;
+  qty: number;
+  lineTotal: number;
+  variantSize: string | null;
+}
+
+export interface MyOrderHistoryEntry {
+  toStatus: OrderStatus;
+  createdAt: string;
+}
+
+/** Owner-scoped order detail (api.get_my_order). */
+export interface MyOrderDetail {
+  order: {
+    id: string;
+    orderNo: string;
+    status: OrderStatus;
+    subtotal: number;
+    discount: number;
+    shippingFee: number;
+    total: number;
+    paymentMethod: PaymentMethod;
+    placedAt: string;
+    shipDistrict: string;
+    shipZone: string;
+    shipAddress: string;
+    shipArea: string | null;
+  };
+  items: MyOrderLine[];
+  payment: { method: PaymentMethod; status: PaymentStatus; trxId: string | null } | null;
+  history: MyOrderHistoryEntry[];
+}
+
+/** Guest tracking projection (api.track_order) — no PII beyond the order line. */
+export interface TrackOrderResult {
+  order: {
+    orderNo: string;
+    status: OrderStatus;
+    total: number;
+    paymentMethod: PaymentMethod;
+    placedAt: string;
+  };
+  items: Array<{
+    name: string;
+    image: string | null;
+    qty: number;
+    unitPrice: number;
+    variantSize: string | null;
+  }>;
+  history: MyOrderHistoryEntry[];
+}
+
+// ── Customer progress timeline (the 15 statuses → a 6-step happy path) ────────
+
+export const CUSTOMER_STEPS = [
+  "Order placed",
+  "Payment",
+  "Confirmed",
+  "Preparing",
+  "Shipped",
+  "Delivered",
+] as const;
+
+export type CustomerStep = (typeof CUSTOMER_STEPS)[number];
+
+/**
+ * Map a real status to a position on the customer's 6-step timeline, plus an
+ * `exception` flag for off-path states (cancelled / expired / payment_rejected /
+ * returned / refund_*), which the UI renders as a callout instead of progress.
+ */
+export function customerProgress(status: OrderStatus): { stepIndex: number; exception: boolean } {
+  switch (status) {
+    case "pending_payment":
+    case "pending_confirmation":
+      return { stepIndex: 0, exception: false };
+    case "payment_submitted":
+      return { stepIndex: 1, exception: false };
+    case "confirmed":
+      return { stepIndex: 2, exception: false };
+    case "processing":
+    case "ready_to_ship":
+      return { stepIndex: 3, exception: false };
+    case "shipped":
+      return { stepIndex: 4, exception: false };
+    case "delivered":
+    case "completed":
+      return { stepIndex: 5, exception: false };
+    case "payment_rejected":
+    case "cancelled":
+    case "expired":
+    case "returned":
+    case "refund_pending":
+    case "refund_done":
+      return { stepIndex: -1, exception: true };
+  }
+}
