@@ -153,11 +153,24 @@ idempotency_keys. localStorage migration per the V3 table (one-time flag).
       warnings, auto-correct quantities) + order-success page refresh
       (ServerOrderSuccess component with search-param routing) + F-04 gate removed.
       Rate-limit buckets: `quoteOrder` (60/min), `placeOrder` (10/10min).
-- [ ] Pass 4+ — payment evidence (`submit_payment_evidence` + private Storage),
-      order tracking/read RPCs, admin orders board.
+- [x] Pass 4 (DB layer) — **order-lifecycle / payment / read RPCs** (live in prod
+      2026-06-27; committed to repo 2026-06-30 `df207c9` after a drift was found):
+      `api.transition_order` (state machine + optimistic version + reservation
+      consume/release + optional restock), convenience wrappers (`verify_payment`,
+      `reject_payment`, `confirm_cod`, `cancel_order`, `return_order`),
+      `api.submit_payment_evidence` (TrxID/sender/screenshot + duplicate flag),
+      admin reads (`list_orders`, `get_order_detail`), customer reads
+      (`list_my_orders`, `get_my_order`, `track_order`). Migrations
+      `20260627210911`–`20260627211152`. **All service-role-only; no app wiring yet.**
+- [ ] Pass 4 (app integration) — admin **orders board** (list/detail/transition
+      controls calling the RPCs via server fns), customer **order history +
+      tracking** pages (replace the mock `ORDERS` views), **payment-evidence
+      submission UI** (TrxID/screenshot upload to private Storage). This is the next
+      app-layer work.
 
 **Exit:** one order per submission under retry; totals recomputed server-side;
-checkout fully server-authoritative. (Pass 4+ outstanding.)
+checkout fully server-authoritative. (Pass-4 DB layer done; Pass-4 app integration
+outstanding.)
 
 ## Stage 4 — Customer accounts
 
