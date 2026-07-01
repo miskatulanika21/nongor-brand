@@ -6,11 +6,8 @@
 // ============================================================================
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import {
-  normalizeBDPhone,
-  normalizeCustomMeasurements,
-  type CanonicalMeasurementKey,
-} from "@/lib/order-ui";
+import { normalizeBDPhone } from "@/lib/bd-phone";
+import { normalizeCustomMeasurements, type CanonicalMeasurementKey } from "@/lib/measurements";
 import type { CheckoutAddress } from "@/lib/checkout-ui";
 
 // ---- Types ------------------------------------------------------------------
@@ -323,9 +320,9 @@ export function measurementDisplay(value: string): string {
 }
 
 // ---- Dependency-safe adapters -----------------------------------------------
-// The shared CheckoutAddress shape and canonical measurement keys are defined in
-// checkout-ui.ts / order-ui.ts. account-ui imports those (one-way) so no cycle
-// is introduced — order-ui.ts must NOT import from account-ui.tsx.
+// The shared CheckoutAddress shape and canonical measurement keys live in
+// checkout-ui.ts / measurements.ts. account-ui imports those (one-way), so no
+// cycle is introduced.
 
 /** Map a saved address to the shared checkout address shape. */
 export function savedAddressToCheckoutAddress(a: SavedAddress): CheckoutAddress {

@@ -218,7 +218,7 @@ export function mapDistrictToZone(district: string): DeliveryZone | null {
 }
 
 // ---- Shared checkout address shape (single source of truth) ------------------
-// Defined here (not in account-ui/order-ui) so adapters stay dependency-safe.
+// Defined here (not in account-ui) so adapters stay dependency-safe.
 
 export interface CheckoutAddress {
   recipient: string;
