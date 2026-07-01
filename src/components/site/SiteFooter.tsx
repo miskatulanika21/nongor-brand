@@ -37,7 +37,6 @@ import {
  * Contact/social links come from admin DB settings (with the static brand as a
  * fallback) — see the `settings` prop.
  * TODO: connect newsletter subscription to backend.
- * TODO: wire real order tracking backend (currently navigates to /track?id=).
  * TODO: load real payment/courier configuration from admin.
  */
 
@@ -189,7 +188,7 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
   const [waToggle, setWaToggle] = useState(false);
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
 
-  // Quick track mock state
+  // Quick-track order number (prefills the /track page)
   const [orderId, setOrderId] = useState("");
 
   const handleSubscribe = (e: React.FormEvent) => {
@@ -223,9 +222,10 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
 
   const handleTrack = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!orderId.trim()) return;
-    // TODO: wire real order tracking backend.
-    navigate({ to: "/track", search: { id: orderId.trim() } });
+    const no = orderId.trim();
+    // Prefill the order number on the track page; the customer adds their
+    // tracking code there (guest tracking needs order number + code).
+    navigate({ to: "/track", search: no ? { o: no } : {} });
   };
 
   const scrollTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
@@ -550,13 +550,13 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
             <div className="grid gap-4 sm:grid-cols-[1.4fr_auto_auto] sm:items-center">
               <form onSubmit={handleTrack} className="flex gap-2">
                 <label htmlFor="quick-track" className="sr-only">
-                  Order ID
+                  Order number
                 </label>
                 <Input
                   id="quick-track"
                   value={orderId}
                   onChange={(e) => setOrderId(e.target.value)}
-                  placeholder="Enter Order ID"
+                  placeholder="Enter order number"
                   className="border-gold/30 bg-primary-foreground/95 text-foreground placeholder:text-muted-foreground"
                 />
                 <Button

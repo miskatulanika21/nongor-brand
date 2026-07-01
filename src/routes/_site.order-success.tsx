@@ -44,6 +44,7 @@ export const Route = createFileRoute("/_site/order-success")({
     order_no: (search.order_no as string) ?? undefined,
     status: (search.status as string) ?? undefined,
     total: search.total ? Number(search.total) : undefined,
+    token: typeof search.token === "string" ? search.token : undefined,
   }),
   component: OrderSuccess,
 });
@@ -73,9 +74,10 @@ function OrderSuccess() {
             orderNo: search.order_no ?? search.order_id,
             status: search.status ?? "pending_confirmation",
             total: search.total ?? 0,
+            token: search.token ?? null,
           }
         : null,
-    [search.order_id, search.order_no, search.status, search.total],
+    [search.order_id, search.order_no, search.status, search.total, search.token],
   );
 
   useEffect(() => {
@@ -305,7 +307,7 @@ function OrderSuccess() {
       {/* Actions */}
       <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-center">
         <Button asChild>
-          <Link to="/track" search={{ id: order.id } as never}>
+          <Link to="/track">
             <Truck className="h-4 w-4" /> Track Your Order
           </Link>
         </Button>
@@ -338,6 +340,7 @@ function ServerOrderSuccess({
     orderNo: string;
     status: string;
     total: number;
+    token: string | null;
   };
 }) {
   const statusLabel = SERVER_STATUS_LABEL[serverOrder.status] ?? serverOrder.status;
@@ -454,23 +457,70 @@ function ServerOrderSuccess({
         </ol>
       </div>
 
+      {/* Guest tracking link — surface the capability so guests can return later */}
+      {serverOrder.token && (
+        <div className="mt-6 rounded-xl border border-gold/40 bg-gold/5 p-5 text-sm">
+          <p className="font-medium text-foreground">Save your tracking link</p>
+          <p className="mt-1 text-muted-foreground">
+            You&apos;re checking out as a guest. Bookmark the link below to track this order later —
+            it&apos;s the only way to find it without an account.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button size="sm" asChild>
+              <Link to="/track" search={{ o: serverOrder.orderNo, t: serverOrder.token }}>
+                <Truck className="h-4 w-4" /> Track Your Order
+              </Link>
+            </Button>
+            <CopyTrackLink orderNo={serverOrder.orderNo} token={serverOrder.token} />
+          </div>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-center">
-        <Button asChild>
-          <Link to="/track" search={{ id: serverOrder.orderNo } as never}>
-            <Truck className="h-4 w-4" /> Track Your Order
-          </Link>
-        </Button>
-        <Button variant="outline" asChild>
-          <a href={waLink} target="_blank" rel="noreferrer">
-            <MessageCircle className="h-4 w-4" /> Chat on WhatsApp
-          </a>
-        </Button>
+        {serverOrder.token ? (
+          <Button variant="outline" asChild>
+            <a href={waLink} target="_blank" rel="noreferrer">
+              <MessageCircle className="h-4 w-4" /> Chat on WhatsApp
+            </a>
+          </Button>
+        ) : (
+          <>
+            <Button asChild>
+              <Link to="/orders/$id" params={{ id: serverOrder.orderId }}>
+                <Truck className="h-4 w-4" /> View Your Order
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <a href={waLink} target="_blank" rel="noreferrer">
+                <MessageCircle className="h-4 w-4" /> Chat on WhatsApp
+              </a>
+            </Button>
+          </>
+        )}
         <Button variant="ghost" asChild>
           <Link to="/shop">Continue Shopping</Link>
         </Button>
       </div>
     </div>
+  );
+}
+
+function CopyTrackLink({ orderNo, token }: { orderNo: string; token: string }) {
+  const copy = async () => {
+    if (typeof window === "undefined") return;
+    const url = `${window.location.origin}/track?o=${encodeURIComponent(orderNo)}&t=${encodeURIComponent(token)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Tracking link copied");
+    } catch {
+      toast.error("Could not copy the tracking link");
+    }
+  };
+  return (
+    <Button variant="outline" size="sm" onClick={copy}>
+      <Copy className="h-4 w-4" /> Copy tracking link
+    </Button>
   );
 }
 
