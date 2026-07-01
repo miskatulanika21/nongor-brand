@@ -201,13 +201,33 @@ idempotency_keys. localStorage migration per the V3 table (one-time flag).
         `consume_reservations` / restock (called non-existent `set_inventory`
         signature; migration `20260701110357`). 48 migrations total; 385
         Vitest + 3 DB integration suites green.
+- [x] Pass 5 (2026-07-01) — **real coupons** (replaces the display-only mock):
+  - [x] **P5a** — `coupons` + `coupon_usages` (RPC-only deny-all; migration
+        `20260701150858`). Premium schema: `percent`/`fixed`/`free_shipping`,
+        `min_subtotal`/`max_discount`/`usage_limit`/`per_user_limit` (may exceed 1)
+        /`first_order_only`/window + maintained `usage_count`.
+  - [x] **P5b** (`20260701152057`) — `quote_order`/`place_order` coupon-aware
+        (shared `private.coupon_reason`/`coupon_amount`); race-safe consume under
+        the coupon row lock; free-delivery threshold stays on pre-discount subtotal;
+        codes `invalid_coupon`/`coupon_min_not_met`/`coupon_exhausted`/
+        `coupon_not_eligible`. Old 2-arg/7-arg overloads dropped.
+  - [x] **P5c** — retired `MOCK_COUPONS`/`findCoupon`/`couponDiscount`; store keeps
+        only the code; cart/checkout read the server discount + `coupon.applied/
+reason`; stale code silently drops at place (never blocks checkout).
+  - [x] **P5d** (`20260701155119`) — admin coupon CRUD RPCs (`list_coupons`/
+        `upsert_coupon`/`set_coupon_active`/`delete_coupon`) behind
+        `guardAdminWrite("coupons.manage")` + canonical `coupon.*` audit + used-
+        coupon delete guard; `admin.coupons.tsx` DB-backed.
+  - [x] **P5e** — `pass3_db.test.sql` §P5/§P5-admin (discount math, limits,
+        eligibility, usage counter, admin guards, grant posture); fixed the grant-
+        check signatures the P5b drops had left stale. 51 migrations; 388 Vitest.
 
 **Exit:** one order per submission under retry; totals recomputed server-side;
 checkout fully server-authoritative; admin runs the full lifecycle (confirm
 through return+restock) safely under concurrent admins; customers track via
-account or guest capability links; custom measurements captured server-side.
-**Pass-4 app integration complete.** Legacy `orders.ts`/`PRODUCTS` remain
-Stage-5-gated (courier booking).
+account or guest capability links; custom measurements captured server-side;
+**coupons real, race-safe and admin-managed**. **STAGE 3 COMPLETE** (P1–P5,
+2026-07-01). Legacy `orders.ts`/`PRODUCTS` remain Stage-5-gated (courier booking).
 
 ## Stage 4 — Customer accounts
 
