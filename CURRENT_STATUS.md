@@ -3,26 +3,50 @@
 Authoritative record of verified project state. Code and live-environment
 behavior are the source of truth; this file is updated after every stage.
 
-_Last updated: 2026-07-01 — **Stage 3 Pass-4 app integration: P4a + P4b shipped
-(CI-green).** Began wiring the live, service-role-only Pass-4 order RPCs into the
-app (master plan `docs/stage-3-pass4-admin-orders-plan.md`). **P4a** (`f76f009`):
-`orders-shared.ts` — the single isomorphic 15-status model (admin/customer labels,
-tones, four lanes, `ALLOWED_TRANSITIONS` kept in lockstep with
-`api.transition_order` via a parity test, `nextActions`, camelCase DTOs, stable
-`orderErrorMessage`, zod validators) — plus `server/orders.server.ts` (service-role
-repo: list/detail + transition/verify/reject/confirm-cod/cancel/return, stable
-`OrderError`) and `orders.api.ts` (guarded server fns: reads gate `orders.view`,
-writes via `guardAdminWrite`; verify/reject → `payments.verify`, lifecycle →
-`orders.manage`; generic transition carries `expected_version`). **P4b**
-(`475ce76`): `admin.orders.tsx` rewritten DB-backed — URL-as-state loader on
-`listOrdersFn` (status / search / page in the URL), lane-grouped status filter,
-debounced server search, offset/limit pagination, status+payment tone badges, and a
-read-only summary sheet; the mock `ORDERS` board is gone. No new migrations (still
-43). Also fixed a pre-existing red `migrations-local` CI job (`afeb0b9`): the
-pass-2 DB test still asserted bkash/nagad receive numbers were absent from
-`get_public_settings`, but GAP-09 intentionally projects those customer-facing
-numbers — assertions updated (public exposes them, still never `payment_instructions`).
-Next = P4c (order detail + lifecycle action buttons). Prior context:_
+_Last updated: 2026-07-01 — **Stage 3 Pass-4 app integration: COMPLETE
+(P4a–P4h, CI-green).** Wired all Pass-4 order RPCs into the app; the full
+admin + customer order lifecycle is now DB-backed (master plan:
+`docs/stage-3-pass4-admin-orders-plan.md`). 5 new prod migrations (48 total);
+385 Vitest tests + 3 DB integration suites (`pass2/3/4_db.test.sql`); build
+clean._
+
+_Sub-pass detail: **P4a** (`f76f009`): isomorphic 15-status model
+(`orders-shared.ts`) + server layer (`orders.server.ts` / `orders.api.ts`).
+**P4b** (`475ce76`): DB-backed admin orders board. **P4c** (`c34bb57`): order
+detail sheet + lifecycle action buttons (`getOrderDetailFn` + `nextActions` →
+matching server fn, `expected_version` concurrency guard, return-with-restock
+toggle). **P4e** (`15e6d91`): payment evidence — private `payment-evidence`
+Storage bucket (prod migration `20260630195555`), customer evidence form
+(`submitPaymentEvidenceFn`, CSRF + rate-limit + owner/guest scope), admin
+signed-URL viewer. **P4f** (`8cff022`, `0c9cac1`, `1215fb8`): customer read
+layer (`listMyOrdersFn` / `getMyOrderFn` / `trackOrderFn` + `customerProgress`
+6-step timeline), DB-backed customer order list + detail, DB-backed guest
+tracking shifted from phone-lookup to capability model (order number + 32-byte
+guest token, `/track?o=&t=`), "save your tracking link" box on order-success
+for guests. **P4g** (`ad7a628`): custom-order measurements server capture —
+migration `20260701094647` (`order_items.custom_measurements jsonb`), threaded
+through `place_order` / all read RPCs, `<MeasurementsList>` component (admin +
+customer + guest track); excluded from `quote_token` canon (no drift). **P4d**
+(`f0f6b84`, `3d36c67`): DB-backed payment review queue + `admin_order_stats`
+RPC (migrations `20260701100539`, `20260701102954`) + duplicate-TrxID warning
+surfaced to admin reviewer._
+
+_**Mock retirement** (`657a6b6`–`16e122e`): account overview, order-success,
+dashboard stats all off mock `ORDERS` seed onto real RPCs; `order-ui.ts` deleted
+(helpers relocated to `bd-phone.ts` + `measurements.ts`). Legacy
+`orders.ts`/`PRODUCTS` survive only for `admin.courier.tsx` + `admin-ops.ts` —
+courier booking is Stage 5, so their final deletion is Stage-5-gated (corrects
+the earlier "gated on Stage 3" note in the 2026-06-27 entry below)._
+
+_**P4h** (`aead7ca`): `pass4_db.test.sql` — bkash happy path (submit → verify →
+confirm → processing → … → return + restock), custom-measurement round-trip,
+reject → retry → verify, COD confirm, duplicate-TrxID flag, guest track scoping,
+transition guards, `admin_order_stats`, grant posture. **Bug fix** (`e3c6753`):
+`consume_reservations` + restock branch called a non-existent `set_inventory`
+signature + read `product_variants` (doesn't exist) — fixed (migration
+`20260701110357`) to use the real parameter names, read `product_size_stock`,
+and skip made-to-order 'Custom' lines on restock. Latent since the original
+lifecycle migration; surfaced by the P4h lifecycle test. Prior context:_
 
 _2026-06-30 (later) — **Deep-review remediation (43 migrations).**
 Independently verified an external file-by-file review and fixed the genuinely-real

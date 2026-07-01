@@ -1,12 +1,12 @@
 # Stage 3 — Checkout, Orders & Payments — Master Design (v2)
 
-Status: **approved & complete** (2026-06-28). P1 (schema), P1r/P2 (reservations),
-P3a (`quote_order`/`place_order` RPCs) and P3b (checkout app integration) are all
-implemented + live + CI-green. Live progress detail lives in `CURRENT_STATUS.md`;
-this remains the design source of truth. Aligns with the Stage 3 line in
-`IMPLEMENTATION_PLAN.md` and the established codebase posture (RPC-only tables,
-`guardAdminWrite`, canonical audit, stable snake_case error codes, prod-proven
-migrations, CI-green per pass).
+Status: **approved & complete** (2026-06-28; Pass-4 app integration completed
+2026-07-01). All passes (P1 schema through P4h tests) are implemented + live +
+CI-green. 48 prod migrations, 385 Vitest + 3 DB integration suites. Live
+progress detail lives in `CURRENT_STATUS.md`; this remains the design source of
+truth. Aligns with the Stage 3 line in `IMPLEMENTATION_PLAN.md` and the
+established codebase posture (RPC-only tables, `guardAdminWrite`, canonical
+audit, stable snake_case error codes, prod-proven migrations, CI-green per pass).
 
 **v2 changelog:** hardened the _inside_ of every pass — deterministic lock
 ordering, race-safe idempotency, transition concurrency, price-drift handling,
@@ -49,8 +49,9 @@ The online gateway (SSLCommerz/bKash PGW) is deliberately deferred; the
 - Courier booking / shipment webhooks / notification outbox → **Stage 5** (the
   `order_status_history` event log in §14 is the seam they’ll consume).
 - Online payment gateway + verified webhooks → later phase (seam ready).
-- Full customer order-history account UI → **Stage 4** (orders attach to
-  `user_id` now, so Stage 4 is a read surface, not a remodel).
+- ~~Full customer order-history account UI → Stage 4~~ — **shipped in P4f**
+  (customer order list + detail + guest tracking; Stage 4 retains customer
+  profiles/addresses/measurements).
 - Returns/RMA portal → Stage 3 ships **refund _status_ + optional restock**;
   money movement is manual + Stage 5+.
 
@@ -103,7 +104,10 @@ scoped read RPCs. Money is stored as integer **BDT** (no floats).
     `subtotal - discount + shipping_fee = total`; `discount >= 0`,
     `total >= 0`, `subtotal >= 0`.
 - **`order_items`** — `order_id`, `product_id`, `variant_size NULL`, **snapshots**
-  (`name`,`image`,`unit_price`), `qty CHECK 1..50`, `line_total`. Snapshots make
+  (`name`,`image`,`unit_price`), `qty CHECK 1..50`, `line_total`,
+  **`custom_measurements jsonb NULL`** (P4g: made-to-measure body measurements
+  captured at `place_order`, shape-CHECKed object, ≤8KB; excluded from
+  `quote_token` canon — fulfilment data, not pricing data). Snapshots make
   historical orders immutable as the catalog changes. FK `ON DELETE RESTRICT`.
   `CHECK (line_total = unit_price * qty)`.
 - **`order_status_history`** — append-only domain-event log: `order_id`,
@@ -243,7 +247,8 @@ ledger. No double counting, no negative stock.
   enumeration, returns a safe projection only on a hash match, and the track page
   is `noindex,nofollow`. No phone-only lookup anywhere.
 - Logged-in customers: `api.list_my_orders(actor)` / `api.get_my_order` scoped by
-  `user_id`. Stage 4 builds the account UI on top.
+  `user_id`. Customer order list + detail shipped in P4f; Stage 4 adds
+  profiles/addresses/measurements.
 
 ## 8. App integration
 
@@ -255,12 +260,12 @@ ledger. No double counting, no negative stock.
 - `checkout-ui.ts` becomes a **display-only estimate**; the real total + a
   `quote_token` come from `quote_order`. Cart shows **reconciliation diffs** from
   the quote. **Remove the F-04 fail-closed demo gate** — real checkout now exists.
-- Admin `admin.orders` / `admin.payments` become DB-backed (courier booking stays
-  Stage 5; show status + evidence via signed download).
-- **Retire the localStorage `ORDERS` mock**; once `orders.ts`/`order-ui.ts` no
-  longer reference it, **delete the legacy `PRODUCTS` array** (finishes Pass 3g).
-  One-time localStorage migration flag per the V3 contract (legacy device orders
-  → view-only history; F-03 partitioning already isolates them per user).
+- Admin `admin.orders` / `admin.payments` DB-backed ✅ (P4b/P4c/P4d; courier
+  booking stays Stage 5; evidence via signed download).
+- **Mock retirement ✅** (P4f): `order-ui.ts` deleted, account/order-success/
+  dashboard off real RPCs. `orders.ts`/`PRODUCTS` survive only for
+  `admin.courier.tsx` + `admin-ops.ts` (Stage-5-gated — courier booking holds the
+  mock `Order` shape; final deletion deferred from Pass 3g to Stage 5).
 
 ## 9. Settings additions (extend Pass 3d `site_settings` + RPCs)
 
@@ -307,24 +312,29 @@ implements `verify` off a webhook handler that writes to the same
   auto-correct quantities) + order-success page (ServerOrderSuccess component) +
   F-04 demo gate removed. Rate-limit buckets: `quoteOrder` (60/min), `placeOrder`
   (10/10min).
-- **P4 — Payment evidence + verification.** 🟡 **DB layer DONE** (live + in repo
-  2026-06-30, migrations `…210911`/`…210936`/`…210959`/`…211019`): submit/verify/reject,
-  duplicate-TrxID guard, COD confirm, consume guard, ledger decrement
-  (`submit_payment_evidence`, `verify_payment`, `reject_payment`, `confirm_cod`,
-  `transition_order`, `private.consume_reservations`). **Outstanding:** private
-  Storage bucket for screenshots + the app/UI to call these RPCs.
+- **P4 — Payment evidence + verification.** ✅ DONE. DB layer (live 2026-06-30,
+  migrations `…210911`/`…210936`/`…210959`/`…211019`) + app integration (P4c detail
+  + lifecycle buttons, P4e private `payment-evidence` Storage bucket + customer
+  submit + admin signed-URL viewer, P4d payments review queue + duplicate-TrxID
+  warning + `admin_order_stats`). Migrations `20260630195555`, `20260701100539`,
+  `20260701102954`.
 - **P5 — Real coupons.** `coupons` + `coupon_usages`, race-safe validation +
   rate-limited application, minimal admin/seed (full coupon admin is Stage 6).
-- **P6 — Admin order lifecycle.** 🟡 **RPCs DONE** (live + in repo 2026-06-30,
-  migrations `…210936`/`…211045`): `transition_order` (verify/reject/confirm/cancel/
-  return, status history, restock, transition concurrency via `expected_version`),
-  `list_orders`, `get_order_detail`. **Outstanding:** the DB-backed
-  `admin.orders`/`admin.payments` UI (queue, evidence signed-download view).
-- **P7 — Guest tracking + customer reads.** 🟡 **RPCs DONE** (live + in repo
-  2026-06-30, migration `…211152`): `track_order` (rate-limit to add at the server-fn
-  layer), `list_my_orders`, `get_my_order`. **Outstanding:** wire the UI; retire
-  localStorage `ORDERS`; **delete legacy `PRODUCTS`** (Pass 3g done).
-- **P8 — Hardening + concurrency tests** (below) + docs/CURRENT_STATUS refresh.
+- **P6 — Admin order lifecycle.** ✅ DONE. RPCs (live 2026-06-30) + DB-backed
+  `admin.orders`/`admin.payments` UI (P4b board, P4c detail + action buttons,
+  P4d review queue). Bug fix (`e3c6753`): `consume_reservations` / restock
+  called non-existent `set_inventory` signature — fixed (migration
+  `20260701110357`).
+- **P7 — Guest tracking + customer reads.** ✅ DONE. RPCs (live 2026-06-30) +
+  customer order list/detail (P4f), guest tracking shifted to capability model
+  (`/track?o=&t=`). Mock `ORDERS` board + `order-ui.ts` retired; legacy
+  `orders.ts`/`PRODUCTS` Stage-5-gated (courier island).
+- **P8 — Hardening + concurrency tests** ✅ DONE. `pass4_db.test.sql` (full
+  lifecycle, measurements round-trip, guest track scoping, transition guards,
+  grant posture); `pass3_db.test.sql` + concurrency tests unchanged and green.
+  Custom measurements (P4g, migration `20260701094647`): `order_items.
+  custom_measurements jsonb` captured at `place_order`, projected in all reads,
+  excluded from `quote_token` canon. Docs/CURRENT_STATUS refreshed.
 
 ## 12. Testing (mandatory — matches the spec’s exit bar)
 
@@ -370,5 +380,7 @@ oversell under concurrency or under later stock reduction**; manual payments
 verified with private evidence + duplicate-TrxID protection; COD confirmed;
 reservations expire; coupons real, rate-limited and race-safe; admin runs the full
 pre-ship lifecycle (incl. return/restock) safely under concurrent admins; guests
-track securely (rate-limited, enumeration-safe); legacy `PRODUCTS`/`ORDERS` mocks
-deleted; `pass3_db.test.sql` + concurrency tests green in CI; advisors clean.
+track securely (rate-limited, enumeration-safe); legacy mock `ORDERS` board +
+`order-ui.ts` demo retired; `orders.ts`/`PRODUCTS` survive only for the Stage-5
+courier island; `pass3_db.test.sql` + `pass4_db.test.sql` + concurrency tests
+green in CI; advisors clean.

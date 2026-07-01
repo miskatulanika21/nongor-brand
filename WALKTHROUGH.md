@@ -1,8 +1,8 @@
 # WALKTHROUGH — actual data flows
 
-Reflects what the code does today (Stage 2 closed; Stage 3 checkout complete —
-backend + app integration live; Stage 3 Pass-4 order-management app integration
-under way — admin orders board DB-backed). Updated each stage.
+Reflects what the code does today (Stage 2 closed; Stage 3 checkout + order
+management complete — backend + full app integration live, 48 migrations, Pass-4
+finished). Updated each stage.
 
 ## Request → response security wrapper
 
@@ -145,40 +145,70 @@ method, idempotency_key, actor?, quote_token?)` runs one transaction: race-safe
   - `_site.cart.tsx` reconciliation: `quoteOrderFn` on mount to verify
     stock/availability, per-item warnings (not found, not visible, out of stock,
     low stock), auto-corrects quantity to available max.
-  - `_site.order-success.tsx`: accepts `order_id`, `order_no`, `status`, `total`
-    from search params; `ServerOrderSuccess` component for real orders; legacy
-    localStorage path preserved for backward compat.
+  - `_site.order-success.tsx`: accepts `order_id`, `order_no`, `status`, `total`,
+    `token` from search params; `ServerOrderSuccess` for real orders; guests see a
+    "save your tracking link" box, signed-in orders link to `/orders/$id`. Legacy
+    localStorage path removed (P4f).
   - F-04 demo gate (`isDemoCommerceEnabled()`) removed from checkout gating.
   - Rate-limit buckets: `quoteOrder` (60/min), `placeOrder` (10/10min).
 
-## Order management (Stage 3 Pass 4a/4b) — admin board live
+## Order management (Stage 3 Pass 4) — complete
 
-The Pass-4 order RPCs are `SECURITY DEFINER`, `service_role`-only, so the app
-reaches them only through guarded server fns — the same spine as the catalog
-admin path.
+The full admin + customer order lifecycle is DB-backed. The 15-status state
+machine is enforced server-side; all reads and writes flow through guarded
+server fns backed by `SECURITY DEFINER` service-role RPCs.
 
 - **Shared model (isomorphic):** `orders-shared.ts` is the single source of truth
   for the 15-status lifecycle — `ORDER_STATUS_META` (admin + customer labels, tone,
   one of four lanes), `ALLOWED_TRANSITIONS` (kept in lockstep with
-  `api.transition_order`'s CASE arms by a parity test), and `nextActions(status)`
-  (which admin action drives each transition). It carries no server imports.
-- **Server fns (`orders.api.ts` → `server/orders.server.ts`):** reads
+  `api.transition_order`'s CASE arms by a parity test), `nextActions(status)`,
+  `customerProgress` (6-step customer timeline), and `CUSTOMER_STEPS`. It carries
+  no server imports.
+- **Server fns (`orders.api.ts` → `server/orders.server.ts`):** admin reads
   (`listOrdersFn`, `getOrderDetailFn`) set no-store + gate `orders.view`; writes
   (`transition/verify/reject/confirmCod/cancel/returnOrderFn`) go through
   `guardAdminWrite` (CSRF + strict permission + MFA step-up + rate limit + denial
   audit) — payment verify/reject on `payments.verify`, lifecycle on `orders.manage`.
-  The repo uses the service-role client to call the `api.*` RPC with the verified
-  actor id as `p_actor`; `OrderError` maps each stable DB code to a safe message,
-  and the generic `transitionOrderFn` forwards `expected_version` so two admins
-  acting at once get a `version_conflict` instead of a silent clobber. The canonical
-  `order.transition` audit is written inside the RPC's transaction.
-- **Board (`admin.orders.tsx`):** the URL is the source of truth — `validateSearch`
-  parses `status` / `q` / `page`, `loaderDeps` feeds them to the `loader`, and the
-  loader calls `listOrdersFn` → `api.list_orders` (server-side status filter, ILIKE
-  search over order-no/name/phone, offset/limit). The status filter is a Select
-  grouped by lane; search is debounced into the URL; pagination shows an accurate
-  "X–Y of N". A row opens a read-only summary sheet built from the list row. Order
-  detail + the lifecycle action buttons (calling the write fns above) land in P4c.
+  Customer reads (`listMyOrdersFn`, `getMyOrderFn`, `trackOrderFn`) are
+  auth-gated or capability-gated (guest tracking by order number + token).
+  `OrderError` maps each stable DB code to a safe message; `transitionOrderFn`
+  forwards `expected_version` so two admins get a `version_conflict` instead of a
+  silent clobber.
+- **Board (`admin.orders.tsx`):** URL-as-state loader on `listOrdersFn` (status /
+  search / page), lane-grouped status filter, debounced server search,
+  offset/limit pagination, status + payment tone badges, summary sheet.
+- **Detail + lifecycle (`OrderDetailSheet`):** `getOrderDetailFn` loads items,
+  payment (TrxID/sender/status), screenshots (signed-URL download), status history
+  timeline, and the duplicate-TrxID flag. Action buttons driven by
+  `nextActions(status)` → matching server fn, each with confirm dialog, reason
+  input, `expected_version` guard, optimistic UI. Return offers the `restock` toggle.
+- **Payment evidence:** private `payment-evidence` Storage bucket (RLS
+  service-role-only write, no public read). Customer: evidence form (TrxID + sender
+  + screenshot upload) on `pending_payment`/`payment_rejected` →
+  `submitPaymentEvidenceFn` (CSRF + rate-limit + owner/guest scope). Admin:
+  signed-URL download in the detail view.
+- **Payment review (`admin.payments.tsx`):** filtered queue of `payment_submitted`
+  orders; verify/reject with the duplicate-TrxID warning from `get_order_detail`;
+  dashboard order stats (`admin_order_stats` RPC) DB-backed.
+- **Customer orders (`_site.orders.tsx`, `_site.orders.$id.tsx`):**
+  `listMyOrdersFn` / `getMyOrderFn` with `customerProgress` 6-step timeline,
+  `CustomerStatusBadge`; guest → sign-in prompt.
+- **Guest tracking (`_site.track.tsx`):** capability model — order number + guest
+  tracking code (`/track?o=&t=`), two-field form, client-side fetch (child-route-
+  safe pattern), `customerProgress` timeline, copy-link, non-oracular not-found.
+- **Order success (`_site.order-success.tsx`):** threads the guest token; guests
+  get a "save your tracking link" box; signed-in orders link to `/orders/$id`.
+- **Custom measurements (`order_items.custom_measurements jsonb`):** captured at
+  `place_order` from cart `customSize` (via `cartToPlaceLines` + `normalizeMeasures`),
+  excluded from `quote_token` canon, rendered in `<MeasurementsList>` in admin
+  detail, customer detail, and guest track.
+- **Mock retirement:** `order-ui.ts` deleted (pure helpers relocated to
+  `bd-phone.ts` + `measurements.ts`); account overview, order-success, dashboard
+  stats all read real data. Legacy `orders.ts`/`PRODUCTS` survive only for
+  `admin.courier.tsx` + `admin-ops.ts` (courier = Stage 5).
+- **Bug fix (`e3c6753`):** `consume_reservations` + restock branch called a
+  non-existent `set_inventory` signature — fixed (migration `20260701110357`) to
+  use the real parameter names, read `product_size_stock`, and skip 'Custom' lines.
 
 ## CI
 
@@ -186,21 +216,19 @@ admin path.
 1.3.14) frozen install → typecheck → lint → format:check → test → build (all
 mandatory). A `migrations-local` job applies every migration to a fresh LOCAL
 Supabase DB (Docker, no creds) — the authoritative migrate-from-empty check —
-then runs the DB integration tests (`pass2_db.test.sql`, `pass3_db.test.sql`)
-and the two-connection concurrency test (`concurrency.test.sh`). A separate job
-runs `supabase db lint --linked` against the DEPLOYED DB using the
-`SUPABASE_ACCESS_TOKEN` + `SUPABASE_PROJECT_ID` + `SUPABASE_DB_PASSWORD`
-repository secrets (now configured); it skips with a visible notice only if a
-secret is missing. Note it lints the deployed DB and does not validate pending
-migrations — that is the `migrations-local` job's role.
+then runs the DB integration tests (`pass2_db.test.sql`, `pass3_db.test.sql`,
+`pass4_db.test.sql`) and the two-connection concurrency test
+(`concurrency.test.sh`). A separate job runs `supabase db lint --linked` against
+the DEPLOYED DB using the `SUPABASE_ACCESS_TOKEN` + `SUPABASE_PROJECT_ID` +
+`SUPABASE_DB_PASSWORD` repository secrets (now configured); it skips with a
+visible notice only if a secret is missing. Note it lints the deployed DB and
+does not validate pending migrations — that is the `migrations-local` job's role.
 
 ## Still mock / localStorage (later stages)
 
 Cart and wishlist hold item IDs in `localStorage` only (no server-side cart).
-Coupons (display-only until Stage 5); order **detail + lifecycle action buttons**
-(P4c), **payment-evidence** submit/view (P4e), and **customer order history /
-tracking** (P4f, still on the mock `ORDERS` seed); customer
-profiles/addresses/measurements (Stage 4), courier adapters (Stage 5),
+Coupons (display-only until Stage 5); customer profiles/addresses/measurements
+(Stage 4), courier adapters + `orders.ts`/`PRODUCTS` retirement (Stage 5),
 CMS/banners/newsletter (Stage 6), reports (Stage 6). (Reviews moderation, site
-settings, checkout, and the admin orders board are DB-backed.) See
+settings, checkout, and the full order lifecycle are DB-backed.) See
 `CURRENT_STATUS.md`.

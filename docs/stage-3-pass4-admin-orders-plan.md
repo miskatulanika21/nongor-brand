@@ -1,9 +1,11 @@
 # Stage 3 Pass 4 (app integration) — Master Plan: Order Management
 
-**Status:** planning (2026-06-30). The Pass-4 **DB/RPC layer is live + in repo** (43
-migrations); this plan covers the **app integration** that calls those RPCs. Each
-sub-pass follows the project convention: **prod-proven migration (if any) + atomic
-commit + CI-green**, committed straight to `main`, push each part (multi-PC).
+**Status:** complete (2026-07-01; plan created 2026-06-30). All sub-passes
+(P4a–P4h) shipped + CI-green. 48 migrations total (5 new in this pass). The
+Pass-4 **DB/RPC layer** was live in repo (43 migrations at plan time); this plan
+covered the **app integration** that calls those RPCs. Each sub-pass followed the
+project convention: **prod-proven migration (if any) + atomic commit + CI-green**,
+committed straight to `main`, push each part (multi-PC).
 
 ---
 

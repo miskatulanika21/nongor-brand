@@ -173,18 +173,41 @@ idempotency_keys. localStorage migration per the V3 table (one-time flag).
         URL-as-state loader on `listOrdersFn`, lane-grouped status filter, debounced
         server search, pagination, tone badges, read-only summary sheet. Replaces the
         mock `ORDERS` board.
-  - [ ] **P4c** — order detail + lifecycle action buttons (`getOrderDetailFn` +
-        `nextActions` → the matching server fn, optimistic `expected_version`).
-  - [ ] **P4d** — payments review (filtered view of the board).
-  - [ ] **P4e** — payment-evidence: private Storage bucket + customer submit + admin
-        signed-URL view (first Pass-4 prod migration).
-  - [ ] **P4f** — customer order history + tracking; retire mock `ORDERS`/`PRODUCTS`.
-  - [ ] **P4g** — custom-order measurements captured server-side.
-  - [ ] **P4h** — DB lifecycle tests + E2E + advisors + doc refresh.
+  - [x] **P4c** (2026-07-01) — order detail sheet + lifecycle action buttons
+        (`getOrderDetailFn` + `nextActions` → matching server fn,
+        `expected_version`, return with restock toggle).
+  - [x] **P4d** (2026-07-01) — DB-backed payments review queue
+        (`admin.payments.tsx` off `listOrdersFn`); duplicate-TrxID warning;
+        `admin_order_stats` RPC; dashboard stats off mock onto real data.
+        Migrations `20260701100539`, `20260701102954`.
+  - [x] **P4e** (2026-07-01) — payment evidence: private `payment-evidence`
+        Storage bucket (prod migration `20260630195555`), customer evidence form
+        (`submitPaymentEvidenceFn`, CSRF + rate-limit + owner/guest scope), admin
+        signed-URL viewer.
+  - [x] **P4f** (2026-07-01) — customer order history + tracking:
+        `listMyOrdersFn` / `getMyOrderFn` / `trackOrderFn` + `customerProgress`
+        6-step timeline; DB-backed customer order list/detail; guest tracking
+        shifted to capability model (order number + token, `/track?o=&t=`).
+        Mock `ORDERS` board paths retired; `order-ui.ts` deleted (helpers
+        relocated to `bd-phone.ts` + `measurements.ts`). Legacy
+        `orders.ts`/`PRODUCTS` survive only for courier (`admin.courier.tsx` +
+        `admin-ops.ts`) — Stage-5-gated.
+  - [x] **P4g** (2026-07-01) — custom-order measurements captured server-side:
+        `order_items.custom_measurements jsonb` (migration `20260701094647`),
+        threaded through `place_order` / all read RPCs, rendered in
+        `<MeasurementsList>`; excluded from `quote_token` canon (no drift).
+  - [x] **P4h** (2026-07-01) — `pass4_db.test.sql` (order lifecycle + customer
+        reads + grant posture); confirmed/fixed a latent bug in
+        `consume_reservations` / restock (called non-existent `set_inventory`
+        signature; migration `20260701110357`). 48 migrations total; 385
+        Vitest + 3 DB integration suites green.
 
 **Exit:** one order per submission under retry; totals recomputed server-side;
-checkout fully server-authoritative. (Pass-4 DB layer done; app integration in
-progress — P4a + P4b shipped, P4c+ outstanding.)
+checkout fully server-authoritative; admin runs the full lifecycle (confirm
+through return+restock) safely under concurrent admins; customers track via
+account or guest capability links; custom measurements captured server-side.
+**Pass-4 app integration complete.** Legacy `orders.ts`/`PRODUCTS` remain
+Stage-5-gated (courier booking).
 
 ## Stage 4 — Customer accounts
 
