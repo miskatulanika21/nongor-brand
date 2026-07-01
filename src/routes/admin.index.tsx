@@ -12,7 +12,9 @@ import {
   PreviewNotice,
   type AdminPreviewState,
 } from "@/components/admin/AdminUI";
-import { ORDERS, STATUS_TONE } from "@/lib/orders";
+import { adminOrderStatsFn, listOrdersFn } from "@/lib/orders.api";
+import { StatusBadge, fmtDate } from "@/components/admin/order-status";
+import type { AdminOrderStats, OrderListRow } from "@/lib/orders-shared";
 import { listAdminProducts } from "@/lib/catalog-admin.api";
 import type { AdminProductListItem } from "@/lib/server/catalog-admin.server";
 import { useNoticeToast } from "@/lib/auth-notices";
@@ -62,12 +64,30 @@ function Dashboard() {
   const [previewState, setPreviewState] = useState<AdminPreviewState>("loaded");
   useNoticeToast();
 
-  // Order/revenue widgets are still seed demo data (Stage 3 order backend).
-  const todayKey = new Date().toISOString().slice(0, 10);
-  const todaysOrders = ORDERS.filter((o) => o.date === todayKey);
-  const pendingPayments = ORDERS.filter((o) => o.paymentStatus === "Pending");
-  const courierPending = ORDERS.filter((o) => ["Confirmed", "Processing"].includes(o.status));
-  const demoRevenue = ORDERS.reduce((sum, o) => sum + o.total, 0);
+  // Live order figures (api.admin_order_stats) + the most recent orders.
+  const [stats, setStats] = useState<AdminOrderStats | null>(null);
+  const [statsStatus, setStatsStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [recent, setRecent] = useState<OrderListRow[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.all([adminOrderStatsFn(), listOrdersFn({ data: { limit: 6 } })])
+      .then(([s, r]) => {
+        if (!active) return;
+        if (s.success && s.stats) {
+          setStats(s.stats);
+          setStatsStatus("ready");
+        } else {
+          setStatsStatus("error");
+        }
+        if (r.success) setRecent(r.orders);
+      })
+      .catch(() => active && setStatsStatus("error"));
+    return () => {
+      active = false;
+    };
+  }, []);
+  const statsReady = statsStatus === "ready" && stats !== null;
 
   // Catalog widgets (Low Stock, Best Sellers) read the LIVE product table so
   // they match the real admin catalog instead of the retired mock array.
@@ -103,13 +123,13 @@ function Dashboard() {
     <div>
       <AdminHeader
         title="Dashboard"
-        description="Live catalog health with seed demo order figures."
+        description="Live catalog and order health at a glance."
         action={<AdminStateToggle value={previewState} onValueChange={setPreviewState} />}
       />
 
       <PreviewNotice className="mb-5">
-        Low Stock and Best Sellers reflect the live catalog · Order, payment and revenue figures are
-        still seed demo data until the order backend lands.
+        Order, payment, catalog and revenue figures are live · The sales trend chart below is still
+        sample data.
       </PreviewNotice>
 
       {previewState === "loading" && (
@@ -136,28 +156,26 @@ function Dashboard() {
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatCard
               label="Today's Orders"
-              value={todaysOrders.length}
+              value={statsReady ? stats.todayOrders : "—"}
               icon={ShoppingCart}
               tone="primary"
-              hint={
-                todaysOrders.length === 0 ? "No demo orders dated today" : "Seed orders dated today"
-              }
+              hint="Placed today"
               to="/admin/orders"
             />
             <StatCard
               label="Pending Payments"
-              value={pendingPayments.length}
+              value={statsReady ? stats.pendingPayments : "—"}
               icon={Wallet}
               tone="gold"
-              hint="From seed payment status"
+              hint="Awaiting verification"
               to="/admin/payments"
             />
             <StatCard
               label="Courier Pending"
-              value={courierPending.length}
+              value={statsReady ? stats.courierPending : "—"}
               icon={Truck}
               tone="default"
-              hint="Confirmed / Processing orders"
+              hint="Confirmed / processing / ready"
               to="/admin/courier"
             />
             <StatCard
@@ -169,43 +187,36 @@ function Dashboard() {
               to="/admin/inventory"
             />
             <StatCard
-              label="Demo Order Revenue"
-              value={formatBDT(demoRevenue)}
+              label="Revenue (delivered)"
+              value={statsReady ? formatBDT(stats.deliveredRevenue) : "—"}
               icon={TrendingUp}
               tone="gold"
-              hint="Total of all seed orders"
+              hint="Delivered + completed orders"
               to="/admin/reports"
             />
             <StatCard
-              label="Orders (all seed)"
-              value={ORDERS.length}
+              label="Total Orders"
+              value={statsReady ? stats.totalOrders : "—"}
               icon={CheckCircle2}
               tone="success"
-              hint="Total seed orders"
+              hint="All orders"
               to="/admin/orders"
             />
-            {/* Custom-size pending: not derivable from current seed order type. */}
-            <div className="rounded-xl border border-dashed border-border bg-card p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Custom-size Pending
-                </span>
-                <div className="grid h-9 w-9 place-items-center rounded-lg bg-secondary text-muted-foreground">
-                  <Ruler className="h-4 w-4" />
-                </div>
-              </div>
-              <p className="mt-2 font-display text-3xl text-muted-foreground">—</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Not available in the current seed orders
-              </p>
-            </div>
+            <StatCard
+              label="Custom-size Pending"
+              value={statsReady ? stats.customPending : "—"}
+              icon={Ruler}
+              tone="default"
+              hint="Made-to-measure in progress"
+              to="/admin/orders"
+            />
           </div>
 
           {/* Quick actions */}
           <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <QuickAction
               label="Pending payments"
-              desc={`${pendingPayments.length} awaiting verification`}
+              desc={statsReady ? `${stats.pendingPayments} awaiting verification` : "Checking…"}
               cta="Verify now"
               to="/admin/payments"
               icon={Wallet}
@@ -213,11 +224,7 @@ function Dashboard() {
             />
             <QuickAction
               label="Today's orders"
-              desc={
-                todaysOrders.length === 0
-                  ? "No demo orders dated today"
-                  : `${todaysOrders.length} dated today`
-              }
+              desc={statsReady ? `${stats.todayOrders} placed today` : "Checking…"}
               cta="View orders"
               to="/admin/orders"
               icon={ShoppingCart}
@@ -233,7 +240,7 @@ function Dashboard() {
             />
             <QuickAction
               label="Courier pending"
-              desc={`${courierPending.length} ready to ship`}
+              desc={statsReady ? `${stats.courierPending} ready to ship` : "Checking…"}
               cta="Book courier"
               to="/admin/courier"
               icon={Truck}
@@ -325,29 +332,30 @@ function Dashboard() {
               }
             >
               <div className="space-y-2">
-                {ORDERS.map((o) => (
-                  <Link
-                    key={o.id}
-                    to="/admin/orders"
-                    className="flex items-center justify-between rounded-lg p-2 hover:bg-secondary"
-                  >
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{o.id}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {o.customer} · {o.date}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-semibold text-primary">{formatBDT(o.total)}</p>
-                      <Badge
-                        variant="outline"
-                        className={cn("text-[0.65rem]", STATUS_TONE[o.status] ?? "")}
-                      >
-                        {o.status}
-                      </Badge>
-                    </div>
-                  </Link>
-                ))}
+                {statsStatus === "loading" ? (
+                  <p className="text-sm text-muted-foreground">Loading orders…</p>
+                ) : recent.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No orders yet.</p>
+                ) : (
+                  recent.map((o) => (
+                    <Link
+                      key={o.id}
+                      to="/admin/orders"
+                      className="flex items-center justify-between rounded-lg p-2 hover:bg-secondary"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{o.orderNo}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {o.customerName} · {fmtDate(o.placedAt)}
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <p className="text-sm font-semibold text-primary">{formatBDT(o.total)}</p>
+                        <StatusBadge status={o.status} />
+                      </div>
+                    </Link>
+                  ))
+                )}
               </div>
             </AdminSectionCard>
 

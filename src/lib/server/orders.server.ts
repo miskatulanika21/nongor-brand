@@ -34,6 +34,7 @@ import {
   type MyOrderHistoryEntry,
   type TrackOrderResult,
   type CustomMeasurements,
+  type AdminOrderStats,
 } from "@/lib/orders-shared";
 import type { PaymentMethod } from "@/lib/checkout-shared";
 import { createHash } from "node:crypto";
@@ -163,6 +164,33 @@ export async function listOrders(args: ListOrdersArgs): Promise<OrderListResult>
   return {
     orders: (raw.orders ?? []).map(mapListRow),
     total: raw.total ?? 0,
+  };
+}
+
+interface RawAdminOrderStats {
+  total_orders: number;
+  today_orders: number;
+  pending_payments: number;
+  pending_confirmation: number;
+  courier_pending: number;
+  delivered_revenue: number;
+  custom_pending: number;
+}
+
+/** Aggregate dashboard figures (api.admin_order_stats; staff-gated). */
+export async function adminOrderStats(actorId: string): Promise<AdminOrderStats> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin.schema("api").rpc("admin_order_stats", { p_actor: actorId });
+  if (error) throwOrderError(error);
+  const r = data as RawAdminOrderStats;
+  return {
+    totalOrders: r.total_orders,
+    todayOrders: r.today_orders,
+    pendingPayments: r.pending_payments,
+    pendingConfirmation: r.pending_confirmation,
+    courierPending: r.courier_pending,
+    deliveredRevenue: r.delivered_revenue,
+    customPending: r.custom_pending,
   };
 }
 
