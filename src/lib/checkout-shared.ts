@@ -61,6 +61,16 @@ export interface QuoteLineInput {
   qty: number;
 }
 
+/**
+ * A place_order line: a quote line plus optional made-to-measure `measures`
+ * (label → value). Measurements are FULFILMENT data only — the server ignores
+ * them for pricing and excludes them from the quote_token canon, so quote →
+ * place never drifts on them (they are stripped for the quote request).
+ */
+export interface PlaceLineInput extends QuoteLineInput {
+  measures?: Record<string, string>;
+}
+
 /** One priced line returned by api.quote_order (per input line, order kept). */
 export interface QuoteLine {
   product_id?: string;
@@ -121,23 +131,53 @@ export interface PlaceOrderResult {
 // ── Cart → quote lines ───────────────────────────────────────────────────────
 
 /**
- * Build RPC line inputs from the cart. CartItem.productId is the product code.
- * Custom-size items carry no ready `size`; they quote at the server base price
- * (the custom charge is not yet server-priced — handled separately in P3b UI).
- * Lines with a non-positive qty are dropped.
+ * Trim a cart's custom-size map into a clean measurements object: drop entries
+ * with an empty label or value, trim both sides. Returns undefined when nothing
+ * meaningful remains, so a line with no real measurements carries none.
  */
-export function cartToQuoteLines(cart: CartItem[]): QuoteLineInput[] {
-  const lines: QuoteLineInput[] = [];
+export function normalizeMeasures(
+  customSize: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (!customSize) return undefined;
+  const out: Record<string, string> = {};
+  for (const [rawKey, rawVal] of Object.entries(customSize)) {
+    const key = rawKey.trim();
+    const val = typeof rawVal === "string" ? rawVal.trim() : "";
+    if (key && val) out[key] = val;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * Build place_order line inputs from the cart. CartItem.productId is the product
+ * code. Made-to-measure items carry their measurements (from customSize); the
+ * custom charge itself is server-priced via the 'Custom' size. Lines with a
+ * non-positive qty are dropped. The cart is iterated in order so the resulting
+ * line order is stable — quote and place share it, which the drift token needs.
+ */
+export function cartToPlaceLines(cart: CartItem[]): PlaceLineInput[] {
+  const lines: PlaceLineInput[] = [];
   for (const item of cart) {
     const qty = Math.trunc(item.qty);
     if (!item.productId || qty < 1) continue;
+    const measures = normalizeMeasures(item.customSize);
     lines.push({
       code: item.productId,
       ...(item.size ? { size: item.size } : {}),
       qty,
+      ...(measures ? { measures } : {}),
     });
   }
   return lines;
+}
+
+/**
+ * Quote lines are the place lines with measurements stripped — same code/size/
+ * qty and order, so the quote_token computed here matches what place re-derives.
+ * Measurements never reach the public quote RPC.
+ */
+export function cartToQuoteLines(cart: CartItem[]): QuoteLineInput[] {
+  return cartToPlaceLines(cart).map(({ measures: _measures, ...line }) => line);
 }
 
 // ── Stable error codes → customer-facing messages ────────────────────────────
@@ -183,6 +223,20 @@ const lineSchema = z.object({
   qty: z.number().int().min(1).max(50),
 });
 
+/**
+ * Per-line measurements: label → value, both bounded, capped at 20 fields.
+ * The bounds keep the serialized object well under the DB shape CHECK
+ * (pg_column_size <= 8192) so a valid order never trips it.
+ */
+const measuresSchema = z
+  .record(z.string().trim().min(1).max(40), z.string().trim().min(1).max(120))
+  .refine((m) => Object.keys(m).length <= 20, "Too many measurement fields.");
+
+/** A place_order line = quote line + optional made-to-measure measurements. */
+const placeLineSchema = lineSchema.extend({
+  measures: measuresSchema.optional(),
+});
+
 /** Validator for quoteOrderFn. */
 export const quoteOrderSchema = z.object({
   lines: z.array(lineSchema).min(1).max(50),
@@ -211,7 +265,7 @@ export const checkoutCustomerSchema = z.object({
 
 /** Validator for placeOrderFn. */
 export const placeOrderSchema = z.object({
-  lines: z.array(lineSchema).min(1).max(50),
+  lines: z.array(placeLineSchema).min(1).max(50),
   customer: checkoutCustomerSchema,
   zone: z.enum(DELIVERY_ZONE_VALUES),
   method: z.enum(["cod", "bkash", "nagad"]),

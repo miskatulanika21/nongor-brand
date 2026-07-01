@@ -51,6 +51,7 @@ import {
   enabledMethodList,
   isManualMethod,
   cartToQuoteLines,
+  cartToPlaceLines,
   newIdempotencyKey,
   checkoutErrorMessage,
   type PaymentMethod,
@@ -348,7 +349,8 @@ function Checkout() {
     setSubmitting(true);
 
     try {
-      const lines = cartToQuoteLines(cart);
+      // Place carries per-line measurements (made-to-measure); quote does not.
+      const lines = cartToPlaceLines(cart);
       const result = await placeOrderFn({
         data: {
           lines,
