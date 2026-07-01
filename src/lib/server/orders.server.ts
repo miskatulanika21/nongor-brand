@@ -256,6 +256,7 @@ interface RawPaymentDetail {
   verified_at: string | null;
   reject_reason: string | null;
   created_at: string;
+  trx_id_duplicate: boolean | null;
 }
 
 interface RawScreenshot {
@@ -306,6 +307,7 @@ function mapPaymentDetail(p: RawPaymentDetail): OrderPaymentDetail {
     verifiedAt: p.verified_at,
     rejectReason: p.reject_reason,
     createdAt: p.created_at,
+    trxIdDuplicate: p.trx_id_duplicate ?? false,
   };
 }
 
