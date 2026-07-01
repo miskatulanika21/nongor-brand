@@ -153,6 +153,17 @@ jobs:
           [ -z "$DB_URL" ] && DB_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
           psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/pass3_db.test.sql
 
+      # Stage-3 Pass-4 order LIFECYCLE + customer reads: bkash happy path
+      # (submit→verify→confirm→…→delivered→returned+restock), reject→retry, COD,
+      # measurements round-trip, duplicate-TrxID flag, guest-track scoping,
+      # transition guards, admin_order_stats, and pass-4 RPC grant posture.
+      - name: DB integration tests (pass-4 lifecycle)
+        run: |
+          command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
+          DB_URL=$(supabase status -o env 2>/dev/null | sed -n 's/^DB_URL=//p' | tr -d '"')
+          [ -z "$DB_URL" ] && DB_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/pass4_db.test.sql
+
       # Two-connection concurrency test: launches parallel psql sessions to verify
       # that advisory-lock serialization in api.bulk_set_inventory actually works
       # across genuine concurrent database connections (not single-session sequential).
