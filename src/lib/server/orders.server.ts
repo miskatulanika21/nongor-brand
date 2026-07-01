@@ -33,6 +33,7 @@ import {
   type MyOrderLine,
   type MyOrderHistoryEntry,
   type TrackOrderResult,
+  type CustomMeasurements,
 } from "@/lib/orders-shared";
 import type { PaymentMethod } from "@/lib/checkout-shared";
 import { createHash } from "node:crypto";
@@ -226,6 +227,22 @@ interface RawDetailItem {
   unit_price: number;
   qty: number;
   line_total: number;
+  custom_measurements: Record<string, unknown> | null;
+}
+
+/**
+ * Coerce a raw jsonb measurements value into a clean label→value map. The insert
+ * path already guarantees string values; this is defensive against nulls/empties
+ * so the UI can treat `null` as "no measurements".
+ */
+function normalizeRawMeasures(m: unknown): CustomMeasurements | null {
+  if (!m || typeof m !== "object" || Array.isArray(m)) return null;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(m as Record<string, unknown>)) {
+    if (v == null) continue;
+    out[k] = typeof v === "string" ? v : String(v);
+  }
+  return Object.keys(out).length > 0 ? out : null;
 }
 
 interface RawPaymentDetail {
@@ -273,6 +290,7 @@ function mapDetailItem(i: RawDetailItem): OrderDetailItem {
     unitPrice: i.unit_price,
     qty: i.qty,
     lineTotal: i.line_total,
+    customMeasurements: normalizeRawMeasures(i.custom_measurements),
   };
 }
 
@@ -479,6 +497,7 @@ interface RawMyLine {
   qty: number;
   line_total: number;
   variant_size: string | null;
+  custom_measurements: Record<string, unknown> | null;
 }
 
 function mapMyLine(l: RawMyLine): MyOrderLine {
@@ -489,6 +508,7 @@ function mapMyLine(l: RawMyLine): MyOrderLine {
     qty: l.qty,
     lineTotal: l.line_total,
     variantSize: l.variant_size,
+    customMeasurements: normalizeRawMeasures(l.custom_measurements),
   };
 }
 
@@ -560,6 +580,7 @@ interface RawTrackItem {
   qty: number;
   unit_price: number;
   variant_size: string | null;
+  custom_measurements: Record<string, unknown> | null;
 }
 
 interface RawTrackResult {
@@ -600,6 +621,7 @@ export async function trackOrder(orderNo: string, token: string): Promise<TrackO
       qty: i.qty,
       unitPrice: i.unit_price,
       variantSize: i.variant_size,
+      customMeasurements: normalizeRawMeasures(i.custom_measurements),
     })),
     history: (raw.history ?? []).map(mapMyHistory),
   };

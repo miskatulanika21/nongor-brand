@@ -417,6 +417,13 @@ export interface OrderRecord {
   updatedAt: string;
 }
 
+/**
+ * Made-to-measure measurements captured at checkout (label → value), surfaced to
+ * the workshop (admin) and back to the customer. Fulfilment data only — never
+ * part of pricing. `null` for ready-size lines.
+ */
+export type CustomMeasurements = Record<string, string>;
+
 export interface OrderDetailItem {
   id: string;
   productId: string;
@@ -426,6 +433,7 @@ export interface OrderDetailItem {
   unitPrice: number;
   qty: number;
   lineTotal: number;
+  customMeasurements: CustomMeasurements | null;
 }
 
 export interface OrderPaymentDetail {
@@ -577,6 +585,7 @@ export interface MyOrderLine {
   qty: number;
   lineTotal: number;
   variantSize: string | null;
+  customMeasurements: CustomMeasurements | null;
 }
 
 export interface MyOrderHistoryEntry {
@@ -621,6 +630,7 @@ export interface TrackOrderResult {
     qty: number;
     unitPrice: number;
     variantSize: string | null;
+    customMeasurements: CustomMeasurements | null;
   }>;
   history: MyOrderHistoryEntry[];
 }

@@ -17,6 +17,7 @@ import {
   type QuoteResult,
   type PlaceOrderResult,
   type QuoteLineInput,
+  type PlaceLineInput,
   type CheckoutCustomer,
   type PaymentMethod,
 } from "@/lib/checkout-shared";
@@ -49,7 +50,7 @@ export async function quoteOrder(
 }
 
 export interface PlaceOrderArgs {
-  lines: QuoteLineInput[];
+  lines: PlaceLineInput[];
   customer: CheckoutCustomer;
   zone: DeliveryZone;
   method: PaymentMethod;

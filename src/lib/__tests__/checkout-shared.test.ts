@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   cartToQuoteLines,
+  cartToPlaceLines,
+  normalizeMeasures,
   checkoutErrorMessage,
   availableMethods,
   enabledMethodList,
@@ -52,6 +54,54 @@ describe("cartToQuoteLines", () => {
 
   it("drops items without a productId/code", () => {
     expect(cartToQuoteLines([item({ productId: "" })])).toEqual([]);
+  });
+
+  it("never carries measurements (measurements are place-only)", () => {
+    const lines = cartToQuoteLines([
+      item({ size: "Custom", customSize: { Bust: "36", Waist: "30" } }),
+    ]);
+    expect(lines[0]).not.toHaveProperty("measures");
+  });
+});
+
+describe("normalizeMeasures", () => {
+  it("returns undefined for empty / whitespace-only maps", () => {
+    expect(normalizeMeasures(undefined)).toBeUndefined();
+    expect(normalizeMeasures({})).toBeUndefined();
+    expect(normalizeMeasures({ Bust: "  ", "  ": "30" })).toBeUndefined();
+  });
+
+  it("trims labels + values and drops empty entries", () => {
+    expect(normalizeMeasures({ "  Bust  ": "  36 in ", Waist: "", Hip: "40" })).toEqual({
+      Bust: "36 in",
+      Hip: "40",
+    });
+  });
+});
+
+describe("cartToPlaceLines", () => {
+  it("attaches normalized measurements from customSize", () => {
+    const lines = cartToPlaceLines([
+      item({ productId: "NGR-009", size: "Custom", customSize: { Bust: "36", Waist: "30" } }),
+    ]);
+    expect(lines).toEqual([
+      { code: "NGR-009", size: "Custom", qty: 1, measures: { Bust: "36", Waist: "30" } },
+    ]);
+  });
+
+  it("omits measures for ready-size lines without customSize", () => {
+    const lines = cartToPlaceLines([item({ size: "M" })]);
+    expect(lines[0]).not.toHaveProperty("measures");
+  });
+
+  it("shares code/size/qty and order with cartToQuoteLines (drift-token parity)", () => {
+    const cart = [
+      item({ id: "a", productId: "NGR-1", size: "M", qty: 2 }),
+      item({ id: "b", productId: "NGR-2", size: "Custom", customSize: { Bust: "34" }, qty: 1 }),
+    ];
+    const quote = cartToQuoteLines(cart);
+    const place = cartToPlaceLines(cart).map(({ measures: _m, ...l }) => l);
+    expect(place).toEqual(quote);
   });
 });
 

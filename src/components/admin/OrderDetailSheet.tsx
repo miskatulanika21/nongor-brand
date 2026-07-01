@@ -28,6 +28,7 @@ import {
   type OrderDetail,
 } from "@/lib/orders-shared";
 import { StatusBadge, fmtDate, fmtDateTime } from "./order-status";
+import { MeasurementsList } from "@/components/orders/MeasurementsList";
 import { formatBDT } from "@/lib/brand";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -218,24 +219,27 @@ export function OrderDetailSheet({ orderId, onClose, onMutated }: Props) {
                   </p>
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {detail.items.map((it) => (
-                    <div key={it.id} className="flex items-center gap-3">
-                      {it.image ? (
-                        <img src={it.image} alt="" className="h-12 w-10 rounded object-cover" />
-                      ) : (
-                        <div className="grid h-12 w-10 place-items-center rounded bg-muted text-muted-foreground">
-                          <PackageOpen className="h-4 w-4" />
+                    <div key={it.id} className="space-y-2">
+                      <div className="flex items-center gap-3">
+                        {it.image ? (
+                          <img src={it.image} alt="" className="h-12 w-10 rounded object-cover" />
+                        ) : (
+                          <div className="grid h-12 w-10 place-items-center rounded bg-muted text-muted-foreground">
+                            <PackageOpen className="h-4 w-4" />
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <p className="line-clamp-1 text-foreground">{it.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Qty {it.qty}
+                            {it.variantSize ? ` · ${it.variantSize}` : ""}
+                          </p>
                         </div>
-                      )}
-                      <div className="flex-1">
-                        <p className="line-clamp-1 text-foreground">{it.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Qty {it.qty}
-                          {it.variantSize ? ` · ${it.variantSize}` : ""}
-                        </p>
+                        <span className="font-medium">{formatBDT(it.lineTotal)}</span>
                       </div>
-                      <span className="font-medium">{formatBDT(it.lineTotal)}</span>
+                      <MeasurementsList measurements={it.customMeasurements} />
                     </div>
                   ))}
                 </div>

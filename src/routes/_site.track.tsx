@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { trackOrderFn } from "@/lib/orders.api";
 import { CustomerStatusBadge, fmtDate } from "@/components/admin/order-status";
+import { MeasurementsList } from "@/components/orders/MeasurementsList";
 import { CUSTOMER_STEPS, customerProgress, type TrackOrderResult } from "@/lib/orders-shared";
 import { formatBDT, BRAND } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
@@ -224,27 +225,30 @@ function OrderTimeline({
         <h2 className="font-display text-xl text-foreground">Items</h2>
         <div className="mt-4 space-y-4">
           {items.map((i, idx) => (
-            <div key={idx} className="flex gap-3">
-              {i.image ? (
-                <img
-                  src={i.image}
-                  alt={i.name}
-                  loading="lazy"
-                  className="h-20 w-16 rounded object-cover"
-                />
-              ) : (
-                <div className="grid h-20 w-16 place-items-center rounded bg-muted text-muted-foreground">
-                  <PackageOpen className="h-5 w-5" />
+            <div key={idx} className="space-y-2">
+              <div className="flex gap-3">
+                {i.image ? (
+                  <img
+                    src={i.image}
+                    alt={i.name}
+                    loading="lazy"
+                    className="h-20 w-16 rounded object-cover"
+                  />
+                ) : (
+                  <div className="grid h-20 w-16 place-items-center rounded bg-muted text-muted-foreground">
+                    <PackageOpen className="h-5 w-5" />
+                  </div>
+                )}
+                <div className="flex-1 text-sm">
+                  <p className="font-medium text-foreground">{i.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Qty {i.qty}
+                    {i.variantSize ? ` · ${i.variantSize}` : ""}
+                  </p>
                 </div>
-              )}
-              <div className="flex-1 text-sm">
-                <p className="font-medium text-foreground">{i.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  Qty {i.qty}
-                  {i.variantSize ? ` · ${i.variantSize}` : ""}
-                </p>
+                <span className="text-sm font-medium">{formatBDT(i.unitPrice * i.qty)}</span>
               </div>
-              <span className="text-sm font-medium">{formatBDT(i.unitPrice * i.qty)}</span>
+              <MeasurementsList measurements={i.customMeasurements} />
             </div>
           ))}
         </div>
