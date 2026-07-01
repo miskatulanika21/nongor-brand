@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useAccountUI, isValidAccountPhone, type SavedAddress } from "@/lib/account-ui";
-import { normalizeBDPhone } from "@/lib/order-ui";
+import { normalizeBDPhone } from "@/lib/bd-phone";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
