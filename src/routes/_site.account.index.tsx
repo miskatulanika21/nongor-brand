@@ -1,13 +1,12 @@
-import { createFileRoute, Link, useRouteContext } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { useAccountUI, safeDateValue } from "@/lib/account-ui";
-import { readStoredOrders, orderScope, type UIOrder } from "@/lib/order-ui";
-import { STATUS_TONE } from "@/lib/orders";
+import { useAccountUI } from "@/lib/account-ui";
+import { listMyOrdersFn } from "@/lib/orders.api";
+import { CustomerStatusBadge } from "@/components/admin/order-status";
+import { type MyOrderListItem } from "@/lib/orders-shared";
 import { formatBDT, BRAND } from "@/lib/brand";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
 import {
   Package,
   MapPin,
@@ -25,31 +24,36 @@ export const Route = createFileRoute("/_site/account/")({
   component: AccountOverview,
 });
 
-const FALLBACK_TONE = "border-border bg-secondary text-secondary-foreground";
-
 function AccountOverview() {
   const { hydrated, profile, addresses, measurements } = useAccountUI();
   const { wishlist } = useStore();
-  const { session } = useRouteContext({ from: "/_site/account" }) as {
-    session: { userId: string };
-  };
-  const scope = orderScope(session.userId);
-  const [orders, setOrders] = useState<UIOrder[]>([]);
+  const [orders, setOrders] = useState<MyOrderListItem[]>([]);
+  const [orderTotal, setOrderTotal] = useState(0);
+  const [ordersLoading, setOrdersLoading] = useState(true);
 
   useEffect(() => {
-    const deviceOrders = readStoredOrders(scope).sort(
-      (a, b) => safeDateValue(b.date) - safeDateValue(a.date),
-    );
-    setOrders(deviceOrders);
-  }, [scope]);
+    let live = true;
+    void listMyOrdersFn({ data: { limit: 5 } })
+      .then((res) => {
+        if (!live) return;
+        if (res.success) {
+          setOrders(res.orders);
+          setOrderTotal(res.total);
+        }
+      })
+      .finally(() => live && setOrdersLoading(false));
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const recent = orders[0];
 
   const stats = useMemo(
     () => [
       {
-        label: "Orders on this device",
-        value: orders.length,
+        label: "Orders",
+        value: orderTotal,
         icon: Package,
         to: "/orders" as const,
       },
@@ -72,7 +76,7 @@ function AccountOverview() {
         to: "/wishlist" as const,
       },
     ],
-    [orders.length, addresses.length, measurements.length, wishlist.length],
+    [orderTotal, addresses.length, measurements.length, wishlist.length],
   );
 
   if (!hydrated) {
@@ -90,7 +94,7 @@ function AccountOverview() {
       <div>
         <h2 className="font-display text-xl text-foreground">Welcome back, {profile.name}</h2>
         <p className="text-sm text-muted-foreground">
-          Here is a quick snapshot of your local boutique activity.
+          Here is a quick snapshot of your account activity.
         </p>
       </div>
 
@@ -122,20 +126,19 @@ function AccountOverview() {
             <Link to="/orders">View all</Link>
           </Button>
         </div>
-        {recent ? (
+        {ordersLoading ? (
+          <Skeleton className="h-20 rounded-xl" />
+        ) : recent ? (
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
             <div className="min-w-0">
-              <p className="font-medium text-foreground">Order {recent.id}</p>
+              <p className="font-medium text-foreground">Order {recent.orderNo}</p>
               <p className="text-sm text-muted-foreground">
-                {recent.items.length} item
-                {recent.items.length === 1 ? "" : "s"} · {formatBDT(recent.total)}
+                {recent.itemCount} item
+                {recent.itemCount === 1 ? "" : "s"} · {formatBDT(recent.total)}
               </p>
-              <Badge
-                variant="outline"
-                className={cn("mt-2", STATUS_TONE[recent.status] ?? FALLBACK_TONE)}
-              >
-                {recent.status}
-              </Badge>
+              <div className="mt-2">
+                <CustomerStatusBadge status={recent.status} />
+              </div>
             </div>
             <Button asChild variant="outline" size="sm">
               <Link to="/orders/$id" params={{ id: recent.id }}>
@@ -145,7 +148,7 @@ function AccountOverview() {
           </div>
         ) : (
           <p className="rounded-xl border border-dashed border-border bg-secondary/30 px-4 py-6 text-center text-sm text-muted-foreground">
-            No orders saved on this device yet.
+            No orders yet.
           </p>
         )}
       </div>
