@@ -447,6 +447,12 @@ export interface OrderPaymentDetail {
   verifiedAt: string | null;
   rejectReason: string | null;
   createdAt: string;
+  /**
+   * True when this TrxID (same method) is already recorded on a DIFFERENT
+   * order's VERIFIED payment — a reused-transaction signal for the admin
+   * reviewing it. Computed server-side in get_order_detail.
+   */
+  trxIdDuplicate: boolean;
 }
 
 export interface OrderScreenshot {

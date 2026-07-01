@@ -45,7 +45,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { Loader2, PackageOpen, Paperclip } from "lucide-react";
+import { AlertTriangle, Loader2, PackageOpen, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 
 interface Props {
@@ -275,6 +275,12 @@ export function OrderDetailSheet({ orderId, onClose, onMutated }: Props) {
                     <p className="text-muted-foreground">
                       TrxID:{" "}
                       <span className="font-medium text-foreground">{detail.payment.trxId}</span>
+                    </p>
+                  )}
+                  {detail.payment?.trxIdDuplicate && (
+                    <p className="mt-1 flex items-center gap-1.5 rounded border border-destructive/30 bg-destructive/10 px-2 py-1 text-xs text-destructive">
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                      This TrxID is already verified on another order — check before verifying.
                     </p>
                   )}
                   {detail.payment?.rejectReason && (
