@@ -314,10 +314,10 @@ implements `verify` off a webhook handler that writes to the same
   (10/10min).
 - **P4 — Payment evidence + verification.** ✅ DONE. DB layer (live 2026-06-30,
   migrations `…210911`/`…210936`/`…210959`/`…211019`) + app integration (P4c detail
-  + lifecycle buttons, P4e private `payment-evidence` Storage bucket + customer
-  submit + admin signed-URL viewer, P4d payments review queue + duplicate-TrxID
-  warning + `admin_order_stats`). Migrations `20260630195555`, `20260701100539`,
-  `20260701102954`.
+  - lifecycle buttons, P4e private `payment-evidence` Storage bucket + customer
+    submit + admin signed-URL viewer, P4d payments review queue + duplicate-TrxID
+    warning + `admin_order_stats`). Migrations `20260630195555`, `20260701100539`,
+    `20260701102954`.
 - **P5 — Real coupons.** `coupons` + `coupon_usages`, race-safe validation +
   rate-limited application, minimal admin/seed (full coupon admin is Stage 6).
 - **P6 — Admin order lifecycle.** ✅ DONE. RPCs (live 2026-06-30) + DB-backed
@@ -333,7 +333,7 @@ implements `verify` off a webhook handler that writes to the same
   lifecycle, measurements round-trip, guest track scoping, transition guards,
   grant posture); `pass3_db.test.sql` + concurrency tests unchanged and green.
   Custom measurements (P4g, migration `20260701094647`): `order_items.
-  custom_measurements jsonb` captured at `place_order`, projected in all reads,
+custom_measurements jsonb` captured at `place_order`, projected in all reads,
   excluded from `quote_token` canon. Docs/CURRENT_STATUS refreshed.
 
 ## 12. Testing (mandatory — matches the spec’s exit bar)

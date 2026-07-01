@@ -184,9 +184,9 @@ server fns backed by `SECURITY DEFINER` service-role RPCs.
   input, `expected_version` guard, optimistic UI. Return offers the `restock` toggle.
 - **Payment evidence:** private `payment-evidence` Storage bucket (RLS
   service-role-only write, no public read). Customer: evidence form (TrxID + sender
-  + screenshot upload) on `pending_payment`/`payment_rejected` →
-  `submitPaymentEvidenceFn` (CSRF + rate-limit + owner/guest scope). Admin:
-  signed-URL download in the detail view.
+  - screenshot upload) on `pending_payment`/`payment_rejected` →
+    `submitPaymentEvidenceFn` (CSRF + rate-limit + owner/guest scope). Admin:
+    signed-URL download in the detail view.
 - **Payment review (`admin.payments.tsx`):** filtered queue of `payment_submitted`
   orders; verify/reject with the duplicate-TrxID warning from `get_order_detail`;
   dashboard order stats (`admin_order_stats` RPC) DB-backed.
