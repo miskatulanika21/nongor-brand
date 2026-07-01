@@ -58,6 +58,22 @@ export const listOrdersFn = createServerFn({ method: "GET" })
     }
   });
 
+export const adminOrderStatsFn = createServerFn({ method: "GET" }).handler(async () => {
+  const { setNoStore } = await import("@/lib/server/admin-guard.server");
+  await setNoStore();
+  const { requirePermission } = await import("@/lib/server/rbac.server");
+  const authz = await requirePermission("orders.view");
+  if (!authz.ok) return { success: false as const, error: "Not authorized.", stats: null };
+
+  const { adminOrderStats } = await import("@/lib/server/orders.server");
+  try {
+    const stats = await adminOrderStats(authz.identity.userId);
+    return { success: true as const, stats };
+  } catch {
+    return { success: false as const, error: "Could not load dashboard stats.", stats: null };
+  }
+});
+
 export const getOrderDetailFn = createServerFn({ method: "GET" })
   .validator(orderIdSchema)
   .handler(async ({ data }) => {

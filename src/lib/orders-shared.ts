@@ -477,6 +477,19 @@ export interface OrderDetail {
   history: OrderHistoryEntry[];
 }
 
+/** Aggregate figures for the admin dashboard (api.admin_order_stats). */
+export interface AdminOrderStats {
+  totalOrders: number;
+  todayOrders: number;
+  pendingPayments: number;
+  pendingConfirmation: number;
+  courierPending: number;
+  /** Realized revenue: sum of delivered + completed order totals. */
+  deliveredRevenue: number;
+  /** Made-to-measure orders still in progress (a custom line, non-terminal). */
+  customPending: number;
+}
+
 /** Shape returned by api.transition_order (and the convenience wrappers). */
 export interface OrderTransitionResult {
   orderId: string;
