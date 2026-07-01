@@ -1,12 +1,13 @@
 # Stage 3 — Checkout, Orders & Payments — Master Design (v2)
 
 Status: **approved & complete** (2026-06-28; Pass-4 app integration completed
-2026-07-01). All passes (P1 schema through P4h tests) are implemented + live +
-CI-green. 48 prod migrations, 385 Vitest + 3 DB integration suites. Live
-progress detail lives in `CURRENT_STATUS.md`; this remains the design source of
-truth. Aligns with the Stage 3 line in `IMPLEMENTATION_PLAN.md` and the
-established codebase posture (RPC-only tables, `guardAdminWrite`, canonical
-audit, stable snake_case error codes, prod-proven migrations, CI-green per pass).
+2026-07-01; **Pass-5 real coupons completed 2026-07-01 → Stage 3 CLOSED**). All
+passes (P1 schema through P5 coupons) are implemented + live + CI-green. 51 prod
+migrations, 388 Vitest + 3 DB integration suites. Live progress detail lives in
+`CURRENT_STATUS.md`; this remains the design source of truth. Aligns with the
+Stage 3 line in `IMPLEMENTATION_PLAN.md` and the established codebase posture
+(RPC-only tables, `guardAdminWrite`, canonical audit, stable snake_case error
+codes, prod-proven migrations, CI-green per pass).
 
 **v2 changelog:** hardened the _inside_ of every pass — deterministic lock
 ordering, race-safe idempotency, transition concurrency, price-drift handling,
@@ -318,8 +319,23 @@ implements `verify` off a webhook handler that writes to the same
     submit + admin signed-URL viewer, P4d payments review queue + duplicate-TrxID
     warning + `admin_order_stats`). Migrations `20260630195555`, `20260701100539`,
     `20260701102954`.
-- **P5 — Real coupons.** `coupons` + `coupon_usages`, race-safe validation +
-  rate-limited application, minimal admin/seed (full coupon admin is Stage 6).
+- **P5 — Real coupons.** ✅ DONE (2026-07-01). **P5a** (`coupons` + `coupon_usages`,
+  RPC-only deny-all; migration `20260701150858`) — premium schema: `percent`/
+  `fixed`/`free_shipping` types, `min_subtotal`/`max_discount`/`usage_limit`/
+  `per_user_limit` (may exceed 1)/`first_order_only`/window, maintained
+  `usage_count`. **P5b** (`20260701152057`) — `quote_order`/`place_order`
+  coupon-aware via shared `private.coupon_reason`/`coupon_amount`; discount on the
+  pre-discount-subtotal shipping rule; race-safe consume under the coupon row lock
+  (usage_count bump + one-per-order `coupon_usages`); codes `invalid_coupon`,
+  `coupon_min_not_met`, `coupon_exhausted`, `coupon_not_eligible`. **P5c** — retired
+  `MOCK_COUPONS`; cart/checkout read the server discount + `coupon.applied/reason`
+  (a stale code silently drops at place, never blocks checkout). **P5d**
+  (`20260701155119`) — admin coupon CRUD (`list_coupons`/`upsert_coupon`/
+  `set_coupon_active`/`delete_coupon` behind `guardAdminWrite("coupons.manage")`,
+  canonical `coupon.*` audit, used-coupon delete guard); `admin.coupons.tsx`
+  DB-backed. **P5e** — `pass3_db.test.sql` §P5/§P5-admin coverage (discount math,
+  limits, eligibility, usage counter, admin guards, grant posture). Full coupon
+  admin polish (category eligibility) remains Stage 6.
 - **P6 — Admin order lifecycle.** ✅ DONE. RPCs (live 2026-06-30) + DB-backed
   `admin.orders`/`admin.payments` UI (P4b board, P4c detail + action buttons,
   P4d review queue). Bug fix (`e3c6753`): `consume_reservations` / restock

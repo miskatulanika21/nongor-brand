@@ -3,12 +3,32 @@
 Authoritative record of verified project state. Code and live-environment
 behavior are the source of truth; this file is updated after every stage.
 
-_Last updated: 2026-07-01 — **Stage 3 Pass-4 app integration: COMPLETE
-(P4a–P4h, CI-green).** Wired all Pass-4 order RPCs into the app; the full
-admin + customer order lifecycle is now DB-backed (master plan:
-`docs/stage-3-pass4-admin-orders-plan.md`). 5 new prod migrations (48 total);
-385 Vitest tests + 3 DB integration suites (`pass2/3/4_db.test.sql`); build
-clean._
+\_Last updated: 2026-07-01 — **Stage 3 Pass-5 real coupons: COMPLETE → STAGE 3
+CLOSED (P1–P5, CI-green).** Replaced the display-only mock coupons with a
+server-authoritative, race-safe coupon system end to end. **P5a** (migration
+`20260701150858`): `coupons` + `coupon_usages` (RPC-only deny-all) — premium
+schema with `percent`/`fixed`/`free_shipping` types, min-spend, max-discount,
+global + per-user usage caps (per-user may exceed 1), first-order-only, validity
+window, and a maintained `usage_count`. **P5b** (`20260701152057`):
+`api.quote_order`/`place_order` are coupon-aware via shared
+`private.coupon_reason`/`coupon_amount` helpers (quote and place never diverge);
+the discount is validated + consumed under a `SELECT … FOR UPDATE` on the coupon
+row (global + per-user limits race-safe), free delivery keeps the pinned
+pre-discount-subtotal shipping rule, and the balanced-total CHECK re-asserts
+`subtotal − discount + shipping = total`; stable codes `invalid_coupon`,
+`coupon_min_not_met`, `coupon_exhausted`, `coupon_not_eligible`. **P5c**: retired
+`MOCK_COUPONS`/`findCoupon`/`couponDiscount` + the store's client discount — the
+store keeps only the applied code, and the cart/checkout render the server
+discount + `coupon.applied/reason` (a stale/expired code silently drops at place
+instead of blocking checkout). **P5d** (`20260701155119`): admin coupon CRUD
+(`api.list_coupons`/`upsert_coupon`/`set_coupon_active`/`delete_coupon` behind
+`guardAdminWrite("coupons.manage")`, canonical `coupon.*` audit, used-coupon
+delete guard) + a DB-backed `admin.coupons.tsx`. **P5e**: `pass3_db.test.sql`
+§P5/§P5-admin coverage (discount math for all three types, min/limit/first-order
+enforcement, usage-counter increment, admin CRUD + guards, grant posture) — this
+also fixed the grant-check signatures the P5b function-signature change had left
+stale (a from-empty CI regression). 3 new prod migrations (51 total); 388 Vitest
+tests and 3 DB integration suites; advisors clean; build clean.\_
 
 _Sub-pass detail: **P4a** (`f76f009`): isomorphic 15-status model
 (`orders-shared.ts`) + server layer (`orders.server.ts` / `orders.api.ts`).

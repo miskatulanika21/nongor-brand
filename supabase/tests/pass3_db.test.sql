@@ -390,15 +390,147 @@ BEGIN
   UPDATE public.site_settings SET order_hold_hours = 24 WHERE id = 1;
 END $$;
 
--- grants: quote_order is public; place_order is service-role only
+-- ============================================================
+-- §P5 — coupons (server discount math, limits, eligibility, race-safe consume)
+-- ============================================================
+INSERT INTO public.products (code, slug, name, category_id, price, stock)
+  SELECT 'o-coup', 'o-coup', 'Couponable', id, 1000, 100
+  FROM public.product_categories WHERE slug = 'o-cat';
+
+INSERT INTO public.coupons (code, type, value, min_subtotal) VALUES
+  ('SAVE10','percent',10,1000),
+  ('FLAT300','fixed',300,0),
+  ('FREESHIP','free_shipping',0,0),
+  ('MIN5K','fixed',100,5000);
+INSERT INTO public.coupons (code, type, value, usage_limit) VALUES ('ONCE','fixed',100,1);
+INSERT INTO public.coupons (code, type, value, first_order_only) VALUES ('NEWBIE','fixed',100,true);
+
+DO $$
+DECLARE
+  q jsonb; r jsonb; got text; n int;
+  cust jsonb := jsonb_build_object('name','Coupy','phone','01700000000','district','Dhaka','address','9 Rd');
+  lines jsonb := '[{"code":"o-coup","qty":2}]'::jsonb;  -- subtotal 2000, shipping 80
+BEGIN
+  -- quote echoes an applied percent coupon (200 off → total 1880); code normalised.
+  q := api.quote_order(lines, 'dhaka', 'save10');
+  IF NOT (q->'coupon'->>'applied')::bool OR (q->>'discount')::int <> 200 OR (q->>'total')::int <> 1880 THEN
+    RAISE EXCEPTION 'FAIL: quote percent %', q; END IF;
+
+  -- quote rejects below-min WITHOUT raising (cart stays quotable).
+  q := api.quote_order(lines, 'dhaka', 'MIN5K');
+  IF (q->'coupon'->>'applied')::bool OR (q->'coupon'->>'reason') <> 'coupon_min_not_met' THEN
+    RAISE EXCEPTION 'FAIL: quote min %', q; END IF;
+
+  -- place percent: discount 200, coupon_code stored, usage row + counter bump,
+  -- balanced-total invariant holds.
+  r := api.place_order(lines, cust, 'dhaka', 'cod', 'p5-pct', NULL, NULL, 'SAVE10');
+  IF (r->>'discount')::int <> 200 OR (r->>'total')::int <> 1880 OR (r->>'coupon') <> 'SAVE10' THEN
+    RAISE EXCEPTION 'FAIL: place percent %', r; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.orders WHERE id=(r->>'order_id')::uuid
+                 AND discount=200 AND coupon_code='SAVE10' AND subtotal-discount+shipping_fee=total) THEN
+    RAISE EXCEPTION 'FAIL: percent order row'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.coupon_usages
+                 WHERE coupon_code='SAVE10' AND order_id=(r->>'order_id')::uuid AND amount=200) THEN
+    RAISE EXCEPTION 'FAIL: percent usage row'; END IF;
+  SELECT usage_count INTO n FROM public.coupons WHERE code='SAVE10';
+  IF n <> 1 THEN RAISE EXCEPTION 'FAIL: percent usage_count=% (want 1)', n; END IF;
+
+  -- fixed: 300 off → total 1780.
+  r := api.place_order(lines, cust, 'dhaka', 'cod', 'p5-fix', NULL, NULL, 'FLAT300');
+  IF (r->>'discount')::int <> 300 OR (r->>'total')::int <> 1780 THEN
+    RAISE EXCEPTION 'FAIL: place fixed %', r; END IF;
+
+  -- free_shipping: discount 0, shipping waived to 0, total 2000; usage records the
+  -- 80 waived.
+  r := api.place_order(lines, cust, 'dhaka', 'cod', 'p5-free', NULL, NULL, 'FREESHIP');
+  IF (r->>'discount')::int <> 0 OR (r->>'shipping_fee')::int <> 0 OR (r->>'total')::int <> 2000 THEN
+    RAISE EXCEPTION 'FAIL: place free_shipping %', r; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.coupon_usages WHERE coupon_code='FREESHIP' AND amount=80) THEN
+    RAISE EXCEPTION 'FAIL: free_shipping usage amount'; END IF;
+
+  -- min not met at place → coupon_min_not_met (hard raise).
+  BEGIN PERFORM api.place_order(lines, cust, 'dhaka', 'cod', 'p5-min', NULL, NULL, 'MIN5K');
+        RAISE EXCEPTION 'FAIL: below-min accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got=MESSAGE_TEXT;
+    IF got <> 'coupon_min_not_met' THEN RAISE EXCEPTION 'FAIL: min=%', got; END IF; END;
+
+  -- unknown coupon at place → invalid_coupon.
+  BEGIN PERFORM api.place_order(lines, cust, 'dhaka', 'cod', 'p5-bad', NULL, NULL, 'NOPE');
+        RAISE EXCEPTION 'FAIL: invalid coupon accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got=MESSAGE_TEXT;
+    IF got <> 'invalid_coupon' THEN RAISE EXCEPTION 'FAIL: invalid=%', got; END IF; END;
+
+  -- first_order_only as a guest → coupon_not_eligible (can't verify history).
+  BEGIN PERFORM api.place_order(lines, cust, 'dhaka', 'cod', 'p5-new', NULL, NULL, 'NEWBIE');
+        RAISE EXCEPTION 'FAIL: first-order guest accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got=MESSAGE_TEXT;
+    IF got <> 'coupon_not_eligible' THEN RAISE EXCEPTION 'FAIL: newbie=%', got; END IF; END;
+
+  -- global usage_limit: ONCE (limit 1) — first redeems, second is exhausted.
+  r := api.place_order(lines, cust, 'dhaka', 'cod', 'p5-once1', NULL, NULL, 'ONCE');
+  IF (r->>'discount')::int <> 100 THEN RAISE EXCEPTION 'FAIL: ONCE first redeem %', r; END IF;
+  BEGIN PERFORM api.place_order(lines, cust, 'dhaka', 'cod', 'p5-once2', NULL, NULL, 'ONCE');
+        RAISE EXCEPTION 'FAIL: usage_limit exceeded accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got=MESSAGE_TEXT;
+    IF got <> 'coupon_exhausted' THEN RAISE EXCEPTION 'FAIL: exhausted=%', got; END IF; END;
+END $$;
+
+-- §P5-admin — admin coupon RPCs (create/edit/toggle/delete + guards)
+-- Seed a staff actor (the from-empty CI DB has none), mirroring pass4_db.test.sql.
+INSERT INTO auth.users (id) VALUES ('00000000-0000-0000-0000-0000000000c1')
+  ON CONFLICT DO NOTHING;
+INSERT INTO public.staff_profiles (user_id, role, is_active)
+  VALUES ('00000000-0000-0000-0000-0000000000c1', 'admin', true) ON CONFLICT DO NOTHING;
+
+DO $$
+DECLARE r jsonb; got text; staff uuid := '00000000-0000-0000-0000-0000000000c1';
+BEGIN
+  r := api.upsert_coupon(staff, '{"code":"admincpn","type":"percent","value":20,"max_discount":400}');
+  IF (r->>'created')::bool IS NOT TRUE OR (r->'coupon'->>'code') <> 'ADMINCPN' THEN
+    RAISE EXCEPTION 'FAIL: admin create %', r; END IF;
+  r := api.upsert_coupon(staff, '{"code":"ADMINCPN","type":"free_shipping","value":0}');
+  IF (r->>'created')::bool IS NOT FALSE OR (r->'coupon'->>'type') <> 'free_shipping' THEN
+    RAISE EXCEPTION 'FAIL: admin edit %', r; END IF;
+
+  -- coherence: percent > 100 → invalid_coupon_config.
+  BEGIN PERFORM api.upsert_coupon(staff, '{"code":"BADPCT","type":"percent","value":150}');
+        RAISE EXCEPTION 'FAIL: bad percent accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got=MESSAGE_TEXT;
+    IF got <> 'invalid_coupon_config' THEN RAISE EXCEPTION 'FAIL: config=%', got; END IF; END;
+
+  r := api.set_coupon_active(staff, 'ADMINCPN', false);
+  IF (r->>'active')::bool IS NOT FALSE THEN RAISE EXCEPTION 'FAIL: toggle'; END IF;
+
+  -- a used coupon cannot be deleted (SAVE10 was redeemed above) → coupon_in_use.
+  BEGIN PERFORM api.delete_coupon(staff, 'SAVE10');
+        RAISE EXCEPTION 'FAIL: used coupon deleted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got=MESSAGE_TEXT;
+    IF got <> 'coupon_in_use' THEN RAISE EXCEPTION 'FAIL: in_use=%', got; END IF; END;
+
+  -- an unused coupon deletes cleanly.
+  IF NOT (api.delete_coupon(staff, 'ADMINCPN')->>'deleted')::bool THEN
+    RAISE EXCEPTION 'FAIL: delete unused'; END IF;
+
+  -- non-staff actor is rejected.
+  BEGIN PERFORM api.list_coupons(gen_random_uuid());
+        RAISE EXCEPTION 'FAIL: non-staff read';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got=MESSAGE_TEXT;
+    IF got <> 'actor_not_authorized' THEN RAISE EXCEPTION 'FAIL: authz=%', got; END IF; END;
+END $$;
+
+-- grants: quote_order is public; place_order + coupon-admin RPCs are service-role only
 DO $$
 BEGIN
-  IF NOT has_function_privilege('anon', 'api.quote_order(jsonb,text)', 'EXECUTE') THEN
+  IF NOT has_function_privilege('anon', 'api.quote_order(jsonb,text,text,uuid)', 'EXECUTE') THEN
     RAISE EXCEPTION 'FAIL: anon cannot call quote_order'; END IF;
-  IF has_function_privilege('anon', 'api.place_order(jsonb,jsonb,text,text,text,uuid,text)', 'EXECUTE') THEN
+  IF has_function_privilege('anon', 'api.place_order(jsonb,jsonb,text,text,text,uuid,text,text)', 'EXECUTE') THEN
     RAISE EXCEPTION 'FAIL: anon can call place_order'; END IF;
-  IF has_function_privilege('authenticated', 'api.place_order(jsonb,jsonb,text,text,text,uuid,text)', 'EXECUTE') THEN
+  IF has_function_privilege('authenticated', 'api.place_order(jsonb,jsonb,text,text,text,uuid,text,text)', 'EXECUTE') THEN
     RAISE EXCEPTION 'FAIL: authenticated can call place_order'; END IF;
+  IF has_function_privilege('anon', 'api.list_coupons(uuid)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'api.upsert_coupon(uuid,jsonb)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'api.delete_coupon(uuid,text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL: coupon-admin RPC exposed to anon/authenticated'; END IF;
 END $$;
 
 ROLLBACK;
