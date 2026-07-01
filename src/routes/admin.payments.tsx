@@ -1,150 +1,148 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { AdminHeader } from "@/components/admin/AdminUI";
-import { ORDERS, type Order } from "@/lib/orders";
+import { PaymentBadge, fmtDateTime } from "@/components/admin/order-status";
+import { OrderDetailSheet } from "@/components/admin/OrderDetailSheet";
+import { listOrdersFn } from "@/lib/orders.api";
 import { formatBDT } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
-import { Check, X, Eye, RotateCcw, Flag, ImageIcon } from "lucide-react";
-import { toast } from "sonner";
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
+
+// The manual-payment review queue = orders sitting in `payment_submitted`
+// (a customer sent a TrxID/screenshot and is waiting on verification). Verify /
+// reject live in the shared OrderDetailSheet so there is one action surface for
+// the whole order pipeline — this screen is just the payment-focused list.
+const REVIEW_STATUS = "payment_submitted" as const;
+const QUEUE_LIMIT = 50;
 
 export const Route = createFileRoute("/admin/payments")({
+  head: () => ({ meta: [{ title: "Payments · Nongorr Admin" }] }),
+  loader: async () => {
+    const res = await listOrdersFn({
+      data: { status: REVIEW_STATUS, limit: QUEUE_LIMIT, offset: 0 },
+    });
+    return { orders: res.orders, total: res.total, loadError: !res.success };
+  },
   component: Payments,
 });
 
-type PayState = "Pending" | "Verified" | "Rejected" | "Correction" | "Suspicious";
-
-const pendingSeed: Order[] = [
-  ...ORDERS,
-  { ...ORDERS[1], id: "NGR-100262", customer: "Mim Chowdhury", paymentStatus: "Pending" },
-  {
-    ...ORDERS[0],
-    id: "NGR-100263",
-    customer: "Sadia Islam",
-    paymentStatus: "Pending",
-    trxId: "5K4J3H2G1F",
-  },
-];
-
-const STATE_TONE: Record<PayState, string> = {
-  Pending: "border-gold/40 text-primary",
-  Verified: "border-success/40 text-success",
-  Rejected: "border-destructive/40 text-destructive",
-  Correction: "border-gold/40 text-gold-foreground",
-  Suspicious: "border-destructive/40 text-destructive",
-};
-
 function Payments() {
-  const [states, setStates] = useState<Record<string, PayState>>(() =>
-    Object.fromEntries(pendingSeed.map((o) => [o.id, o.paymentStatus as PayState])),
-  );
-
-  const setState = (id: string, s: PayState, msg: string) => {
-    setStates((prev) => ({ ...prev, [id]: s }));
-    toast.success(msg);
-    // TODO: persist payment verification + notify customer via backend
-  };
+  const { orders, total, loadError } = Route.useLoaderData();
+  const router = useRouter();
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   return (
     <div>
       <AdminHeader
         title="Payments"
-        description="Verify manual bKash payments before confirming orders."
+        description="Verify manual bKash / Nagad payments before confirming orders."
       />
-      <div className="space-y-3">
-        {pendingSeed.map((o) => {
-          const st = states[o.id] ?? "Pending";
-          return (
-            <div key={o.id} className="rounded-xl border border-border bg-card p-5">
-              <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr_auto] lg:items-start">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="font-display text-lg text-foreground">{o.id}</p>
-                    <Badge variant="outline" className={cn(STATE_TONE[st])}>
-                      {st}
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    {o.customer} · {o.phone}
-                  </p>
-                </div>
-                <div className="text-sm">
-                  <p>
-                    Payable:{" "}
-                    <span className="font-semibold text-primary">{formatBDT(o.total)}</span>
-                  </p>
-                  <p className="text-muted-foreground">Sender bKash: {o.senderNumber}</p>
-                  <p className="text-muted-foreground">
-                    TrxID: <span className="font-medium text-foreground">{o.trxId}</span>
-                  </p>
-                </div>
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      <Eye className="h-4 w-4" /> Screenshot
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>{o.id} · Payment screenshot</DialogTitle>
-                    </DialogHeader>
-                    <div className="grid h-72 place-items-center rounded-lg border border-dashed border-border bg-secondary text-sm text-muted-foreground">
-                      <span className="flex items-center gap-1.5">
-                        <ImageIcon className="h-4 w-4" /> No screenshot uploaded (demo)
-                      </span>
-                    </div>
-                    <Textarea placeholder="Internal admin note…" />
-                  </DialogContent>
-                </Dialog>
-              </div>
 
-              <Textarea className="mt-4" placeholder="Admin note for this payment…" rows={2} />
+      {loadError ? (
+        <ErrorPanel onRetry={() => router.invalidate()} />
+      ) : orders.length === 0 ? (
+        <EmptyPanel />
+      ) : (
+        <>
+          <p className="mb-4 text-sm text-muted-foreground">
+            {total > QUEUE_LIMIT
+              ? `Showing the ${QUEUE_LIMIT} oldest of ${total} payments awaiting review.`
+              : `${total} payment${total === 1 ? "" : "s"} awaiting review.`}{" "}
+            <Link
+              to="/admin/orders"
+              search={{ status: REVIEW_STATUS }}
+              className="text-primary underline-offset-4 hover:underline"
+            >
+              Open in the orders board
+            </Link>
+          </p>
 
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  className="bg-success text-success-foreground hover:bg-success/90"
-                  onClick={() => setState(o.id, "Verified", "Payment verified")}
-                >
-                  <Check className="h-4 w-4" /> Verify
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="border-destructive/40 text-destructive hover:bg-destructive/5"
-                  onClick={() => setState(o.id, "Rejected", "Payment rejected")}
-                >
-                  <X className="h-4 w-4" /> Reject
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setState(o.id, "Correction", "Correction requested")}
-                >
-                  <RotateCcw className="h-4 w-4" /> Request correction
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="border-destructive/40 text-destructive hover:bg-destructive/5"
-                  onClick={() => setState(o.id, "Suspicious", "Flagged as suspicious")}
-                >
-                  <Flag className="h-4 w-4" /> Flag suspicious
-                </Button>
-              </div>
-            </div>
-          );
-        })}
+          <div className="overflow-x-auto rounded-xl border border-border bg-card">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Order</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Payable</TableHead>
+                  <TableHead>Method · TrxID</TableHead>
+                  <TableHead>Payment</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {orders.map((o) => (
+                  <TableRow key={o.id} className="cursor-pointer" onClick={() => setActiveId(o.id)}>
+                    <TableCell>
+                      <p className="font-medium text-foreground">{o.orderNo}</p>
+                      <p className="text-xs text-muted-foreground">{fmtDateTime(o.placedAt)}</p>
+                    </TableCell>
+                    <TableCell>
+                      <p className="text-foreground">{o.customerName}</p>
+                      <p className="text-xs text-muted-foreground">{o.customerPhone}</p>
+                    </TableCell>
+                    <TableCell className="font-medium text-primary">{formatBDT(o.total)}</TableCell>
+                    <TableCell>
+                      <p className="text-xs uppercase text-muted-foreground">{o.paymentMethod}</p>
+                      <p className="font-mono text-sm text-foreground">{o.payment?.trxId ?? "—"}</p>
+                    </TableCell>
+                    <TableCell>{o.payment && <PaymentBadge status={o.payment.status} />}</TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="sm">
+                        Review
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      )}
+
+      <OrderDetailSheet
+        orderId={activeId}
+        onClose={() => setActiveId(null)}
+        onMutated={() => router.invalidate()}
+      />
+    </div>
+  );
+}
+
+function EmptyPanel() {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-card/50 px-6 py-16 text-center">
+      <div className="grid h-14 w-14 place-items-center rounded-full bg-success/10 text-success">
+        <CheckCircle2 className="h-6 w-6" />
       </div>
+      <h3 className="font-display text-xl text-foreground">No payments awaiting review</h3>
+      <p className="max-w-sm text-sm text-muted-foreground">
+        Manual payments appear here as soon as customers submit a transaction ID and screenshot.
+      </p>
+    </div>
+  );
+}
+
+function ErrorPanel({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-6 py-16 text-center">
+      <div className="grid h-14 w-14 place-items-center rounded-full bg-destructive/10 text-destructive">
+        <AlertTriangle className="h-6 w-6" />
+      </div>
+      <h3 className="font-display text-xl text-foreground">Could not load payments</h3>
+      <p className="max-w-sm text-sm text-muted-foreground">
+        Something went wrong loading the review queue. Please retry.
+      </p>
+      <Button variant="outline" onClick={onRetry}>
+        Retry
+      </Button>
     </div>
   );
 }
