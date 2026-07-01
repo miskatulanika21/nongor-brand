@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore, type CartItem } from "@/lib/store";
 import { formatBDT } from "@/lib/brand";
 import { PRODUCT_TYPE_LABEL, type Product } from "@/lib/products";
-import { cartToQuoteLines, type QuoteResult } from "@/lib/checkout-shared";
+import { cartToQuoteLines, couponReasonMessage, type QuoteResult } from "@/lib/checkout-shared";
 import { quoteOrderFn } from "@/lib/checkout.api";
 import { listProductCards } from "@/lib/catalog.api";
 import { ProductCard } from "@/components/ProductCard";
@@ -89,9 +89,7 @@ function Cart() {
     cartSubtotal,
     deliveryZone,
     setDeliveryZone,
-    appliedCoupon,
     couponCode,
-    discount,
     applyCoupon,
     removeCoupon,
     orderNote,
@@ -117,7 +115,9 @@ function Cart() {
     if (lines.length === 0) return;
     setReconciling(true);
     try {
-      const result = await quoteOrderFn({ data: { lines, zone: deliveryZone } });
+      const result = await quoteOrderFn({
+        data: { lines, zone: deliveryZone, coupon: couponCode ?? undefined },
+      });
       if (result.success) {
         setQuote(result.quote);
         const warnings = new Map<string, string>();
@@ -155,21 +155,25 @@ function Cart() {
     } finally {
       setReconciling(false);
     }
-  }, [cart, deliveryZone, updateQty]);
+  }, [cart, deliveryZone, couponCode, updateQty]);
 
   useEffect(() => {
     reconcile();
   }, [reconcile]);
 
-  const shipping = computeShipping(deliveryZone, cartSubtotal);
-  const total = Math.max(0, cartSubtotal - discount) + shipping;
+  // Discount + coupon status are server truth (from the quote). Until the first
+  // quote resolves we show no discount rather than a phantom one.
+  const couponStatus = quote?.coupon ?? null;
+  const couponApplied = couponStatus?.applied === true;
+  const discount = quote?.discount ?? 0;
+
+  const clientShipping = computeShipping(deliveryZone, cartSubtotal);
+  const shipping = quote?.shipping_fee ?? clientShipping;
+  const total = quote?.total ?? Math.max(0, cartSubtotal - discount) + shipping;
   const freeDelivery = cartSubtotal >= FREE_DELIVERY_THRESHOLD;
   const remaining = freeDeliveryRemaining(cartSubtotal);
   const progress = Math.min(100, (cartSubtotal / FREE_DELIVERY_THRESHOLD) * 100);
   const serverSubtotal = quote?.subtotal ?? null;
-
-  // Coupon applied in store but no longer qualifies after qty changes.
-  const couponNoLongerQualifies = Boolean(appliedCoupon && cartSubtotal < appliedCoupon.min);
 
   const completeTheLook = useMemo(() => {
     if (!cart.length) return [];
@@ -184,13 +188,13 @@ function Cart() {
   }, [cart, allProducts]);
 
   function handleApplyCoupon() {
-    const res = applyCoupon(couponInput);
-    if (res.success) {
+    // The store only records the code; the server (re-quote) decides if it
+    // applies. Feedback surfaces from quote.coupon once the quote resolves.
+    if (applyCoupon(couponInput)) {
       setCouponError(null);
       setCouponInput("");
-      toast.success(res.message);
     } else {
-      setCouponError(res.message);
+      setCouponError("Enter a coupon code.");
     }
   }
 
@@ -448,13 +452,15 @@ function Cart() {
           <div className="site-sticky-with-gap h-fit space-y-4 rounded-xl border border-border bg-card p-6 lg:sticky">
             <h2 className="font-display text-2xl text-foreground">Order Summary</h2>
 
-            {/* Coupon */}
+            {/* Coupon (server-validated via the quote) */}
             <div className="space-y-2">
-              {appliedCoupon && !couponNoLongerQualifies ? (
+              {couponApplied ? (
                 <div className="flex items-center justify-between rounded-lg border border-gold/40 bg-gold/10 px-3 py-2">
                   <span className="flex items-center gap-2 text-sm font-medium text-foreground">
-                    <Tag className="h-4 w-4 text-gold" /> {appliedCoupon.code} ·{" "}
-                    {appliedCoupon.label}
+                    <Tag className="h-4 w-4 text-gold" /> {couponStatus!.code}
+                    {couponStatus!.type === "free_shipping"
+                      ? " · Free delivery"
+                      : ` · − ${formatBDT(couponStatus!.amount ?? discount)}`}
                   </span>
                   <button
                     onClick={removeCoupon}
@@ -466,11 +472,10 @@ function Cart() {
                 </div>
               ) : (
                 <>
-                  {couponNoLongerQualifies && (
+                  {couponCode && couponStatus && !couponStatus.applied && (
                     <div className="flex items-center justify-between rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2">
                       <span className="text-xs text-destructive">
-                        Coupon {couponCode} no longer qualifies (min {formatBDT(appliedCoupon!.min)}
-                        ).
+                        {couponCode}: {couponReasonMessage(couponStatus.reason)}
                       </span>
                       <button
                         onClick={removeCoupon}
@@ -480,6 +485,11 @@ function Cart() {
                         <X className="h-4 w-4" />
                       </button>
                     </div>
+                  )}
+                  {couponCode && !couponStatus && (
+                    <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Checking {couponCode}…
+                    </p>
                   )}
                   <div className="flex gap-2">
                     <Input
@@ -544,7 +554,7 @@ function Cart() {
               />
               {discount > 0 && (
                 <Row
-                  label={`Discount (${appliedCoupon?.code})`}
+                  label={`Discount${couponStatus?.code ? ` (${couponStatus.code})` : ""}`}
                   value={`− ${formatBDT(discount)}`}
                   accent
                 />

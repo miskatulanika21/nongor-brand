@@ -1,11 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import {
-  type DeliveryZone,
-  normalizeZone,
-  findCoupon,
-  couponDiscount,
-  type Coupon,
-} from "@/lib/checkout-ui";
+import { type DeliveryZone, normalizeZone } from "@/lib/checkout-ui";
+import { normalizeCouponCode } from "@/lib/checkout-shared";
 
 export interface CartItem {
   id: string;
@@ -50,10 +45,15 @@ interface StoreState {
   // Checkout UI state
   deliveryZone: DeliveryZone;
   setDeliveryZone: (zone: DeliveryZone) => void;
+  /**
+   * The applied coupon code (persisted). Validation + discount are now
+   * server-side (api.quote_order / api.place_order) — the cart/checkout read the
+   * real discount + applied/rejected status off their quote result. Storing only
+   * the code means no phantom client discount can ever be shown.
+   */
   couponCode: string | null;
-  appliedCoupon: Coupon | null;
-  discount: number;
-  applyCoupon: (code: string) => { success: boolean; message: string };
+  /** Normalize + store a code (returns false for an empty input). */
+  applyCoupon: (code: string) => boolean;
   removeCoupon: () => void;
   orderNote: string;
   setOrderNote: (note: string) => void;
@@ -150,27 +150,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const cartCount = cart.reduce((s, c) => s + c.qty, 0);
   const cartSubtotal = cart.reduce((s, c) => s + (c.price + (c.customCharge ?? 0)) * c.qty, 0);
 
-  const appliedCoupon = findCoupon(checkoutUI.couponCode);
-  const discount = couponDiscount(appliedCoupon, cartSubtotal);
-
   const setDeliveryZone = (zone: DeliveryZone) =>
     setCheckoutUI((s) => ({ ...s, deliveryZone: normalizeZone(zone) }));
 
+  // Store the code only; the server (quote_order) decides if it applies and by
+  // how much. The cart/checkout re-quote and surface applied/rejected + discount.
   const applyCoupon: StoreState["applyCoupon"] = (code) => {
-    const match = findCoupon(code);
-    if (!match) {
-      setCheckoutUI((s) => ({ ...s, couponCode: null }));
-      return { success: false, message: "Invalid coupon code" };
-    }
-    if (cartSubtotal < match.min) {
-      setCheckoutUI((s) => ({ ...s, couponCode: null }));
-      return {
-        success: false,
-        message: `Add ৳${(match.min - cartSubtotal).toLocaleString("en-BD")} more to use this coupon`,
-      };
-    }
-    setCheckoutUI((s) => ({ ...s, couponCode: match.code }));
-    return { success: true, message: `Coupon ${match.code} applied — ${match.label}` };
+    const normalized = normalizeCouponCode(code);
+    setCheckoutUI((s) => ({ ...s, couponCode: normalized }));
+    return normalized !== null;
   };
 
   const removeCoupon = () => setCheckoutUI((s) => ({ ...s, couponCode: null }));
@@ -221,8 +209,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         deliveryZone: checkoutUI.deliveryZone,
         setDeliveryZone,
         couponCode: checkoutUI.couponCode,
-        appliedCoupon,
-        discount,
         applyCoupon,
         removeCoupon,
         orderNote: checkoutUI.orderNote,

@@ -9,6 +9,9 @@ import {
   isManualMethod,
   newIdempotencyKey,
   MANUAL_METHODS,
+  normalizeCouponCode,
+  couponReasonMessage,
+  COUPON_REASON_MESSAGES,
 } from "@/lib/checkout-shared";
 import type { CartItem } from "@/lib/store";
 import type { PublicSettings } from "@/lib/settings.schema";
@@ -153,5 +156,29 @@ describe("newIdempotencyKey", () => {
     const b = newIdempotencyKey();
     expect(a).toBeTruthy();
     expect(a).not.toBe(b);
+  });
+});
+
+describe("normalizeCouponCode", () => {
+  it("uppercases + trims and maps empty/whitespace to null", () => {
+    expect(normalizeCouponCode("  save10 ")).toBe("SAVE10");
+    expect(normalizeCouponCode("FreeShip")).toBe("FREESHIP");
+    expect(normalizeCouponCode("")).toBeNull();
+    expect(normalizeCouponCode("   ")).toBeNull();
+    expect(normalizeCouponCode(null)).toBeNull();
+    expect(normalizeCouponCode(undefined)).toBeNull();
+  });
+});
+
+describe("couponReasonMessage", () => {
+  it("maps each stable coupon reason code to its message", () => {
+    for (const code of Object.keys(COUPON_REASON_MESSAGES)) {
+      expect(couponReasonMessage(code)).toBe(COUPON_REASON_MESSAGES[code]);
+    }
+  });
+
+  it("falls back to the invalid message for unknown/empty reasons", () => {
+    expect(couponReasonMessage(undefined)).toBe(COUPON_REASON_MESSAGES.invalid_coupon);
+    expect(couponReasonMessage("something_else")).toBe(COUPON_REASON_MESSAGES.invalid_coupon);
   });
 });
