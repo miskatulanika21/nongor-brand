@@ -95,9 +95,14 @@ jobs:
           fi
 
       # `supabase start` boots a local stack and APPLIES all migrations in order.
-      # If any migration errors, this step fails the job.
+      # If any migration errors, this step fails the job. We only need Postgres +
+      # PostgREST (the REST smoke + psql DB tests below); the edge-runtime, studio,
+      # imgproxy, vector, logflare, inbucket and realtime containers are unused
+      # here and edge-runtime in particular intermittently fails its image pull /
+      # health check with "Error status 502", flaking the whole job. Excluding the
+      # unneeded services makes this job depend only on the DB it actually tests.
       - name: Apply migrations to a fresh local database
-        run: supabase start
+        run: supabase start -x edge-runtime,studio,imgproxy,vector,logflare,inbucket,realtime
 
       # REST smoke test: a SQL migration succeeding does NOT prove PostgREST can
       # call the RPCs the app uses. Hit the Data API on the fresh stack to assert
