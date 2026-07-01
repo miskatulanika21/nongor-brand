@@ -410,6 +410,7 @@ function Checkout() {
             order_no: result.order.order_no,
             status: finalStatus,
             total: result.order.total,
+            token: result.order.guest_token ?? undefined,
           },
         });
       } else {

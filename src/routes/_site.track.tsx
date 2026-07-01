@@ -1,10 +1,13 @@
-import { createFileRoute, Link, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
-import { STATUS_TONE } from "@/lib/orders";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { trackOrderFn } from "@/lib/orders.api";
+import { CustomerStatusBadge, fmtDate } from "@/components/admin/order-status";
+import { CUSTOMER_STEPS, customerProgress, type TrackOrderResult } from "@/lib/orders-shared";
 import { formatBDT, BRAND } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/states";
 import { cn } from "@/lib/utils";
 import {
@@ -13,27 +16,17 @@ import {
   MessageCircle,
   PackageSearch,
   Package,
+  PackageOpen,
   Check,
-  X,
   AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  readStoredOrders,
-  buildOrderList,
-  normalizeBDPhone,
-  isValidBDPhone,
-  CUSTOMER_ORDER_STEPS,
-  customerStepIndex,
-  isExceptionStatus,
-  orderScope,
-  type UIOrder,
-} from "@/lib/order-ui";
 
 export const Route = createFileRoute("/_site/track")({
-  validateSearch: (s: Record<string, unknown>): { id?: string } => {
-    const id = typeof s.id === "string" ? s.id : "";
-    return id ? { id } : {};
+  validateSearch: (s: Record<string, unknown>): { o?: string; t?: string } => {
+    const o = typeof s.o === "string" ? s.o.trim() : "";
+    const t = typeof s.t === "string" ? s.t.trim() : "";
+    return { ...(o ? { o } : {}), ...(t ? { t } : {}) };
   },
   head: () => ({
     meta: [
@@ -41,7 +34,7 @@ export const Route = createFileRoute("/_site/track")({
       {
         name: "description",
         content:
-          "Track your Nongorr order. Enter your order ID or phone number to view the latest status saved in this demo or on this device.",
+          "Track your Nongorr order with your order number and tracking code. Signed-in customers can also view orders from their account.",
       },
       { name: "robots", content: "noindex,nofollow" },
     ],
@@ -50,102 +43,125 @@ export const Route = createFileRoute("/_site/track")({
   component: Track,
 });
 
+type State =
+  | { phase: "idle" }
+  | { phase: "loading" }
+  | { phase: "ready"; result: TrackOrderResult }
+  | { phase: "missing" };
+
 function Track() {
-  const { id = "" } = Route.useSearch();
+  const { o = "", t = "" } = Route.useSearch();
   const navigate = useNavigate();
-  const { sessionSummary } = useRouteContext({ from: "/_site" }) as {
-    sessionSummary: { userId: string | null };
-  };
-  const scope = orderScope(sessionSummary.userId);
-  const [input, setInput] = useState(id);
-  const [submittedQuery, setSubmittedQuery] = useState(id);
-  const [device, setDevice] = useState<UIOrder[]>([]);
+  const [orderNo, setOrderNo] = useState(o);
+  const [token, setToken] = useState(t);
+  const [state, setState] = useState<State>({ phase: "idle" });
 
+  // Keep the inputs in sync when the URL search params change externally
+  // (e.g. arriving via a capability tracking link).
   useEffect(() => {
-    setDevice(readStoredOrders(scope));
-  }, [scope]);
+    setOrderNo(o);
+    setToken(t);
+  }, [o, t]);
 
-  // Keep in sync if the URL search param changes externally.
+  // Fetch whenever the URL carries both an order number and a tracking code.
   useEffect(() => {
-    setInput(id);
-    setSubmittedQuery(id);
-  }, [id]);
-
-  const allOrders = useMemo(() => buildOrderList(device), [device]);
-
-  const term = submittedQuery.trim();
-  const { single, list } = useMemo(() => {
-    if (!term) return { single: undefined as UIOrder | undefined, list: [] as UIOrder[] };
-    const upper = term.toUpperCase();
-    const byId = allOrders.find((o) => o.id.toUpperCase() === upper);
-    if (byId) return { single: byId, list: [] as UIOrder[] };
-
-    if (isValidBDPhone(term)) {
-      const phone = normalizeBDPhone(term);
-      const matches = allOrders.filter((o) => normalizeBDPhone(o.phone) === phone);
-      if (matches.length === 1) return { single: matches[0], list: [] as UIOrder[] };
-      return { single: undefined, list: matches };
+    if (!o || !t) {
+      setState({ phase: "idle" });
+      return;
     }
-    return { single: undefined, list: [] as UIOrder[] };
-  }, [term, allOrders]);
+    let live = true;
+    setState({ phase: "loading" });
+    void trackOrderFn({ data: { orderNo: o, token: t } })
+      .then((res) => {
+        if (!live) return;
+        if (res.success && res.result) setState({ phase: "ready", result: res.result });
+        else setState({ phase: "missing" });
+      })
+      .catch(() => live && setState({ phase: "missing" }));
+    return () => {
+      live = false;
+    };
+  }, [o, t]);
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = input.trim();
-    setSubmittedQuery(trimmed);
-    navigate({ to: "/track", search: trimmed ? { id: trimmed } : {}, replace: true });
+    const no = orderNo.trim();
+    const tok = token.trim();
+    navigate({
+      to: "/track",
+      search: { ...(no ? { o: no } : {}), ...(tok ? { t: tok } : {}) },
+      replace: true,
+    });
   };
 
   const clear = () => {
-    setInput("");
-    setSubmittedQuery("");
+    setOrderNo("");
+    setToken("");
     navigate({ to: "/track", search: {}, replace: true });
   };
-
-  const hasResult = single || list.length > 0;
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
       <h1 className="mb-2 font-display text-4xl text-foreground">Track Your Order</h1>
       <p className="mb-8 text-sm text-muted-foreground">
-        Enter your order ID or phone number to view the latest status saved in this demo or on this
-        device.
+        Enter your order number and the tracking code from your confirmation. Have an account?{" "}
+        <Link to="/orders" className="text-primary underline-offset-4 hover:underline">
+          View all your orders
+        </Link>
+        .
       </p>
 
-      <form onSubmit={onSubmit} className="mb-10 flex gap-2">
-        <div className="relative flex-1">
+      <form onSubmit={onSubmit} className="mb-10 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+        <div>
+          <label htmlFor="track-order-no" className="sr-only">
+            Order number
+          </label>
           <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Order ID (NGR-100231) or phone (01711223344)"
-            className="bg-card pr-9"
-            aria-label="Order ID or phone number"
+            id="track-order-no"
+            value={orderNo}
+            onChange={(e) => setOrderNo(e.target.value)}
+            placeholder="Order number (NGR-100231)"
+            className="bg-card"
+            aria-label="Order number"
           />
-          {input && (
-            <button
-              type="button"
-              onClick={clear}
-              aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
-            </button>
+        </div>
+        <div>
+          <label htmlFor="track-token" className="sr-only">
+            Tracking code
+          </label>
+          <Input
+            id="track-token"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder="Tracking code"
+            className="bg-card font-mono"
+            aria-label="Tracking code"
+          />
+        </div>
+        <div className="flex gap-2">
+          <Button type="submit" className="flex-1">
+            <Search className="h-4 w-4" /> Track
+          </Button>
+          {(orderNo || token) && (
+            <Button type="button" variant="outline" onClick={clear} aria-label="Clear">
+              Clear
+            </Button>
           )}
         </div>
-        <Button type="submit">
-          <Search className="h-4 w-4" /> Track
-        </Button>
       </form>
 
-      {single ? (
-        <OrderTimeline order={single} />
-      ) : list.length > 0 ? (
-        <PhoneResults orders={list} />
-      ) : term ? (
+      {state.phase === "loading" ? (
+        <div className="space-y-4">
+          <Skeleton className="h-20 w-full rounded-xl" />
+          <Skeleton className="h-48 w-full rounded-xl" />
+        </div>
+      ) : state.phase === "ready" ? (
+        <OrderTimeline result={state.result} orderNo={o} token={t} />
+      ) : state.phase === "missing" ? (
         <EmptyState
           icon={<PackageSearch className="h-6 w-6" />}
           title="Order not found"
-          description="Double-check your order ID or the phone number used at checkout."
+          description="Double-check your order number and tracking code, or paste the tracking link from your confirmation."
           action={
             <Button variant="outline" asChild>
               <a href={`https://wa.me/${BRAND.whatsapp}`} target="_blank" rel="noreferrer">
@@ -157,76 +173,29 @@ function Track() {
       ) : (
         <EmptyState
           icon={<Package className="h-6 w-6" />}
-          title="Enter an order ID or phone"
-          description="Try NGR-100231, NGR-100245 or NGR-100250."
+          title="Enter your order details"
+          description="Your order number and tracking code are on your order confirmation page."
         />
       )}
-
-      {!hasResult && null}
     </div>
   );
 }
 
-function PhoneResults({ orders }: { orders: UIOrder[] }) {
-  return (
-    <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
-        {orders.length} orders found for this phone number.
-      </p>
-      {orders.map((o) => (
-        <div
-          key={o.id}
-          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-5"
-        >
-          <div>
-            <div className="flex items-center gap-2">
-              <p className="font-display text-lg text-foreground">{o.id}</p>
-              <SourceBadge source={o.source} />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {o.date || "—"} · {formatBDT(o.total)}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className={cn(STATUS_TONE[o.status] ?? "")}>
-              {o.status}
-            </Badge>
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/track" search={{ id: o.id }}>
-                Track
-              </Link>
-            </Button>
-            <Button size="sm" asChild>
-              <Link to="/orders/$id" params={{ id: o.id }}>
-                View Details
-              </Link>
-            </Button>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function SourceBadge({ source }: { source: UIOrder["source"] }) {
-  return source === "demo" ? (
-    <Badge variant="outline" className="border-border text-muted-foreground">
-      Demo order
-    </Badge>
-  ) : (
-    <Badge variant="outline" className="border-success/30 bg-success/10 text-success">
-      Saved on this device
-    </Badge>
-  );
-}
-
-function OrderTimeline({ order }: { order: UIOrder }) {
-  const stepIdx = customerStepIndex(order.status);
-  const exception = isExceptionStatus(order.status);
+function OrderTimeline({
+  result,
+  orderNo,
+  token,
+}: {
+  result: TrackOrderResult;
+  orderNo: string;
+  token: string;
+}) {
+  const { order, items } = result;
+  const { stepIndex, exception } = customerProgress(order.status);
 
   const copyLink = async () => {
     if (typeof window === "undefined") return;
-    const url = `${window.location.origin}/track?id=${order.id}`;
+    const url = `${window.location.origin}/track?o=${encodeURIComponent(orderNo)}&t=${encodeURIComponent(token)}`;
     try {
       await navigator.clipboard.writeText(url);
       toast.success("Tracking link copied");
@@ -239,41 +208,76 @@ function OrderTimeline({ order }: { order: UIOrder }) {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-5">
         <div>
-          <div className="flex items-center gap-2">
-            <p className="font-display text-xl text-foreground">{order.id}</p>
-            <SourceBadge source={order.source} />
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {order.customerName}
-            {order.date ? ` · ${order.date}` : ""}
-          </p>
+          <p className="font-display text-xl text-foreground">{order.orderNo}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Placed on {fmtDate(order.placedAt)}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="outline" className={cn(STATUS_TONE[order.status] ?? "")}>
-            {order.status}
-          </Badge>
+          <CustomerStatusBadge status={order.status} />
           <Button variant="outline" size="sm" onClick={copyLink}>
             <Copy className="h-4 w-4" /> Copy link
           </Button>
         </div>
       </div>
 
-      {exception ? (
-        <div className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-5 text-sm">
-          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
-          <div>
-            <p className="font-medium text-foreground">Order status: {order.status}</p>
-            <p className="mt-1 text-muted-foreground">
-              This order is outside normal delivery. Contact support for help.
-            </p>
-          </div>
+      {/* Items */}
+      <div className="rounded-xl border border-border bg-card p-6">
+        <h2 className="font-display text-xl text-foreground">Items</h2>
+        <div className="mt-4 space-y-4">
+          {items.map((i, idx) => (
+            <div key={idx} className="flex gap-3">
+              {i.image ? (
+                <img
+                  src={i.image}
+                  alt={i.name}
+                  loading="lazy"
+                  className="h-20 w-16 rounded object-cover"
+                />
+              ) : (
+                <div className="grid h-20 w-16 place-items-center rounded bg-muted text-muted-foreground">
+                  <PackageOpen className="h-5 w-5" />
+                </div>
+              )}
+              <div className="flex-1 text-sm">
+                <p className="font-medium text-foreground">{i.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  Qty {i.qty}
+                  {i.variantSize ? ` · ${i.variantSize}` : ""}
+                </p>
+              </div>
+              <span className="text-sm font-medium">{formatBDT(i.unitPrice * i.qty)}</span>
+            </div>
+          ))}
         </div>
-      ) : (
-        <div className="rounded-xl border border-border bg-card p-6">
-          <ol className="space-y-5">
-            {CUSTOMER_ORDER_STEPS.map((step, i) => {
-              const done = i < stepIdx;
-              const current = i === stepIdx;
+        <Separator className="my-4" />
+        <div className="flex justify-between">
+          <span className="font-display text-lg">Total</span>
+          <span className="font-display text-xl text-primary">{formatBDT(order.total)}</span>
+        </div>
+        <p className="mt-2 text-xs capitalize text-muted-foreground">
+          Payment: {order.paymentMethod}
+        </p>
+      </div>
+
+      {/* Timeline */}
+      <div className="rounded-xl border border-border bg-card p-6">
+        <h2 className="font-display text-xl text-foreground">Order status</h2>
+        {exception ? (
+          <div className="mt-4 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+            <div>
+              <p className="font-medium text-foreground">
+                Status: <CustomerStatusBadge status={order.status} />
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                This order is outside the normal delivery flow. Contact support for details.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <ol className="mt-4 space-y-5">
+            {CUSTOMER_STEPS.map((step, i) => {
+              const done = i < stepIndex;
+              const current = i === stepIndex;
               return (
                 <li key={step} className="flex items-start gap-4">
                   <div className="relative flex flex-col items-center">
@@ -291,7 +295,7 @@ function OrderTimeline({ order }: { order: UIOrder }) {
                         <span className="text-xs font-semibold">{i + 1}</span>
                       )}
                     </div>
-                    {i < CUSTOMER_ORDER_STEPS.length - 1 && (
+                    {i < CUSTOMER_STEPS.length - 1 && (
                       <div className={cn("h-7 w-0.5", done ? "bg-primary" : "bg-border")} />
                     )}
                   </div>
@@ -310,41 +314,14 @@ function OrderTimeline({ order }: { order: UIOrder }) {
               );
             })}
           </ol>
-        </div>
-      )}
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="rounded-xl border border-border bg-card p-5 text-sm">
-          <h3 className="mb-2 font-display text-lg">Delivery</h3>
-          <p className="text-muted-foreground">
-            {order.address}
-            {order.district ? `, ${order.district}` : ""}
-          </p>
-          <p className="mt-2">
-            Courier: <strong>{order.courier ?? "To be assigned"}</strong>
-          </p>
-          <p>
-            Tracking ID: <strong>{order.trackingId ?? "Pending"}</strong>
-          </p>
-          <p className="mt-2 text-xs text-muted-foreground">Estimated delivery: Placeholder only</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-5 text-sm">
-          <h3 className="mb-2 font-display text-lg">Payment</h3>
-          <p className="text-muted-foreground">Manual bKash · {order.paymentStatus}</p>
-          {order.trxId && (
-            <p>
-              TrxID: <strong className="font-mono">{order.trxId}</strong>
-            </p>
-          )}
-          <p className="mt-2 font-semibold text-primary">{formatBDT(order.total)}</p>
-        </div>
+        )}
       </div>
 
       <div className="rounded-xl border border-gold/40 bg-gold/5 p-5 text-center">
         <p className="text-sm text-muted-foreground">Need help with this order?</p>
         <Button className="mt-3" asChild>
           <a
-            href={`https://wa.me/${BRAND.whatsapp}?text=${encodeURIComponent(`Hi Nongorr! I need help with my order ${order.id}.`)}`}
+            href={`https://wa.me/${BRAND.whatsapp}?text=${encodeURIComponent(`Hi Nongorr! I need help with my order ${order.orderNo}.`)}`}
             target="_blank"
             rel="noreferrer"
           >
