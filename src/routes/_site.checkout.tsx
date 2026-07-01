@@ -117,8 +117,7 @@ function Checkout() {
     clearCart,
     deliveryZone,
     setDeliveryZone,
-    appliedCoupon,
-    discount,
+    couponCode,
     deliveryNote,
     setDeliveryNote,
     orderNote,
@@ -190,7 +189,9 @@ function Checkout() {
     setQuoteLoading(true);
     setQuoteError(null);
     try {
-      const result = await quoteOrderFn({ data: { lines, zone: deliveryZone } });
+      const result = await quoteOrderFn({
+        data: { lines, zone: deliveryZone, coupon: couponCode ?? undefined },
+      });
       if (result.success) {
         setQuote(result.quote);
       } else {
@@ -201,7 +202,7 @@ function Checkout() {
     } finally {
       setQuoteLoading(false);
     }
-  }, [cart, deliveryZone]);
+  }, [cart, deliveryZone, couponCode]);
 
   useEffect(() => {
     fetchQuote();
@@ -211,6 +212,12 @@ function Checkout() {
   const serverSubtotal = quote?.subtotal ?? null;
   const serverShipping = quote?.shipping_fee ?? null;
   const serverTotal = quote?.total ?? null;
+
+  // Coupon + discount are server truth (from the quote). The coupon is only sent
+  // to place_order when the current quote confirms it applies, so a stale/expired
+  // code silently drops (no discount) instead of blocking checkout.
+  const couponStatus = quote?.coupon ?? null;
+  const discount = quote?.discount ?? 0;
 
   const clientShipping = computeShipping(deliveryZone, cartSubtotal);
   const clientTotal = Math.max(0, cartSubtotal - discount) + clientShipping;
@@ -365,6 +372,7 @@ function Checkout() {
           method: selectedMethod,
           idempotencyKey: idemKeyRef.current,
           quoteToken: quote?.quote_token,
+          coupon: couponStatus?.applied ? (couponCode ?? undefined) : undefined,
         },
       });
 
@@ -905,8 +913,14 @@ function Checkout() {
             </div>
             {discount > 0 && (
               <div className="flex justify-between text-gold">
-                <span>Discount ({appliedCoupon?.code})</span>
+                <span>Discount{couponStatus?.code ? ` (${couponStatus.code})` : ""}</span>
                 <span>− {formatBDT(discount)}</span>
+              </div>
+            )}
+            {couponStatus?.applied && couponStatus.type === "free_shipping" && (
+              <div className="flex justify-between text-gold">
+                <span>Free delivery ({couponStatus.code})</span>
+                <span>− {formatBDT(couponStatus.shipping_waived ?? 0)}</span>
               </div>
             )}
             <div className="flex justify-between">

@@ -37,9 +37,19 @@ export const quoteOrderFn = createServerFn({ method: "POST" })
     const rl = await checkIndependentRateLimit("quoteOrder", { ip: getClientIp() });
     if (!rl.allowed) return { success: false as const, error: rateLimitMessage() };
 
+    // Optional identity so the coupon's per-user / first-order rules are
+    // evaluated for a signed-in buyer; a guest quote passes actor = null.
+    const { createServerSupabaseClient } = await import("@/lib/server/supabase.server");
+    const { getAuthenticatedIdentity } = await import("@/lib/server/identity.server");
+    const idn = await getAuthenticatedIdentity({
+      strict: false,
+      client: createServerSupabaseClient(),
+    });
+    const actorId = idn.ok ? idn.identity.userId : null;
+
     try {
       const repo = await import("@/lib/server/checkout.server");
-      const quote = await repo.quoteOrder(data.lines, data.zone);
+      const quote = await repo.quoteOrder(data.lines, data.zone, data.coupon ?? null, actorId);
       return { success: true as const, quote };
     } catch (e) {
       return failure(e);
@@ -96,6 +106,7 @@ export const placeOrderFn = createServerFn({ method: "POST" })
         idempotencyKey: data.idempotencyKey,
         actorId,
         quoteToken: data.quoteToken,
+        coupon: data.coupon ?? null,
       });
       return { success: true as const, order };
     } catch (e) {

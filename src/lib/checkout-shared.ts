@@ -9,7 +9,9 @@
  *     the code the RPCs expect — no separate lookup is needed.
  *   - The server always re-prices; client totals are display-only. `quote_token`
  *     is the drift guard carried from quote → place.
- *   - Coupons/discounts are not handled yet (discount is always 0; P5).
+ *   - Coupons are server-validated (P5b): quote_order returns the applied
+ *     discount + a `coupon` status object; place_order re-validates + consumes
+ *     the coupon under a row lock. The client never computes a discount.
  */
 import { z } from "zod";
 import type { CartItem } from "@/lib/store";
@@ -89,12 +91,35 @@ export interface QuoteLine {
   found: boolean;
 }
 
+/**
+ * Coupon status echoed by api.quote_order when a code was supplied. `applied`
+ * distinguishes a live discount from a rejection (`reason` is one of the stable
+ * coupon codes). For a free_shipping coupon `discount` is 0 and `shipping_waived`
+ * carries the saved delivery fee. `null` on QuoteResult.coupon = no code sent.
+ */
+export interface QuoteCoupon {
+  code: string;
+  applied: boolean;
+  /** Stable rejection code when `applied` is false (see COUPON_REASON_MESSAGES). */
+  reason?: string;
+  type?: "percent" | "fixed" | "free_shipping";
+  /** Amount taken off the subtotal (0 for free_shipping). */
+  discount?: number;
+  /** Delivery fee waived (free_shipping only; 0 otherwise). */
+  shipping_waived?: number;
+  /** Total customer saving (discount, or the waived shipping for free_shipping). */
+  amount?: number;
+  description?: string | null;
+}
+
 export interface QuoteResult {
   lines: QuoteLine[];
   subtotal: number;
   discount: number;
   shipping_fee: number;
   total: number;
+  /** Coupon outcome when a code was quoted; null when none was supplied. */
+  coupon: QuoteCoupon | null;
   /**
    * Price-drift fingerprint (`md5(canonical_lines || '#' || subtotal)`), carried
    * from quote → place. This is NOT an authentication token: prices are public,
@@ -122,8 +147,11 @@ export interface PlaceOrderResult {
   order_no: string;
   status: string;
   subtotal: number;
+  discount: number;
   shipping_fee: number;
   total: number;
+  /** The coupon code actually consumed by the order, or null. */
+  coupon: string | null;
   guest_token: string | null;
   replayed: boolean;
 }
@@ -193,9 +221,36 @@ export const CHECKOUT_ERROR_MESSAGES: Record<string, string> = {
   invalid_payment_method: "That payment method isn't available right now.",
   idempotency_conflict:
     "This order is already being processed — please wait a moment before retrying.",
+  invalid_coupon: "That coupon code isn't valid.",
+  coupon_min_not_met: "Your cart doesn't meet this coupon's minimum spend.",
+  coupon_exhausted: "This coupon has reached its usage limit.",
+  coupon_not_eligible: "This coupon isn't available for this order.",
 };
 
 export const KNOWN_CHECKOUT_ERROR_CODES = new Set(Object.keys(CHECKOUT_ERROR_MESSAGES));
+
+/**
+ * Coupon rejection code → short, cart-friendly message. Reuses the shared error
+ * copy but softens the phrasing for the inline coupon field (vs. a blocking
+ * checkout error). Unknown reasons fall back to the generic invalid message.
+ */
+export const COUPON_REASON_MESSAGES: Record<string, string> = {
+  invalid_coupon: "This code isn't valid.",
+  coupon_min_not_met: "Cart doesn't meet the minimum for this code.",
+  coupon_exhausted: "This code has reached its limit.",
+  coupon_not_eligible: "This code isn't available for your order.",
+};
+
+export function couponReasonMessage(reason: string | null | undefined): string {
+  if (!reason) return COUPON_REASON_MESSAGES.invalid_coupon;
+  return COUPON_REASON_MESSAGES[reason] ?? COUPON_REASON_MESSAGES.invalid_coupon;
+}
+
+/** Normalize a coupon code to the canonical stored form (UPPERCASE, trimmed). */
+export function normalizeCouponCode(code: string | null | undefined): string | null {
+  const c = (code ?? "").trim().toUpperCase();
+  return c.length > 0 ? c : null;
+}
 
 const GENERIC_CHECKOUT_ERROR =
   "Could not place your order. Please try again, or contact us on WhatsApp.";
@@ -237,10 +292,19 @@ const placeLineSchema = lineSchema.extend({
   measures: measuresSchema.optional(),
 });
 
+/** A coupon code field: optional, bounded, normalized to the stored form. */
+const couponCodeSchema = z
+  .preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().trim().max(40).optional(),
+  )
+  .optional();
+
 /** Validator for quoteOrderFn. */
 export const quoteOrderSchema = z.object({
   lines: z.array(lineSchema).min(1).max(50),
   zone: z.enum(DELIVERY_ZONE_VALUES),
+  coupon: couponCodeSchema,
 });
 
 /** Customer details for placeOrderFn (name/phone/district/address required). */
@@ -271,6 +335,7 @@ export const placeOrderSchema = z.object({
   method: z.enum(["cod", "bkash", "nagad"]),
   idempotencyKey: z.string().min(1).max(200),
   quoteToken: z.string().min(1).max(64).optional(),
+  coupon: couponCodeSchema,
 });
 
 export type QuoteOrderInput = z.infer<typeof quoteOrderSchema>;

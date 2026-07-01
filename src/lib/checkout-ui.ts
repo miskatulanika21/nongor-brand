@@ -1,9 +1,7 @@
 // Frontend-only checkout/delivery helpers shared by Cart and Checkout.
-// No backend, no server validation. Coupons here are a client-side mock.
 // This module is the single source of truth for delivery configuration and
-// Bangladesh location data.
-
-import { isDemoCommerceEnabled } from "@/lib/checkout-mode";
+// Bangladesh location data. Coupons are server-authoritative (see the Coupons
+// note below and src/lib/checkout-shared.ts).
 
 export type DeliveryZone = "dhaka" | "major" | "outside";
 
@@ -229,36 +227,9 @@ export interface CheckoutAddress {
   address: string;
 }
 
-// ---- Coupons (client-side mock) ---------------------------------------------
-
-export interface Coupon {
-  code: string;
-  type: "percent" | "flat";
-  value: number;
-  min: number;
-  label: string;
-}
-
-// TODO: backend must validate coupons later. These are display-only mocks.
-export const MOCK_COUPONS: Coupon[] = [
-  { code: "WELCOME10", type: "percent", value: 10, min: 1500, label: "10% off" },
-  { code: "FLAT200", type: "flat", value: 200, min: 2500, label: "৳200 off" },
-  { code: "EID500", type: "flat", value: 500, min: 5000, label: "৳500 off" },
-];
-
-export function findCoupon(code: string | null): Coupon | null {
-  if (!code) return null;
-  // Coupons are server-validated only from Stage 3 Pass 5. Until then these are
-  // demo-only mocks: api.place_order forces discount = 0, so honouring a mock
-  // code in production would show a phantom discount the order never receives.
-  // Gate behind the demo flag so prod never resolves one. See checkout-mode.ts.
-  if (!isDemoCommerceEnabled()) return null;
-  return MOCK_COUPONS.find((c) => c.code === code.trim().toUpperCase()) ?? null;
-}
-
-export function couponDiscount(coupon: Coupon | null, subtotal: number): number {
-  if (!coupon || subtotal < coupon.min) return 0;
-  const raw =
-    coupon.type === "percent" ? Math.round((subtotal * coupon.value) / 100) : coupon.value;
-  return Math.min(subtotal, Math.max(0, raw));
-}
+// ---- Coupons ----------------------------------------------------------------
+// Coupons are fully server-authoritative (Stage 3 P5b): api.quote_order returns
+// the applied discount + status and api.place_order re-validates + consumes the
+// code under a row lock. The old client-side MOCK_COUPONS were removed — the
+// store now keeps only the applied code, and the cart/checkout read the real
+// discount off their quote. See src/lib/checkout-shared.ts.

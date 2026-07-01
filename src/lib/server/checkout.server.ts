@@ -36,15 +36,25 @@ function throwCheckoutError(error: { message?: string }): never {
   throw new CheckoutError(KNOWN_CHECKOUT_ERROR_CODES.has(raw) ? raw : "internal_error");
 }
 
-/** Server-authoritative price quote for a cart (public RPC, ANON client). */
+/**
+ * Server-authoritative price quote for a cart (public RPC, ANON client).
+ * `coupon` (optional) is validated + priced by the RPC — a bad code never throws
+ * here; it comes back as `quote.coupon.applied = false` with a reason. `actorId`
+ * lets the RPC evaluate per-user / first-order eligibility for a signed-in buyer.
+ */
 export async function quoteOrder(
   lines: QuoteLineInput[],
   zone: DeliveryZone,
+  coupon?: string | null,
+  actorId?: string | null,
 ): Promise<QuoteResult> {
   const sb = createServerSupabaseClient();
-  const { data, error } = await sb
-    .schema("api")
-    .rpc("quote_order", { p_lines: lines, p_zone: zone });
+  const { data, error } = await sb.schema("api").rpc("quote_order", {
+    p_lines: lines,
+    p_zone: zone,
+    p_coupon_code: coupon ?? null,
+    p_actor: actorId ?? null,
+  });
   if (error) throwCheckoutError(error);
   return data as QuoteResult;
 }
@@ -58,6 +68,8 @@ export interface PlaceOrderArgs {
   /** Verified auth user id, or null for a guest checkout. */
   actorId: string | null;
   quoteToken?: string;
+  /** Optional coupon code; re-validated + consumed under the coupon row lock. */
+  coupon?: string | null;
 }
 
 /** Create an order (service-role; api.place_order is REVOKE-d from anon/auth). */
@@ -71,6 +83,7 @@ export async function placeOrder(args: PlaceOrderArgs): Promise<PlaceOrderResult
     p_idempotency_key: args.idempotencyKey,
     p_actor: args.actorId,
     p_quote_token: args.quoteToken ?? null,
+    p_coupon_code: args.coupon ?? null,
   });
   if (error) throwCheckoutError(error);
   return data as PlaceOrderResult;
