@@ -66,7 +66,12 @@ export type AuditAction =
   // listed here so the union stays the documented contract for the action column.
   | "order.placed"
   | "order.transition"
-  | "payment.evidence_submitted";
+  | "payment.evidence_submitted"
+  // coupon admin (Stage 3 P5d) — written SQL-side by the api.*_coupon RPCs.
+  | "coupon.created"
+  | "coupon.updated"
+  | "coupon.status_changed"
+  | "coupon.deleted";
 
 export interface AuditEntry {
   action: AuditAction;
