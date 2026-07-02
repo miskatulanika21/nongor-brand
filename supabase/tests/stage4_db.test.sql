@@ -23,7 +23,17 @@
 --   * import_account_data: one-shot (already_imported), row-by-row salvage
 --     (bad row skipped, bad phone/numeric coerced NULL), single default,
 --     caps, account.imported audit row in-transaction
---   * grant posture: all 8 api.* account RPCs are service-role-only
+--   * grant posture: all api.* account RPCs are service-role-only
+--
+-- §13–§16 (P6) cover the wishlist:
+--   * wishlist_items RPC-only posture (RLS + no direct grants)
+--   * sync_wishlist: union merge in payload order, payload dedupe, unknown +
+--     blank codes dropped, idempotent, NULL payload = read, per-user isolation
+--   * toggle_wishlist: add/remove round trip, product_not_found (unknown +
+--     blank), cap 100 (wishlist_full; removal still allowed at cap; sync fills
+--     only up to the cap)
+--   * cascades: product delete + auth.users delete remove wishlist rows; a
+--     direct insert of an unknown code violates the FK
 --
 -- Conventions (same as pass2/pass3/pass4): expected-SUCCESS runs plainly;
 -- expected-FAILURE wraps in a sub-block and RAISE 'FAIL:' if it did NOT raise;
@@ -518,7 +528,9 @@ BEGIN
     'api.set_default_address(uuid,uuid)',
     'api.upsert_measurement(uuid,uuid,jsonb)',
     'api.delete_measurement(uuid,uuid)',
-    'api.import_account_data(uuid,jsonb)'
+    'api.import_account_data(uuid,jsonb)',
+    'api.sync_wishlist(uuid,text[])',
+    'api.toggle_wishlist(uuid,text)'
   ] LOOP
     IF NOT has_function_privilege('service_role', fn, 'EXECUTE') THEN
       RAISE EXCEPTION 'FAIL: service_role lacks EXECUTE on %', fn; END IF;
@@ -527,6 +539,167 @@ BEGIN
     IF has_function_privilege('authenticated', fn, 'EXECUTE') THEN
       RAISE EXCEPTION 'FAIL: authenticated can EXECUTE %', fn; END IF;
   END LOOP;
+END $$;
+
+-- ============================================================
+-- §13 — wishlist_items posture: RLS on, no direct grants (P6)
+-- ============================================================
+DO $$
+DECLARE p text;
+BEGIN
+  IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.wishlist_items'::regclass) THEN
+    RAISE EXCEPTION 'FAIL: RLS disabled on wishlist_items'; END IF;
+  FOREACH p IN ARRAY ARRAY['SELECT','INSERT','UPDATE','DELETE'] LOOP
+    IF has_table_privilege('anon', 'public.wishlist_items', p) THEN
+      RAISE EXCEPTION 'FAIL: anon holds % on wishlist_items', p; END IF;
+    IF has_table_privilege('authenticated', 'public.wishlist_items', p) THEN
+      RAISE EXCEPTION 'FAIL: authenticated holds % on wishlist_items', p; END IF;
+  END LOOP;
+  IF NOT has_table_privilege('service_role', 'public.wishlist_items', 'SELECT') THEN
+    RAISE EXCEPTION 'FAIL: service_role lacks SELECT on wishlist_items'; END IF;
+END $$;
+
+-- Wishlist fixtures: two fresh users + a small catalog of their own.
+INSERT INTO auth.users (id) VALUES
+  ('00000000-0000-0000-0000-0000000000d1'),  -- wishlist user 1
+  ('00000000-0000-0000-0000-0000000000d2');  -- wishlist user 2
+INSERT INTO public.product_categories (slug, name, sort_order)
+  VALUES ('cat-wl', 'Wishlist Cat', 90);
+INSERT INTO public.products (code, slug, name, category_id, price)
+  SELECT c, c, 'WL ' || c, pc.id, 100
+    FROM public.product_categories pc, unnest(ARRAY['p-wl-a','p-wl-b','p-wl-del']) AS c
+   WHERE pc.slug = 'cat-wl';
+
+-- ============================================================
+-- §14 — sync_wishlist: union merge, dedupe, salvage, isolation
+-- ============================================================
+DO $$
+DECLARE r jsonb; got text;
+BEGIN
+  -- merge: payload dupes collapse, unknown + blank codes are dropped
+  r := api.sync_wishlist('00000000-0000-0000-0000-0000000000d1',
+    ARRAY['p-wl-a','p-wl-a','ghost-code','p-wl-b','   ']);
+  IF (r->>'count')::int <> 2 OR r->'codes' <> '["p-wl-a","p-wl-b"]'::jsonb THEN
+    RAISE EXCEPTION 'FAIL: s14 merge %', r; END IF;
+
+  -- idempotent: re-syncing the same codes changes nothing
+  r := api.sync_wishlist('00000000-0000-0000-0000-0000000000d1', ARRAY['p-wl-b','p-wl-a']);
+  IF (r->>'count')::int <> 2 THEN RAISE EXCEPTION 'FAIL: s14 resync %', r; END IF;
+
+  -- NULL payload is a pure read of the canonical list
+  r := api.sync_wishlist('00000000-0000-0000-0000-0000000000d1', NULL);
+  IF (r->>'count')::int <> 2 THEN RAISE EXCEPTION 'FAIL: s14 null payload %', r; END IF;
+
+  -- isolation: another user's sync sees only their own rows
+  r := api.sync_wishlist('00000000-0000-0000-0000-0000000000d2', ARRAY['p-wl-b']);
+  IF (r->>'count')::int <> 1 OR r->'codes' <> '["p-wl-b"]'::jsonb THEN
+    RAISE EXCEPTION 'FAIL: s14 isolation %', r; END IF;
+
+  -- auth gate: null / unknown user
+  BEGIN
+    r := api.sync_wishlist(NULL, ARRAY['p-wl-a']);
+    RAISE EXCEPTION 'FAIL: s14 null user allowed';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'actor_not_authorized' THEN RAISE EXCEPTION 'FAIL: s14 gate=%', got; END IF; END;
+  BEGIN
+    r := api.sync_wishlist(gen_random_uuid(), ARRAY['p-wl-a']);
+    RAISE EXCEPTION 'FAIL: s14 unknown user allowed';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'actor_not_authorized' THEN RAISE EXCEPTION 'FAIL: s14 gate2=%', got; END IF; END;
+END $$;
+
+-- ============================================================
+-- §15 — toggle_wishlist: flip round trip, product_not_found, cap 100
+-- ============================================================
+DO $$
+DECLARE r jsonb; got text; n integer;
+BEGIN
+  -- off: removes the row
+  r := api.toggle_wishlist('00000000-0000-0000-0000-0000000000d1', 'p-wl-a');
+  IF (r->>'wishlisted')::boolean OR (r->>'count')::int <> 1 THEN
+    RAISE EXCEPTION 'FAIL: s15 toggle off %', r; END IF;
+
+  -- back on
+  r := api.toggle_wishlist('00000000-0000-0000-0000-0000000000d1', 'p-wl-a');
+  IF NOT (r->>'wishlisted')::boolean OR (r->>'count')::int <> 2 THEN
+    RAISE EXCEPTION 'FAIL: s15 toggle on %', r; END IF;
+
+  -- unknown + blank codes
+  BEGIN
+    r := api.toggle_wishlist('00000000-0000-0000-0000-0000000000d1', 'ghost-code');
+    RAISE EXCEPTION 'FAIL: s15 unknown code allowed';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'product_not_found' THEN RAISE EXCEPTION 'FAIL: s15 code=%', got; END IF; END;
+  BEGIN
+    r := api.toggle_wishlist('00000000-0000-0000-0000-0000000000d1', '   ');
+    RAISE EXCEPTION 'FAIL: s15 blank code allowed';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'product_not_found' THEN RAISE EXCEPTION 'FAIL: s15 blank=%', got; END IF; END;
+
+  -- d1's toggles never touched d2
+  SELECT count(*) INTO n FROM public.wishlist_items
+   WHERE user_id = '00000000-0000-0000-0000-0000000000d2';
+  IF n <> 1 THEN RAISE EXCEPTION 'FAIL: s15 cross-user leak %', n; END IF;
+END $$;
+
+-- Cap fixtures: 100 more products for the cap-boundary checks.
+INSERT INTO public.products (code, slug, name, category_id, price)
+  SELECT 'p-wlc-'||g, 'p-wlc-'||g, 'WL cap '||g,
+         (SELECT id FROM public.product_categories WHERE slug = 'cat-wl'), 100
+    FROM generate_series(1, 100) AS g;
+
+DO $$
+DECLARE r jsonb; got text;
+BEGIN
+  -- d2 holds 1 item; syncing 100 more fills only to the cap (99 accepted, in
+  -- payload order — the 100th is dropped, never an error)
+  r := api.sync_wishlist('00000000-0000-0000-0000-0000000000d2',
+    ARRAY(SELECT 'p-wlc-'||g FROM generate_series(1, 100) AS g ORDER BY g));
+  IF (r->>'count')::int <> 100 THEN RAISE EXCEPTION 'FAIL: s15 cap fill %', r->>'count'; END IF;
+  IF EXISTS (SELECT 1 FROM public.wishlist_items
+              WHERE user_id = '00000000-0000-0000-0000-0000000000d2'
+                AND product_code = 'p-wlc-100') THEN
+    RAISE EXCEPTION 'FAIL: s15 cap overflow row present'; END IF;
+
+  -- a toggle-add at the cap refuses
+  BEGIN
+    r := api.toggle_wishlist('00000000-0000-0000-0000-0000000000d2', 'p-wl-a');
+    RAISE EXCEPTION 'FAIL: s15 101st allowed';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'wishlist_full' THEN RAISE EXCEPTION 'FAIL: s15 cap code=%', got; END IF; END;
+
+  -- removal still works at the cap
+  r := api.toggle_wishlist('00000000-0000-0000-0000-0000000000d2', 'p-wl-b');
+  IF (r->>'wishlisted')::boolean OR (r->>'count')::int <> 99 THEN
+    RAISE EXCEPTION 'FAIL: s15 removal at cap %', r; END IF;
+END $$;
+
+-- ============================================================
+-- §16 — cascades + FK integrity
+-- ============================================================
+DO $$
+DECLARE r jsonb; n integer;
+BEGIN
+  -- deleting a product silently drops it from every wishlist
+  r := api.toggle_wishlist('00000000-0000-0000-0000-0000000000d1', 'p-wl-del');
+  IF (r->>'count')::int <> 3 THEN RAISE EXCEPTION 'FAIL: s16 setup %', r; END IF;
+  DELETE FROM public.products WHERE code = 'p-wl-del';
+  SELECT count(*) INTO n FROM public.wishlist_items
+   WHERE user_id = '00000000-0000-0000-0000-0000000000d1';
+  IF n <> 2 THEN RAISE EXCEPTION 'FAIL: s16 product cascade %', n; END IF;
+
+  -- deleting the auth user removes their wishlist
+  DELETE FROM auth.users WHERE id = '00000000-0000-0000-0000-0000000000d1';
+  SELECT count(*) INTO n FROM public.wishlist_items
+   WHERE user_id = '00000000-0000-0000-0000-0000000000d1';
+  IF n <> 0 THEN RAISE EXCEPTION 'FAIL: s16 user cascade %', n; END IF;
+
+  -- direct insert of an unknown code violates the FK (defence in depth)
+  BEGIN
+    INSERT INTO public.wishlist_items (user_id, product_code)
+      VALUES ('00000000-0000-0000-0000-0000000000d2', 'ghost-code');
+    RAISE EXCEPTION 'FAIL: s16 unknown code inserted';
+  EXCEPTION WHEN foreign_key_violation THEN NULL; END;
 END $$;
 
 ROLLBACK;

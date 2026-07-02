@@ -45,7 +45,12 @@ function SiteLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isAuthRoute = pathname === "/login";
   const { sessionSummary, announcement, publicSettings } = useRouteContext({ from: "/_site" }) as {
-    sessionSummary: { isAuthenticated: boolean; designation: string; hasAdminAccess: boolean };
+    sessionSummary: {
+      isAuthenticated: boolean;
+      designation: string;
+      hasAdminAccess: boolean;
+      userId: string | null;
+    };
     announcement: AnnouncementState;
     publicSettings: PublicSettings | null;
   };
@@ -54,7 +59,9 @@ function SiteLayout() {
   const showWhatsappFab = whatsappConfigured || Boolean(publicSettings?.whatsapp);
 
   return (
-    <StoreProvider>
+    <StoreProvider
+      session={{ isAuthenticated: sessionSummary.isAuthenticated, userId: sessionSummary.userId }}
+    >
       <div className="flex min-h-screen flex-col">
         {isAuthRoute ? (
           <AuthHeader />

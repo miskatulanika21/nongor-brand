@@ -22,6 +22,11 @@ export const BD_PHONE_RE = /^01[3-9]\d{8}$/;
 
 export const MAX_SAVED_ADDRESSES = 10;
 export const MAX_SAVED_MEASUREMENTS = 12;
+export const MAX_WISHLIST_ITEMS = 100;
+
+/** Sync payload bounds (the RPC also clamps server-side). */
+export const WISHLIST_SYNC_MAX_CODES = 200;
+export const WISHLIST_CODE_MAX_LENGTH = 64;
 
 export const FIT_PREFERENCE_VALUES = ["Fitted", "Regular", "Relaxed"] as const;
 export type FitPreferenceValue = (typeof FIT_PREFERENCE_VALUES)[number];
@@ -211,6 +216,48 @@ export const importPayloadSchema = z.object({
 });
 export type AccountImportPayload = z.infer<typeof importPayloadSchema>;
 
+// ── Wishlist (P6) ────────────────────────────────────────────────────────────
+// The client stores product CODES (the stable public catalog id — `Product.id`
+// in the UI). Sync merges a device's local list on login; toggle flips one
+// heart. Both return the canonical server list.
+
+export const wishlistSyncSchema = z.object({
+  codes: z
+    .array(z.string().trim().min(1).max(WISHLIST_CODE_MAX_LENGTH))
+    .max(WISHLIST_SYNC_MAX_CODES),
+});
+export type WishlistSyncInput = z.infer<typeof wishlistSyncSchema>;
+
+export const wishlistToggleSchema = z.object({
+  code: z.string().trim().min(1).max(WISHLIST_CODE_MAX_LENGTH),
+});
+export type WishlistToggleInput = z.infer<typeof wishlistToggleSchema>;
+
+export interface WishlistToggleResult {
+  wishlisted: boolean;
+  codes: string[];
+}
+
+/**
+ * Clean a device-stored code list before it reaches wishlistSyncSchema: keep
+ * only plausible non-blank strings, dedupe preserving order, clamp the count.
+ * A single poisoned localStorage entry must never fail the whole sync.
+ */
+export function sanitizeWishlistCodes(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of raw) {
+    if (typeof value !== "string") continue;
+    const code = value.trim();
+    if (code === "" || code.length > WISHLIST_CODE_MAX_LENGTH || seen.has(code)) continue;
+    seen.add(code);
+    out.push(code);
+    if (out.length >= WISHLIST_SYNC_MAX_CODES) break;
+  }
+  return out;
+}
+
 // ── RPC payload builders (camelCase → snake_case) ────────────────────────────
 // "" means CLEAR for the nullable fields → sent as null so the RPC's
 // present-but-null semantics apply.
@@ -371,6 +418,21 @@ export function mapAccountSnapshot(raw: unknown): AccountSnapshot {
   };
 }
 
+/** Map an RPC wishlist snapshot ({codes, count, wishlisted?}) to a code list. */
+export function mapWishlistCodes(raw: unknown): string[] {
+  const o = rec(raw);
+  if (!o || !Array.isArray(o.codes)) return [];
+  return o.codes.filter((c): c is string => typeof c === "string" && c !== "");
+}
+
+export function mapWishlistToggle(raw: unknown): WishlistToggleResult {
+  const o = rec(raw);
+  return {
+    wishlisted: o?.wishlisted === true,
+    codes: mapWishlistCodes(raw),
+  };
+}
+
 export function mapImportResult(raw: unknown): AccountImportResult {
   const o = rec(raw) ?? {};
   const n = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
@@ -398,6 +460,8 @@ export const ACCOUNT_ERROR_MESSAGES: Record<string, string> = {
   too_many_measurements: `You can save up to ${MAX_SAVED_MEASUREMENTS} measurement profiles. Remove one first.`,
   duplicate_measurement_name: "You already have a profile with this name.",
   already_imported: "Your account data is already synced.",
+  wishlist_full: `Your wishlist is full (${MAX_WISHLIST_ITEMS} items). Remove one first.`,
+  product_not_found: "That product is no longer available.",
   internal_error: "Something went wrong. Please try again.",
 };
 
