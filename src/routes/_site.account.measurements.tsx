@@ -78,6 +78,7 @@ function MeasurementsPage() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<MeasureForm>(EMPTY_FORM);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [pendingDelete, setPendingDelete] = useState<MeasurementProfile | null>(null);
@@ -128,8 +129,8 @@ function MeasurementsPage() {
     return Object.keys(e).length === 0;
   }
 
-  function onSave() {
-    if (!validate()) return;
+  async function onSave() {
+    if (saving || !validate()) return;
     const base = {
       name: form.name.trim(),
       fitPreference: form.fitPreference,
@@ -141,29 +142,27 @@ function MeasurementsPage() {
       dressLength: form.dressLength.trim(),
     };
 
+    setSaving(true);
     const ok = editingId
-      ? updateMeasurement({ ...base, id: editingId, updatedAt: "" })
-      : addMeasurement(base);
+      ? await updateMeasurement({ ...base, id: editingId, updatedAt: "" })
+      : await addMeasurement(base);
+    setSaving(false);
 
     if (ok) {
       toast.success(editingId ? "Measurements updated" : "Measurement profile saved");
       handleDialogChange(false);
-    } else {
-      toast.error("Could not save in this browser.");
     }
+    // On failure the provider shows the specific error; keep the dialog open.
   }
 
-  function onDuplicate(id: string) {
-    if (duplicateMeasurement(id)) toast.success("Profile duplicated");
-    else toast.error("Could not save in this browser.");
+  async function onDuplicate(id: string) {
+    if (await duplicateMeasurement(id)) toast.success("Profile duplicated");
   }
 
-  function confirmDelete() {
+  async function confirmDelete() {
     if (!pendingDelete) return;
-    const ok = deleteMeasurement(pendingDelete.id);
-    if (ok) toast.success("Profile removed");
-    else toast.error("Could not save in this browser.");
     setPendingDelete(null);
+    if (await deleteMeasurement(pendingDelete.id)) toast.success("Profile removed");
   }
 
   if (!hydrated) {
@@ -181,7 +180,7 @@ function MeasurementsPage() {
         <div className="min-w-0">
           <h2 className="font-display text-xl text-foreground">Measurement profiles</h2>
           <p className="text-sm text-muted-foreground">
-            Save your measurements in this browser to speed up custom-size orders.
+            Save your measurements to your account to speed up custom-size orders.
           </p>
         </div>
         <Button onClick={openAdd} size="sm">
@@ -299,10 +298,12 @@ function MeasurementsPage() {
             </MField>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => handleDialogChange(false)}>
+            <Button variant="ghost" onClick={() => handleDialogChange(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button onClick={onSave}>{editingId ? "Save changes" : "Save profile"}</Button>
+            <Button onClick={onSave} disabled={saving}>
+              {saving ? "Saving…" : editingId ? "Save changes" : "Save profile"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
