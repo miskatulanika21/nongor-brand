@@ -21,6 +21,11 @@ export default defineConfig(({ command, mode }) => {
           esbuild: { keepNames: true },
         }
       : {}),
+    // Baked at build time: Vercel sets VERCEL=1, enabling /_vercel/image URLs
+    // in <OptimizedImage>. Local dev/preview and CI serve original files.
+    define: {
+      "import.meta.env.VERCEL_IMAGES": JSON.stringify(process.env.VERCEL ? "1" : ""),
+    },
     // Use Lightning CSS in dev AND build so the static output matches the preview.
     css: { transformer: "lightningcss" },
     resolve: {

@@ -4,6 +4,7 @@ import { type Product } from "@/lib/products";
 import { formatBDT, discountPct } from "@/lib/brand";
 import { useStore } from "@/lib/store";
 import { StarRating } from "@/components/StarRating";
+import { OptimizedImage } from "@/components/OptimizedImage";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -146,12 +147,14 @@ export function ProductCard({
       <div className="group relative flex gap-3 overflow-hidden rounded-xl border border-border bg-card p-3 transition-all duration-300 hover:shadow-card sm:gap-4 sm:p-4">
         <div className="relative w-28 shrink-0 overflow-hidden rounded-lg bg-secondary sm:w-40">
           <Link to="/product/$slug" params={{ slug: product.slug }}>
-            <img
+            <OptimizedImage
               src={product.image}
               alt={product.name}
               loading="lazy"
               width={400}
               height={500}
+              widths={[256, 384, 640]}
+              sizes="(max-width: 1024px) 50vw, 25vw"
               className="aspect-[4/5] h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
             />
           </Link>
@@ -224,12 +227,14 @@ export function ProductCard({
     <div className="group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-all duration-300 hover:shadow-card">
       <div className="relative aspect-[4/5] overflow-hidden bg-secondary">
         <Link to="/product/$slug" params={{ slug: product.slug }}>
-          <img
+          <OptimizedImage
             src={product.image}
             alt={product.name}
             loading="lazy"
             width={800}
             height={1000}
+            widths={[256, 384, 640]}
+            sizes="(max-width: 640px) 40vw, 320px"
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
         </Link>

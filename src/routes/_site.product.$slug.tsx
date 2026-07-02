@@ -43,6 +43,8 @@ import {
 } from "@/lib/account-ui";
 import { upsertMeasurementFn } from "@/lib/account.api";
 import { toDisplayMeasurements } from "@/lib/measurements";
+import { OptimizedImage } from "@/components/OptimizedImage";
+import { HIGH_IMAGE_QUALITY } from "@/lib/image-cdn";
 import { cn } from "@/lib/utils";
 import {
   Heart,
@@ -348,9 +350,13 @@ function ProductPage() {
             onClick={() => setLightbox(true)}
             aria-label="Open image viewer"
           >
-            <img
+            <OptimizedImage
               src={displayGallery[activeImg]}
               alt={`${product.name} — view ${activeImg + 1}`}
+              fetchPriority="high"
+              widths={[640, 828, 1080]}
+              sizes="(max-width: 1024px) 100vw, 50vw"
+              quality={HIGH_IMAGE_QUALITY}
               className="h-full w-full object-cover"
             />
             <div className="absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] flex-col items-start gap-1.5">
@@ -383,10 +389,12 @@ function ProductPage() {
                       activeImg === i ? "border-primary" : "border-transparent hover:border-border",
                     )}
                   >
-                    <img
+                    <OptimizedImage
                       src={g}
                       alt={`${product.name} — view ${i + 1}`}
                       loading="lazy"
+                      widths={[256]}
+                      sizes="80px"
                       className="h-full w-full object-cover"
                     />
                   </button>
@@ -408,9 +416,12 @@ function ProductPage() {
             <DialogContent className="max-w-4xl gap-0 overflow-hidden p-0">
               <DialogTitle className="sr-only">{product.name} image viewer</DialogTitle>
               <div className="relative bg-background">
-                <img
+                <OptimizedImage
                   src={displayGallery[activeImg]}
                   alt={`${product.name} — view ${activeImg + 1}`}
+                  widths={[1080, 1920]}
+                  sizes="100vw"
+                  quality={HIGH_IMAGE_QUALITY}
                   className="mx-auto max-h-[80vh] w-auto object-contain"
                 />
                 {multiImage && (
