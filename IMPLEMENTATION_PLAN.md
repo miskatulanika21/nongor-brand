@@ -255,8 +255,15 @@ Sub-passes:
       audit). All SECURITY DEFINER service-role-only; per-user advisory write
       lock. Migration `20260702081309` (prod-applied + rolled-back proof);
       `stage4_db.test.sql` §7–§12.
-- [ ] **P3** — app server layer (`account-shared.ts` / `account.server.ts` /
-      `account.api.ts`: CSRF + auth + rate limit) + Vitest
+- [x] **P3** (2026-07-02) — app server layer: `account-shared.ts` (DTOs, zod
+      mirroring the DB CHECKs incl. post-round numeric bound, presence-
+      preserving snake_case payload builders, defensive row mappers, stable
+      error map), `server/account.server.ts` (service-role repo,
+      `AccountError`), `account.api.ts` (GET read + 7 guarded POST writes:
+      CSRF + verified session + `accountWrite` 30/10min; read `accountRead`
+      60/min); `account.imported` added to the audit-action union;
+      `account-shared.test.ts` (schema↔CHECK parity, builders, mappers,
+      error-map exhaustiveness). No UI change (P4).
 - [ ] **P4** — account UI rewire (same provider contract, async + optimistic) + one-time localStorage import then purge (V3 migration table)
 - [ ] **P5** — prefill: checkout saved-address picker + save-back; PDP
       custom-size measurement picker + save-back

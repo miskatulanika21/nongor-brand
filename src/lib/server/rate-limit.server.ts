@@ -62,6 +62,10 @@ export const RATE_LIMITS = {
   paymentEvidence: { limit: 8, windowSec: 60 * 10 },
   /** Guest order tracking — a public read keyed by order-no + token; per-IP. */
   trackOrder: { limit: 30, windowSec: 60 * 5 },
+  /** Account snapshot read (own data, auth-gated) — generous. */
+  accountRead: { limit: 60, windowSec: 60 },
+  /** Account writes (profile / addresses / measurements / one-time import). */
+  accountWrite: { limit: 30, windowSec: 60 * 10 },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 export type RateLimitAction = keyof typeof RATE_LIMITS;

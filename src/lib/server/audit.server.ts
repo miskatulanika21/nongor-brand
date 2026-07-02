@@ -71,7 +71,10 @@ export type AuditAction =
   | "coupon.created"
   | "coupon.updated"
   | "coupon.status_changed"
-  | "coupon.deleted";
+  | "coupon.deleted"
+  // customer accounts (Stage 4) — written SQL-side by api.import_account_data.
+  // Routine account self-writes are deliberately NOT audited (plan §2/§8).
+  | "account.imported";
 
 export interface AuditEntry {
   action: AuditAction;
