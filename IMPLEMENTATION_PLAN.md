@@ -236,6 +236,28 @@ customer_profiles, saved_addresses, saved_measurements. Order history by
 `auth.uid()`. Secure guest tracking (order id + verification factor, never phone
 alone).
 
+**Master plan (2026-07-02):** `docs/stage-4-customer-accounts-plan.md`. Note:
+order history, guest capability tracking and order-time measurement capture
+were already delivered by Stage 3 P4f/P4g — Stage 4 does not rebuild them.
+Sub-passes:
+
+- [ ] **P1** — schema: `customer_profiles` / `saved_addresses` /
+      `saved_measurements` (RPC-only deny-all; caps 10/12; one-default
+      partial unique index; bounded CHECKs)
+- [ ] **P2** — account RPCs (`get_my_account`, `save_profile`, address +
+      measurement CRUD, one-time `import_account_data`) + DB tests
+- [ ] **P3** — app server layer (`account-shared.ts` / `account.server.ts` /
+      `account.api.ts`: CSRF + auth + rate limit) + Vitest
+- [ ] **P4** — account UI rewire (same provider contract, async + optimistic) + one-time localStorage import then purge (V3 migration table)
+- [ ] **P5** — prefill: checkout saved-address picker + save-back; PDP
+      custom-size measurement picker + save-back
+- [ ] **P6** — `wishlist_items` server sync (guest local → merge on login)
+- [ ] **P7** — guest-order claim via capability token (`api.claim_guest_order`)
+- [ ] **P8** — DB-backed `admin.customers.tsx` (`admin_list_customers`
+      aggregates; retire mock `CUSTOMERS`)
+- [ ] **P9** — closure: `stage4_db.test.sql` complete + E2E + advisors +
+      status docs
+
 ## Stage 5 — Admin sales ops & integrations
 
 `CourierAdapter` interface; `SteadFastAdapter` then `PathaoAdapter` (only with
