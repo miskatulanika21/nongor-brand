@@ -1,11 +1,11 @@
 import { Link } from "@tanstack/react-router";
 import { PRIMARY_CATEGORIES, type NavCategory } from "@/lib/categories";
-import kurtiImg from "@/assets/products/kurti.jpg";
-import sareeImg from "@/assets/products/saree.jpg";
-import threePieceImg from "@/assets/products/three-piece.jpg";
-import girlsImg from "@/assets/products/girls-dress.jpg";
-import cosmeticsImg from "@/assets/products/cosmetics.jpg";
-import serumImg from "@/assets/products/serum.jpg";
+import kurtiImg from "@/assets/products/kurti.webp";
+import sareeImg from "@/assets/products/saree.webp";
+import threePieceImg from "@/assets/products/three-piece.webp";
+import girlsImg from "@/assets/products/girls-dress.webp";
+import cosmeticsImg from "@/assets/products/cosmetics.webp";
+import serumImg from "@/assets/products/serum.webp";
 
 /** Explicit, unique image per card so no fallback is repeated. */
 const IMAGE_BY_LABEL: Record<string, string> = {

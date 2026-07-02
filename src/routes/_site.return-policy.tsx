@@ -8,7 +8,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { BRAND } from "@/lib/brand";
-import logo from "@/assets/nongorr-logo-transparent.png";
+import logo from "@/assets/nongorr-logo-transparent.webp";
 import {
   Clock,
   RefreshCw,
