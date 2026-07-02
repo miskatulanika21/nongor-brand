@@ -246,8 +246,15 @@ Sub-passes:
       RPCs; one-default partial unique index; bounded CHECKs; touch triggers).
       Migration `20260702080032` (prod-applied + rolled-back proof);
       `stage4_db.test.sql` §1–§6 wired into CI.
-- [ ] **P2** — account RPCs (`get_my_account`, `save_profile`, address +
-      measurement CRUD, one-time `import_account_data`) + DB tests
+- [x] **P2** (2026-07-02) — account RPCs: `get_my_account` / `save_profile`
+      (CASE-presence patch, lazy create) / address CRUD (`upsert_address`,
+      `delete_address`, `set_default_address`; cap 10; exactly-one-default
+      invariant with oldest-promotion) / measurement CRUD (cap 12; strict
+      numerics; case-insensitive dedupe) / one-time `import_account_data`
+      (row-by-row salvage, coercions, single default, `account.imported`
+      audit). All SECURITY DEFINER service-role-only; per-user advisory write
+      lock. Migration `20260702081309` (prod-applied + rolled-back proof);
+      `stage4_db.test.sql` §7–§12.
 - [ ] **P3** — app server layer (`account-shared.ts` / `account.server.ts` /
       `account.api.ts`: CSRF + auth + rate limit) + Vitest
 - [ ] **P4** — account UI rewire (same provider contract, async + optimistic) + one-time localStorage import then purge (V3 migration table)
