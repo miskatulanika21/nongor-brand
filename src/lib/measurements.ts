@@ -49,3 +49,24 @@ export function normalizeCustomMeasurements(
   }
   return out;
 }
+
+/** The PDP custom-size form's display key for each canonical key. */
+export const MEASUREMENT_DISPLAY_LABELS: Record<CanonicalMeasurementKey, string> = {
+  bust: "Bust",
+  waist: "Waist",
+  hip: "Hip",
+  shoulder: "Shoulder",
+  sleeve: "Sleeve",
+  kurtiLength: "Kurti Length",
+};
+
+/** Canonical-keyed record → the PDP form's display-keyed record. */
+export function toDisplayMeasurements(
+  canonical: Partial<Record<CanonicalMeasurementKey, string>>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(canonical)) {
+    if (v) out[MEASUREMENT_DISPLAY_LABELS[k as CanonicalMeasurementKey]] = v;
+  }
+  return out;
+}

@@ -24,8 +24,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/states";
-import { WhatsappIcon } from "@/components/site/social-icons";
 import {
   Copy,
   Upload,
@@ -37,6 +37,7 @@ import {
   ChevronDown,
   CreditCard,
   Banknote,
+  MapPin,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -61,6 +62,12 @@ import { quoteOrderFn, placeOrderFn } from "@/lib/checkout.api";
 import { submitPaymentEvidenceFn } from "@/lib/evidence.api";
 import { fileToEvidencePayload } from "@/lib/evidence-shared";
 import type { PublicSettings } from "@/lib/settings.schema";
+import {
+  useAccountPrefill,
+  checkoutAddressMatchesSaved,
+  type SavedAddress,
+} from "@/lib/account-ui";
+import { upsertAddressFn } from "@/lib/account.api";
 
 export const Route = createFileRoute("/_site/checkout")({
   head: () => ({
@@ -125,9 +132,10 @@ function Checkout() {
   const navigate = useNavigate();
 
   const { sessionSummary, publicSettings } = useRouteContext({ from: "/_site" }) as {
-    sessionSummary: { userId: string | null };
+    sessionSummary: { isAuthenticated: boolean };
     publicSettings: PublicSettings | null;
   };
+  const signedIn = sessionSummary.isAuthenticated;
 
   // ── Payment method ──────────────────────────────────────────────────────
   const methods = enabledMethodList(publicSettings);
@@ -155,6 +163,52 @@ function Checkout() {
   const [dragOver, setDragOver] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
   const [submitting, setSubmitting] = useState(false);
+
+  // ── Saved addresses (signed-in prefill, Stage 4 P5) ─────────────────────
+  const { addresses: savedAddresses } = useAccountPrefill(signedIn);
+  const [appliedAddressId, setAppliedAddressId] = useState<string | null>(null);
+  const [saveAddress, setSaveAddress] = useState(false);
+  const autoApplied = useRef(false);
+
+  const applySavedAddress = useCallback(
+    (a: SavedAddress) => {
+      setAppliedAddressId(a.id);
+      setName(a.recipient);
+      setPhone(a.phone);
+      setDistrict(a.district);
+      const mapped = suggestDeliveryZoneForDistrict(a.district);
+      if (mapped) setDeliveryZone(mapped);
+      if (a.district === "Dhaka") {
+        setArea(a.area);
+        setThana("");
+      } else {
+        setThana(a.area);
+        setArea("");
+      }
+      setAddress(a.address);
+    },
+    [setDeliveryZone],
+  );
+
+  // Pre-apply the default saved address once — but never clobber a form the
+  // customer already started typing into.
+  useEffect(() => {
+    if (autoApplied.current || savedAddresses.length === 0) return;
+    autoApplied.current = true;
+    if (name || phone || district || address) return;
+    const preferred = savedAddresses.find((a) => a.isDefault) ?? savedAddresses[0];
+    applySavedAddress(preferred);
+  }, [savedAddresses, name, phone, district, address, applySavedAddress]);
+
+  function startNewAddress() {
+    setAppliedAddressId(null);
+    setName("");
+    setPhone("");
+    setDistrict("");
+    setArea("");
+    setThana("");
+    setAddress("");
+  }
 
   // ── Server-authoritative quote ──────────────────────────────────────────
   const [quote, setQuote] = useState<QuoteResult | null>(null);
@@ -236,6 +290,10 @@ function Checkout() {
   const phoneValid = BD_PHONE.test(phoneValue);
   const trxValid = trxId.trim().length >= 10;
   const locality = district === "Dhaka" ? area : thana.trim();
+
+  // A saved address may carry a free-text Dhaka area — surface it as an option
+  // so applying the address keeps the select valid.
+  const areaOptions = area && !DHAKA_AREAS.includes(area) ? [area, ...DHAKA_AREAS] : DHAKA_AREAS;
 
   const deliveryComplete = Boolean(
     name.trim() && phoneValid && district && locality && address.trim(),
@@ -343,6 +401,31 @@ function Checkout() {
     }
   }
 
+  /**
+   * Opt-in address save-back — fired AFTER a successful order placement.
+   * Strictly best-effort and fire-and-forget: it never blocks or delays the
+   * order-success redirect, and an exact duplicate of a saved address is
+   * silently skipped. (Stage 4 P5.)
+   */
+  function saveAddressToAccount() {
+    if (!signedIn || !saveAddress) return;
+    const current = {
+      recipient: name.trim(),
+      phone: phoneValue,
+      district,
+      area: locality,
+      address: address.trim(),
+    };
+    if (savedAddresses.some((s) => checkoutAddressMatchesSaved(current, s))) return;
+    void upsertAddressFn({ data: { ...current, isDefault: savedAddresses.length === 0 } })
+      .then((res) => {
+        if (res.success) toast.success("Address saved to your account for next time.");
+      })
+      .catch(() => {
+        // best-effort only — the customer is already on the success page
+      });
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (submitting) return;
@@ -377,6 +460,7 @@ function Checkout() {
       });
 
       if (result.success) {
+        saveAddressToAccount();
         // Submit payment evidence for manual methods. This replaces the old
         // localStorage TrxID stash: the screenshot is uploaded to the private
         // evidence bucket and the order flips to payment_submitted server-side.
@@ -506,9 +590,45 @@ function Checkout() {
           <section className="space-y-4 rounded-xl border border-border bg-card p-6">
             <h2 className="font-display text-2xl text-foreground">Delivery Details</h2>
 
-            <div className="rounded-lg border border-dashed border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-              Saved addresses — available after account integration.
-            </div>
+            {/* Saved addresses — one-tap prefill for signed-in customers */}
+            {signedIn && savedAddresses.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Your saved addresses
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {savedAddresses.map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => applySavedAddress(a)}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-colors",
+                        appliedAddressId === a.id
+                          ? "border-primary bg-primary/10 font-medium text-primary"
+                          : "border-border bg-background text-muted-foreground hover:border-primary/50",
+                      )}
+                    >
+                      <MapPin className="h-3 w-3 shrink-0" />
+                      {a.label || a.recipient} · {a.area}
+                      {a.isDefault && <span className="text-gold">★</span>}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={startNewAddress}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-xs transition-colors",
+                      appliedAddressId === null
+                        ? "border-primary bg-primary/10 font-medium text-primary"
+                        : "border-dashed border-border bg-background text-muted-foreground hover:border-primary/50",
+                    )}
+                  >
+                    + New address
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Full name" required error={errors.name} fieldRef={refs.name}>
@@ -572,7 +692,7 @@ function Checkout() {
                       <SelectValue placeholder="Select area" />
                     </SelectTrigger>
                     <SelectContent>
-                      {DHAKA_AREAS.map((a) => (
+                      {areaOptions.map((a) => (
                         <SelectItem key={a} value={a}>
                           {a}
                         </SelectItem>
@@ -602,6 +722,15 @@ function Checkout() {
                 placeholder="House, road, area..."
               />
             </Field>
+            {signedIn && (
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                <Checkbox
+                  checked={saveAddress}
+                  onCheckedChange={(v) => setSaveAddress(v === true)}
+                />
+                Save this address to my account for next time
+              </label>
+            )}
             <Field label="Delivery note (optional)">
               <Textarea
                 value={deliveryNote}
