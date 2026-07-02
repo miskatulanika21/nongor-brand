@@ -10,7 +10,15 @@
 // never writes local account PII again.
 // ============================================================================
 
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { toast } from "sonner";
 import { normalizeBDPhone } from "@/lib/bd-phone";
 import { normalizeCustomMeasurements, type CanonicalMeasurementKey } from "@/lib/measurements";
@@ -357,6 +365,41 @@ export function measurementProfileToCustomSize(
     if (typeof v === "string" && isPositiveNumber(v)) out[k as CanonicalMeasurementKey] = v;
   }
   return out;
+}
+
+/**
+ * Map the PDP custom-size form record (display/mixed keys) to the account
+ * measurement value fields — the save-back direction of the adapter above.
+ * Invalid or missing values become "" (the RPC treats "" as clear).
+ */
+export function customSizeToMeasurementValues(
+  measures: Record<string, string>,
+): Pick<MeasurementProfile, "bust" | "waist" | "hip" | "shoulder" | "sleeve" | "dressLength"> {
+  const c = normalizeCustomMeasurements(measures);
+  const val = (v?: string) => (v && isPositiveNumber(v) ? v : "");
+  return {
+    bust: val(c.bust),
+    waist: val(c.waist),
+    hip: val(c.hip),
+    shoulder: val(c.shoulder),
+    sleeve: val(c.sleeve),
+    dressLength: val(c.kurtiLength),
+  };
+}
+
+/**
+ * True when the checkout form's address matches a saved address (used to skip
+ * the post-order save-back when it would create an exact duplicate).
+ */
+export function checkoutAddressMatchesSaved(a: CheckoutAddress, saved: SavedAddress): boolean {
+  const eq = (x: string, y: string) => x.trim().toLowerCase() === y.trim().toLowerCase();
+  return (
+    eq(a.recipient, saved.recipient) &&
+    eq(a.phone, saved.phone) &&
+    eq(a.district, saved.district) &&
+    eq(a.area, saved.area) &&
+    eq(a.address, saved.address)
+  );
 }
 
 // Build a non-conflicting "(Copy)" name within the existing set.
@@ -792,4 +835,62 @@ export function useAccountUI(): AccountUIContextValue {
     throw new Error("useAccountUI must be used within AccountUIProvider");
   }
   return ctx;
+}
+
+// ---- Prefill hook (checkout / PDP — outside the /account provider) -----------
+
+interface AccountPrefill {
+  /** True once the fetch settled (either way) — gate skeletons, not features. */
+  loaded: boolean;
+  addresses: SavedAddress[];
+  measurements: MeasurementProfile[];
+  /** Reflect a just-saved profile in the picker without refetching. */
+  appendMeasurement: (m: MeasurementProfile) => void;
+}
+
+/**
+ * Lazily fetch the signed-in customer's saved addresses/measurements for
+ * prefill surfaces that live outside the /account layout. Fetches at most once
+ * per mount, only when `enabled` first becomes true (pass e.g. `signedIn` on
+ * checkout, `signedIn && isCustom` on the PDP so guests cost nothing).
+ * Failures degrade to empty lists — prefill is an accelerator, never a gate.
+ */
+export function useAccountPrefill(enabled: boolean): AccountPrefill {
+  const [state, setState] = useState<Omit<AccountPrefill, "appendMeasurement">>({
+    loaded: false,
+    addresses: [],
+    measurements: [],
+  });
+  const requested = useRef(false);
+
+  useEffect(() => {
+    if (!enabled || requested.current) return;
+    requested.current = true;
+    let live = true;
+    getMyAccountFn()
+      .then((res) => {
+        if (!live) return;
+        setState(
+          res.success
+            ? {
+                loaded: true,
+                addresses: res.account.addresses,
+                measurements: res.account.measurements,
+              }
+            : (s) => ({ ...s, loaded: true }),
+        );
+      })
+      .catch(() => {
+        if (live) setState((s) => ({ ...s, loaded: true }));
+      });
+    return () => {
+      live = false;
+    };
+  }, [enabled]);
+
+  const appendMeasurement = useCallback((m: MeasurementProfile) => {
+    setState((s) => ({ ...s, measurements: [...s.measurements, m] }));
+  }, []);
+
+  return { ...state, appendMeasurement };
 }

@@ -1,4 +1,4 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import sizeChart from "@/assets/size-chart.webp";
 import { NotFoundPage } from "@/components/NotFoundPage";
@@ -28,7 +28,21 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  useAccountPrefill,
+  measurementProfileToCustomSize,
+  customSizeToMeasurementValues,
+} from "@/lib/account-ui";
+import { upsertMeasurementFn } from "@/lib/account.api";
+import { toDisplayMeasurements } from "@/lib/measurements";
 import { cn } from "@/lib/utils";
 import {
   Heart,
@@ -823,6 +837,56 @@ function ProductOptions({
   allMeasuresValid: boolean;
   sizeChartUrl: string;
 }) {
+  // Saved measurement profiles (Stage 4 P5) — fetched lazily, only for a
+  // signed-in customer who actually opens the custom-size form.
+  const { sessionSummary } = useRouteContext({ from: "/_site" }) as {
+    sessionSummary: { isAuthenticated: boolean };
+  };
+  const signedIn = sessionSummary.isAuthenticated;
+  const { measurements: savedProfiles, appendMeasurement } = useAccountPrefill(
+    signedIn && isCustom,
+  );
+  const [selectedProfileId, setSelectedProfileId] = useState("");
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [profileName, setProfileName] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  function applyProfile(id: string) {
+    const profile = savedProfiles.find((m) => m.id === id);
+    if (!profile) return;
+    setSelectedProfileId(id);
+    setMeasures(toDisplayMeasurements(measurementProfileToCustomSize(profile)));
+  }
+
+  async function saveProfileToAccount() {
+    const trimmed = profileName.trim();
+    if (!trimmed || savingProfile) return;
+    setSavingProfile(true);
+    try {
+      const res = await upsertMeasurementFn({
+        data: {
+          name: trimmed,
+          ...customSizeToMeasurementValues(measures),
+          fitPreference: "Regular",
+        },
+      });
+      if (res.success) {
+        appendMeasurement(res.measurement);
+        setSelectedProfileId(res.measurement.id);
+        setSaveOpen(false);
+        setProfileName("");
+        toast.success("Measurement profile saved to your account.");
+      } else {
+        // Specific server message (duplicate name, cap reached, …).
+        toast.error(res.error);
+      }
+    } catch {
+      toast.error("Could not save the profile. Please try again.");
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
   if (["cosmetics", "makeup", "serum"].includes(product.type)) {
     return (
       <div className="space-y-3 rounded-xl bg-secondary/50 p-4">
@@ -936,6 +1000,25 @@ function ProductOptions({
             <HowToMeasure url={sizeChartUrl} />
           </div>
 
+          {/* One-tap prefill from a saved measurement profile */}
+          {signedIn && savedProfiles.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-sm">Use a saved profile</Label>
+              <Select value={selectedProfileId} onValueChange={applyProfile}>
+                <SelectTrigger className="bg-card">
+                  <SelectValue placeholder="Choose a measurement profile" />
+                </SelectTrigger>
+                <SelectContent>
+                  {savedProfiles.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name} · {m.fitPreference}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <MeasureGroup
             label="Body measurements"
             fields={BODY_FIELDS}
@@ -980,15 +1063,59 @@ function ProductOptions({
             made to order.
           </p>
 
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled
-            className="w-full cursor-not-allowed"
-          >
-            Save measurements — available after account integration
-          </Button>
+          {/* Save-back: name these measurements as a reusable profile */}
+          {signedIn ? (
+            saveOpen ? (
+              <div className="flex gap-2">
+                <Input
+                  value={profileName}
+                  maxLength={40}
+                  onChange={(e) => setProfileName(e.target.value)}
+                  placeholder="Profile name, e.g. My Regular Fit"
+                  className="bg-card"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={saveProfileToAccount}
+                  disabled={savingProfile || !profileName.trim()}
+                >
+                  {savingProfile ? "Saving…" : "Save"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSaveOpen(false)}
+                  disabled={savingProfile}
+                >
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full"
+                disabled={!allMeasuresValid}
+                onClick={() => setSaveOpen(true)}
+              >
+                Save these measurements as a profile
+              </Button>
+            )
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              <Link
+                to="/login"
+                search={{ next: `/product/${product.slug}` }}
+                className="text-primary underline-offset-2 hover:underline"
+              >
+                Sign in
+              </Link>{" "}
+              to save these measurements for your next order.
+            </p>
+          )}
         </div>
       )}
     </div>
