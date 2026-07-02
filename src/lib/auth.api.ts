@@ -239,7 +239,7 @@ export const startOAuth = createServerFn({ method: "POST" })
     await setNoCacheHeaders();
     const { createServerSupabaseClient } = await import("@/lib/server/supabase.server");
     const { getPublicSupabaseEnv } = await import("@/lib/server/env.server");
-    const { checkCsrfOrigin, getClientIp, safeServerLog } =
+    const { checkCsrfOrigin, getClientIp, safeServerLog, getTrustedRequestOrigin } =
       await import("@/lib/server/security.server");
     const { checkRateLimit, rateLimitMessage } = await import("@/lib/server/rate-limit.server");
     const { isSafeRedirect } = await import("@/lib/safe-redirect");
@@ -259,7 +259,13 @@ export const startOAuth = createServerFn({ method: "POST" })
     }
 
     const safeNext = data.next && isSafeRedirect(data.next) ? data.next : undefined;
-    const redirectTo = `${env.siteUrl}/auth/callback${
+    // Complete the flow on the SAME trusted origin the visitor is browsing:
+    // the PKCE code-verifier cookie is domain-bound, so sending an allowed
+    // alias-domain visitor to the canonical /auth/callback would drop it
+    // mid-flow ("Sign-in failed"). Every allowed origin's /auth/callback must
+    // be listed in the Supabase Auth redirect-URL allowlist.
+    const callbackBase = getTrustedRequestOrigin(env.siteUrl) ?? env.siteUrl;
+    const redirectTo = `${callbackBase}/auth/callback${
       safeNext ? `?next=${encodeURIComponent(safeNext)}` : ""
     }`;
 
