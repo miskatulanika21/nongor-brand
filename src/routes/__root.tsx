@@ -8,6 +8,7 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { type ReactNode } from "react";
+import { Analytics } from "@vercel/analytics/react";
 
 import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
@@ -148,6 +149,7 @@ function RootComponent() {
       {/* Branded boutique toasts — per-type accents come from .nongorr-toast
           (styles.css), so richColors' stock green/red palette stays off. */}
       <Toaster position="top-center" closeButton />
+      <Analytics />
     </QueryClientProvider>
   );
 }
