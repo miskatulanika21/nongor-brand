@@ -1,4 +1,4 @@
-import logo from "@/assets/nongorr-logo-transparent.png";
+import logo from "@/assets/nongorr-logo-transparent.webp";
 import { cn } from "@/lib/utils";
 
 export function Logo({

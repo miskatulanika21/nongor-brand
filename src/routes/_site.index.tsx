@@ -10,8 +10,8 @@ import { Button } from "@/components/ui/button";
 import { StarRating } from "@/components/StarRating";
 import { BRAND } from "@/lib/brand";
 import { Truck, ShieldCheck, Ruler, HandHeart, ArrowRight, Instagram, Quote } from "lucide-react";
-import founderPortrait from "@/assets/founder-portrait.jpg";
-import founderLifestyle from "@/assets/founder-lifestyle.jpg";
+import founderPortrait from "@/assets/founder-portrait.webp";
+import founderLifestyle from "@/assets/founder-lifestyle.webp";
 
 export const Route = createFileRoute("/_site/")({
   head: () => ({

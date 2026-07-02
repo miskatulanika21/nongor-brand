@@ -3,9 +3,9 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { BRAND } from "@/lib/brand";
-import founderPortrait from "@/assets/founder-portrait.jpg";
-import founderLifestyle from "@/assets/founder-lifestyle.jpg";
-import logo from "@/assets/nongorr-logo-transparent.png";
+import founderPortrait from "@/assets/founder-portrait.webp";
+import founderLifestyle from "@/assets/founder-lifestyle.webp";
+import logo from "@/assets/nongorr-logo-transparent.webp";
 import sizeChart from "@/assets/size-chart.webp";
 import {
   Quote,

@@ -1,8 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, Ruler, HandHeart, Truck, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import heroImg from "@/assets/products/kurti.jpg";
-import logo from "@/assets/nongorr-logo-transparent.png";
+import heroImg from "@/assets/products/kurti.webp";
+import logo from "@/assets/nongorr-logo-transparent.webp";
 
 const trustBadges = [
   { icon: HandHeart, label: "Handmade with care" },

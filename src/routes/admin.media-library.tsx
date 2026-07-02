@@ -3,6 +3,7 @@ import { useState } from "react";
 import { AdminHeader, ViewToggle } from "@/components/admin/AdminUI";
 import { listMedia, requestMediaUpload, registerMedia, removeMedia } from "@/lib/media.api";
 import { validateMediaFile, MEDIA_BUCKET, type MediaAsset } from "@/lib/media.schema";
+import { convertImageToWebP } from "@/lib/image-convert";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,14 +62,28 @@ function MediaLibraryAdmin() {
 
   const visible = media.filter((a) => !q || a.fileName.toLowerCase().includes(q.toLowerCase()));
 
-  async function handleFile(file: File) {
-    const check = validateMediaFile({ name: file.name, type: file.type, size: file.size });
-    if (!check.ok) {
-      toast.error(check.error);
+  async function handleFile(original: File) {
+    const precheck = validateMediaFile({
+      name: original.name,
+      type: original.type,
+      size: original.size,
+    });
+    if (!precheck.ok) {
+      toast.error(precheck.error);
       return;
     }
     setUploading(true);
     try {
+      // JPEG/PNG are converted to WebP in the browser (best-effort — falls
+      // back to the original) so the storefront always serves the small format.
+      const file = await convertImageToWebP(original);
+      if (file !== original) {
+        const check = validateMediaFile({ name: file.name, type: file.type, size: file.size });
+        if (!check.ok) {
+          toast.error(check.error);
+          return;
+        }
+      }
       const dims = await readDimensions(file);
       const ticketRes = await requestMediaUpload({
         data: { name: file.name, type: file.type, size: file.size },
@@ -127,7 +142,7 @@ function MediaLibraryAdmin() {
     <div>
       <AdminHeader
         title="Media Library"
-        description="Upload and manage product images. Files are stored in Supabase Storage."
+        description="Upload and manage product images. JPEG/PNG uploads are converted to WebP automatically for faster loading."
         action={
           <Button asChild disabled={uploading}>
             <label className="cursor-pointer">

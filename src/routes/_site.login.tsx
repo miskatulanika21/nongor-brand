@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate, redirect, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import logoTransparent from "@/assets/nongorr-logo-transparent.png";
+import logoTransparent from "@/assets/nongorr-logo-transparent.webp";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";

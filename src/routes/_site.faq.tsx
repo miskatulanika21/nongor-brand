@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/accordion";
 import { Input } from "@/components/ui/input";
 import { BRAND } from "@/lib/brand";
-import logo from "@/assets/nongorr-logo-transparent.png";
+import logo from "@/assets/nongorr-logo-transparent.webp";
 import {
   Search,
   Sparkles,
