@@ -43,7 +43,10 @@ export default defineConfig(({ command, mode }) => {
         "react/jsx-dev-runtime",
       ],
     },
-    server: { host: "::", port: 8080 },
+    // strictPort: if 8080 is taken, fail fast instead of drifting to 8081 —
+    // the CSRF origin allowlist is pinned to VITE_SITE_URL, so a drifted port
+    // makes every server function reject with "Invalid request origin".
+    server: { host: "::", port: 8080, strictPort: true },
     plugins: [
       tailwindcss(),
       tsConfigPaths({ projects: ["./tsconfig.json"] }),

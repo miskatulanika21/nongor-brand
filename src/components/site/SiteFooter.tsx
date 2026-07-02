@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { BRAND } from "@/lib/brand";
 import type { PublicSettings } from "@/lib/settings.schema";
+import { availableMethods } from "@/lib/checkout-shared";
 import { PRODUCT_CATEGORIES } from "@/lib/categories";
 import {
   FacebookIcon,
@@ -591,7 +592,8 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
             </span>
             <span className="hidden sm:inline text-gold/40">·</span>
             <span className="inline-flex items-center gap-1.5">
-              <Truck className="size-3.5 text-gold" /> Cash on Delivery (coming soon)
+              <Truck className="size-3.5 text-gold" /> Cash on Delivery
+              {availableMethods(settings ?? null).cod ? "" : " (coming soon)"}
             </span>
             <span className="hidden sm:inline text-gold/40">·</span>
             <span className="inline-flex items-center gap-1.5">

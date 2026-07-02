@@ -106,6 +106,7 @@ function Cart() {
 
   // ── Server reconciliation ──────────────────────────────────────────────
   const [quote, setQuote] = useState<QuoteResult | null>(null);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
   const [reconciling, setReconciling] = useState(false);
   /** Per-item warnings keyed by `code:size`. */
   const [itemWarnings, setItemWarnings] = useState<Map<string, string>>(new Map());
@@ -114,11 +115,14 @@ function Cart() {
     const lines = cartToQuoteLines(cart);
     if (lines.length === 0) return;
     setReconciling(true);
+    setQuoteError(null);
     try {
       const result = await quoteOrderFn({
         data: { lines, zone: deliveryZone, coupon: couponCode ?? undefined },
       });
-      if (result.success) {
+      if (!result.success) {
+        setQuoteError(result.error);
+      } else {
         setQuote(result.quote);
         const warnings = new Map<string, string>();
         for (const line of result.quote.lines) {
@@ -152,6 +156,7 @@ function Cart() {
       }
     } catch {
       // Non-critical — client-side totals remain usable
+      setQuoteError("Could not verify prices right now.");
     } finally {
       setReconciling(false);
     }
@@ -486,10 +491,24 @@ function Cart() {
                       </button>
                     </div>
                   )}
-                  {couponCode && !couponStatus && (
+                  {couponCode && !couponStatus && reconciling && (
                     <p className="flex items-center gap-2 text-xs text-muted-foreground">
                       <Loader2 className="h-3 w-3 animate-spin" /> Checking {couponCode}…
                     </p>
+                  )}
+                  {couponCode && !couponStatus && !reconciling && quoteError && (
+                    <div className="flex items-center justify-between rounded-lg border border-gold/40 bg-gold/5 px-3 py-2">
+                      <span className="text-xs text-muted-foreground">
+                        {couponCode}: couldn't verify right now — it will be re-checked at checkout.
+                      </span>
+                      <button
+                        onClick={removeCoupon}
+                        className="text-muted-foreground hover:text-destructive"
+                        aria-label="Remove coupon"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
                   )}
                   <div className="flex gap-2">
                     <Input
