@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { type Product, requiresSelection } from "@/lib/products";
 import { ProductCard, type ProductCardView } from "@/components/ProductCard";
+import { OptimizedImage } from "@/components/OptimizedImage";
 import { cn } from "@/lib/utils";
 import { ProductGridSkeleton } from "@/components/skeletons";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -49,7 +50,13 @@ export function ProductGrid({
           {quick && (
             <div className="grid gap-0 sm:grid-cols-2">
               <div className="aspect-[4/5] bg-secondary">
-                <img src={quick.image} alt={quick.name} className="h-full w-full object-cover" />
+                <OptimizedImage
+                  src={quick.image}
+                  alt={quick.name}
+                  widths={[384, 640]}
+                  sizes="(max-width: 640px) 100vw, 384px"
+                  className="h-full w-full object-cover"
+                />
               </div>
               <div className="flex flex-col gap-3 p-6">
                 <Badge variant="outline" className="w-fit border-gold/60">

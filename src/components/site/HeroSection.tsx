@@ -1,6 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, Ruler, HandHeart, Truck, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { OptimizedImage } from "@/components/OptimizedImage";
+import { HIGH_IMAGE_QUALITY } from "@/lib/image-cdn";
 import heroImg from "@/assets/products/kurti.webp";
 import logo from "@/assets/nongorr-logo-transparent.webp";
 
@@ -91,13 +93,16 @@ export function HeroSection() {
 
           <div className="hero-tilt relative z-10 overflow-hidden rounded-[2rem] border border-gold/30 bg-card shadow-card animate-scale-in">
             <div className="relative aspect-[4/5] w-full">
-              <img
+              <OptimizedImage
                 src={heroImg}
                 alt="Nongorr handcrafted maroon kurti — signature edit"
                 width={800}
                 height={1000}
                 loading="eager"
                 fetchPriority="high"
+                widths={[640, 828, 1080]}
+                sizes="(max-width: 1024px) 100vw, 600px"
+                quality={HIGH_IMAGE_QUALITY}
                 className="h-full w-full object-cover"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-primary/40 via-transparent to-transparent" />

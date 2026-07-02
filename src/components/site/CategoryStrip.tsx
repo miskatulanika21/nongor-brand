@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { PRIMARY_CATEGORIES, type NavCategory } from "@/lib/categories";
+import { OptimizedImage } from "@/components/OptimizedImage";
 import kurtiImg from "@/assets/products/kurti.webp";
 import sareeImg from "@/assets/products/saree.webp";
 import threePieceImg from "@/assets/products/three-piece.webp";
@@ -40,10 +41,12 @@ export function CategoryStrip() {
             search={searchFor(c) as never}
             className="gold-sweep group relative aspect-[3/4] w-36 shrink-0 snap-start overflow-hidden rounded-2xl border border-gold/30 bg-card shadow-soft transition-all duration-300 hover:-translate-y-0.5 hover:border-gold/60 hover:shadow-card active:scale-[.98] sm:w-auto"
           >
-            <img
+            <OptimizedImage
               src={IMAGE_BY_LABEL[c.label] ?? kurtiImg}
               alt={c.label}
               loading="lazy"
+              widths={[256, 384]}
+              sizes="(max-width: 640px) 144px, (max-width: 1024px) 33vw, 16vw"
               className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-primary/80 via-primary/15 to-transparent" />
