@@ -145,7 +145,9 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />
-      <Toaster position="top-center" richColors closeButton />
+      {/* Branded boutique toasts — per-type accents come from .nongorr-toast
+          (styles.css), so richColors' stock green/red palette stays off. */}
+      <Toaster position="top-center" closeButton />
     </QueryClientProvider>
   );
 }

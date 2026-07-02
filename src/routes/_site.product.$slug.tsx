@@ -1059,7 +1059,7 @@ function HowToMeasure({ url }: { url: string }) {
           <Ruler className="mr-1 h-4 w-4" /> How to measure
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display text-2xl">How to measure</DialogTitle>
         </DialogHeader>
