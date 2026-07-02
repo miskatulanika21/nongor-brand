@@ -78,6 +78,26 @@ export function checkCsrfOrigin(siteUrl: string): boolean {
   return false;
 }
 
+/**
+ * The request's OWN origin, but only when it is in the trusted set — else null.
+ *
+ * Use for building same-origin redirect/callback URLs (e.g. the OAuth
+ * `redirectTo`): flows that set domain-bound cookies (the PKCE code verifier)
+ * must complete on the origin the visitor is actually browsing, which may be a
+ * trusted alias of the canonical site URL. Never trusts arbitrary origins —
+ * the same allowlist as checkCsrfOrigin decides.
+ */
+export function getTrustedRequestOrigin(siteUrl: string): string | null {
+  const allowed = getAllowedOrigins(siteUrl);
+  for (const header of ["origin", "referer"] as const) {
+    const value = getRequestHeader(header);
+    if (!value) continue;
+    const normalized = normalizeOrigin(value);
+    if (normalized && allowed.has(normalized)) return normalized;
+  }
+  return null;
+}
+
 // ---- Client IP --------------------------------------------------------------
 
 /**
