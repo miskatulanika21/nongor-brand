@@ -7,7 +7,7 @@ import {
   useRouteContext,
 } from "@tanstack/react-router";
 import { AccountUIProvider, useAccountUI, initials } from "@/lib/account-ui";
-import { Skeleton } from "@/components/ui/skeleton";
+import { getMyAccountFn } from "@/lib/account.api";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { loadCustomerArea, logout as serverLogout } from "@/lib/auth.api";
@@ -37,7 +37,7 @@ export const Route = createFileRoute("/_site/account")({
       {
         name: "description",
         content:
-          "Manage your Nongorr profile, delivery addresses, saved measurement profiles and wishlist. A local demo account UI stored only in this browser.",
+          "Manage your Nongorr profile, delivery addresses, saved measurement profiles and wishlist — synced securely to your account.",
       },
       { property: "og:title", content: "My Account · Nongorr" },
       {
@@ -57,6 +57,16 @@ export const Route = createFileRoute("/_site/account")({
     }
     return { session: result.user as CustomerSession };
   },
+  // SSR the account snapshot so the header/pages render real data with no
+  // skeleton flash. The provider seeds once per mount; a brief staleTime stops
+  // child-tab navigations from refetching (and burning accountRead budget).
+  loader: async () => {
+    const res = await getMyAccountFn();
+    return res.success
+      ? { snapshot: res.account, loadError: false }
+      : { snapshot: null, loadError: true };
+  },
+  staleTime: 30_000,
   component: AccountRoute,
 });
 
@@ -77,24 +87,29 @@ const NAV = [
 
 function AccountRoute() {
   const { session } = useRouteContext({ from: "/_site/account" }) as { session: CustomerSession };
+  const { snapshot, loadError } = Route.useLoaderData();
 
   return (
+    // Keyed by user so a different sign-in on this browser remounts with a
+    // clean slate (state, import gate) — PII can never carry over.
     <AccountUIProvider
+      key={session.userId}
       scope={session.userId}
+      initialSnapshot={snapshot}
       initialProfile={{
         name: session.name || "Customer",
         email: session.email || "",
       }}
     >
-      <AccountShell>
+      <AccountShell loadError={loadError}>
         <Outlet />
       </AccountShell>
     </AccountUIProvider>
   );
 }
 
-function AccountShell({ children }: { children: React.ReactNode }) {
-  const { hydrated, profile } = useAccountUI();
+function AccountShell({ children, loadError }: { children: React.ReactNode; loadError: boolean }) {
+  const { profile } = useAccountUI();
   const navigate = useNavigate();
   const { session } = useRouteContext({ from: "/_site/account" }) as { session: CustomerSession };
   useNoticeToast();
@@ -110,15 +125,21 @@ function AccountShell({ children }: { children: React.ReactNode }) {
       {/* Header */}
       <header className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-4">
         <div className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-gradient-hero text-lg font-semibold text-primary-foreground">
-          {hydrated ? initials(profile.name) : <Skeleton className="h-8 w-8 rounded-full" />}
+          {initials(profile.name)}
         </div>
         <div className="min-w-0">
           <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">My Account</p>
           <h1 className="truncate font-display text-2xl text-foreground sm:text-3xl">
-            {hydrated ? <>Hello, {profile.name}</> : <Skeleton className="h-7 w-48" />}
+            Hello, {profile.name}
           </h1>
         </div>
       </header>
+
+      {loadError && (
+        <div className="mt-4 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-xs text-destructive">
+          We couldn't load your saved details right now — refresh the page to try again.
+        </div>
+      )}
 
       {/* Secure session notice */}
       <div className="mt-4 flex items-start gap-2 rounded-xl border border-gold/30 bg-primary/5 px-4 py-3 text-xs text-foreground/90">

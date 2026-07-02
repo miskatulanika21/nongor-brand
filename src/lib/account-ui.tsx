@@ -1,49 +1,52 @@
 // ============================================================================
-// Account UI — FRONTEND-ONLY local prototype state.
-// Data is stored only in this browser (localStorage). There is NO authentication,
-// NO server, NO database and NO cross-device sync.
-// TODO(backend): replace with Supabase-backed profile/addresses/measurements + auth.
+// Account UI — server-backed provider (Stage 4 P4).
+// State is seeded from the /account route loader (api.get_my_account via
+// getMyAccountFn) and every mutation flows through the guarded server fns in
+// account.api.ts. Mutations are optimistic with rollback; failures surface the
+// server's stable-code message as a toast, so callers only handle success
+// (Promise<boolean> — same context contract as the localStorage era).
+// localStorage is READ-only legacy: a one-time per-user import salvages
+// pre-Stage-4 data to the server, then purges the local PII keys. The app
+// never writes local account PII again.
 // ============================================================================
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 import { normalizeBDPhone } from "@/lib/bd-phone";
 import { normalizeCustomMeasurements, type CanonicalMeasurementKey } from "@/lib/measurements";
 import type { CheckoutAddress } from "@/lib/checkout-ui";
+import {
+  accountErrorMessage,
+  type AccountSnapshot,
+  type FitPreferenceValue,
+  type ServerMeasurement,
+  type ServerSavedAddress,
+} from "@/lib/account-shared";
+import {
+  deleteAddressFn,
+  deleteMeasurementFn,
+  getMyAccountFn,
+  importAccountDataFn,
+  saveProfileFn,
+  setDefaultAddressFn,
+  upsertAddressFn,
+  upsertMeasurementFn,
+} from "@/lib/account.api";
 
 // ---- Types ------------------------------------------------------------------
+// Addresses/measurements ARE the server DTOs — one shape from RPC to render.
 
 export interface AccountProfile {
   name: string;
+  /** Read-only — auth.users owns the email (change-email is an auth flow). */
   email: string;
   phone: string;
   birthday: string;
 }
 
-export interface SavedAddress {
-  id: string;
-  label?: string;
-  recipient: string;
-  phone: string;
-  district: string;
-  area: string;
-  address: string;
-  isDefault: boolean;
-}
-
-export type FitPreference = "Fitted" | "Regular" | "Relaxed";
-
-export interface MeasurementProfile {
-  id: string;
-  name: string;
-  bust: string;
-  waist: string;
-  hip: string;
-  shoulder: string;
-  sleeve: string;
-  dressLength: string;
-  fitPreference: FitPreference;
-  updatedAt: string;
-}
+export type SavedAddress = ServerSavedAddress;
+export type FitPreference = FitPreferenceValue;
+export type MeasurementProfile = ServerMeasurement;
 
 // ---- Safe defaults (no fake personal data) ----------------------------------
 
@@ -53,10 +56,6 @@ export const DEFAULT_PROFILE: AccountProfile = {
   phone: "",
   birthday: "",
 };
-
-export const DEFAULT_ADDRESSES: SavedAddress[] = [];
-
-export const DEFAULT_MEASUREMENTS: MeasurementProfile[] = [];
 
 export const MEASURE_FIELDS = [
   { key: "bust", label: "Bust" },
@@ -69,21 +68,27 @@ export const MEASURE_FIELDS = [
 
 export const FIT_PREFERENCES: FitPreference[] = ["Fitted", "Regular", "Relaxed"];
 
-// ---- Storage keys -----------------------------------------------------------
+// ---- Legacy localStorage (pre-Stage-4) — import-only ------------------------
+// The readers below exist solely to salvage data written before accounts were
+// server-backed; the writers are kept for tests that simulate such browsers.
+// Account PII was partitioned per signed-in user (scopedKey); the bare base
+// keys predate namespacing and are purged on every account mount.
 
-// Base keys. Account PII is partitioned per signed-in user (see scopedKey) so two
-// customers sharing one browser can never read each other's profile, addresses or
-// measurements. The bare base keys below are LEGACY (pre-namespacing) and are
-// purged on mount — they belonged to whoever last used the browser, so they must
-// never be surfaced to the current account.
 const PROFILE_KEY = "nongorr_account_profile";
 const ADDRESSES_KEY = "nongorr_account_addresses";
 const MEASUREMENTS_KEY = "nongorr_measurement_profiles";
 const LEGACY_ACCOUNT_KEYS = [PROFILE_KEY, ADDRESSES_KEY, MEASUREMENTS_KEY];
 
+/** One-shot import seal, set only after the server confirms the migration. */
+const MIGRATION_FLAG_KEY = "nongorr_account_migrated_v1";
+
 /** Per-user storage key. `scope` is the verified auth user id from the session. */
 function scopedKey(base: string, scope: string): string {
   return `${base}::u:${scope}`;
+}
+
+export function migrationFlagKey(scope: string): string {
+  return scopedKey(MIGRATION_FLAG_KEY, scope);
 }
 
 /**
@@ -95,6 +100,18 @@ export function purgeLegacyAccountKeys(): void {
   for (const key of LEGACY_ACCOUNT_KEYS) {
     try {
       window.localStorage.removeItem(key);
+    } catch {
+      // ignore storage failures
+    }
+  }
+}
+
+/** Remove THIS user's local PII partition (after a confirmed server import). */
+export function purgeScopedAccountKeys(scope: string): void {
+  if (typeof window === "undefined") return;
+  for (const key of LEGACY_ACCOUNT_KEYS) {
+    try {
+      window.localStorage.removeItem(scopedKey(key, scope));
     } catch {
       // ignore storage failures
     }
@@ -158,7 +175,7 @@ function safeISO(value: unknown): string {
   return new Date().toISOString();
 }
 
-// ---- Readers (validate, never throw) ----------------------------------------
+// ---- Legacy readers (validate, never throw) ----------------------------------
 
 export function readProfile(scope: string): AccountProfile {
   const raw = unwrap<AccountProfile>(readRaw(scopedKey(PROFILE_KEY, scope)));
@@ -209,7 +226,7 @@ function normalizeDefaults(list: SavedAddress[]): SavedAddress[] {
 
 export function readAddresses(scope: string): SavedAddress[] {
   const raw = unwrap<SavedAddress[]>(readRaw(scopedKey(ADDRESSES_KEY, scope)));
-  if (!Array.isArray(raw)) return [...DEFAULT_ADDRESSES];
+  if (!Array.isArray(raw)) return [];
   const cleaned = raw.map(normalizeAddress).filter((a): a is SavedAddress => a !== null);
   return normalizeDefaults(cleaned);
 }
@@ -240,11 +257,11 @@ function normalizeMeasurement(raw: unknown): MeasurementProfile | null {
 
 export function readMeasurements(scope: string): MeasurementProfile[] {
   const raw = unwrap<MeasurementProfile[]>(readRaw(scopedKey(MEASUREMENTS_KEY, scope)));
-  if (!Array.isArray(raw)) return [...DEFAULT_MEASUREMENTS];
+  if (!Array.isArray(raw)) return [];
   return raw.map(normalizeMeasurement).filter((m): m is MeasurementProfile => m !== null);
 }
 
-// ---- Writers (honest success/failure) ---------------------------------------
+// ---- Legacy writers (tests only — simulate a pre-Stage-4 browser) ------------
 
 export function writeProfile(scope: string, profile: AccountProfile): boolean {
   return writeRaw(scopedKey(PROFILE_KEY, scope), profile);
@@ -264,20 +281,9 @@ export function isValidAccountPhone(value: string): boolean {
   return /^01[3-9]\d{8}$/.test(normalizeBDPhone(value));
 }
 
-export function isValidEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-}
-
 export function isPositiveNumber(value: string): boolean {
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric > 0;
-}
-
-export function newId(prefix: string): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return `${prefix}-${crypto.randomUUID()}`;
-  }
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
 export function initials(name: string): string {
@@ -293,12 +299,6 @@ export function initials(name: string): string {
   const last = Array.from(words[words.length - 1])[0] ?? "";
   const combo = `${first}${last}`.trim();
   return (combo || "GC").toUpperCase();
-}
-
-export function safeDateValue(date: string): number {
-  if (!date) return -Infinity;
-  const t = Date.parse(date);
-  return Number.isFinite(t) ? t : -Infinity;
 }
 
 export function formatUpdated(iso: string): string {
@@ -369,6 +369,132 @@ function duplicateName(base: string, existing: string[]): string {
   return candidate;
 }
 
+// ---- Snapshot → UI state ------------------------------------------------------
+
+function toAccountProfile(
+  snapshot: AccountSnapshot | null,
+  fallback?: Partial<AccountProfile>,
+): AccountProfile {
+  return {
+    name: snapshot?.profile?.fullName || fallback?.name || DEFAULT_PROFILE.name,
+    email: snapshot?.email || fallback?.email || "",
+    phone: snapshot?.profile?.phone ?? "",
+    birthday: snapshot?.profile?.birthday ?? "",
+  };
+}
+
+/**
+ * Fold a canonical server row into the list (replace-or-append). The server
+ * clears other defaults atomically when the row is default — mirror that.
+ */
+function applyServerAddress(list: SavedAddress[], row: SavedAddress): SavedAddress[] {
+  const exists = list.some((a) => a.id === row.id);
+  const next = exists ? list.map((a) => (a.id === row.id ? row : a)) : [...list, row];
+  return row.isDefault ? next.map((a) => (a.id === row.id ? a : { ...a, isDefault: false })) : next;
+}
+
+// ---- One-time legacy import ---------------------------------------------------
+
+const IMPORT_STRING_MAX = 600; // importPayloadSchema bound — clip, never reject
+
+function clip(value: string): string {
+  return value.slice(0, IMPORT_STRING_MAX);
+}
+
+function sealMigration(scope: string): void {
+  try {
+    window.localStorage.setItem(migrationFlagKey(scope), new Date().toISOString());
+  } catch {
+    // ignore storage failures
+  }
+  purgeScopedAccountKeys(scope);
+}
+
+/**
+ * Salvage this browser's pre-Stage-4 data to the server exactly once per user.
+ * The flag is set and the local PII keys purged only after the server confirms
+ * (import succeeded, was already done, or there was nothing worth keeping);
+ * a network failure leaves everything untouched for a retry on the next visit.
+ */
+async function runLegacyImport(
+  scope: string,
+  snapshot: AccountSnapshot,
+  onSynced: (fresh: AccountSnapshot) => void,
+): Promise<void> {
+  if (typeof window === "undefined") return;
+  try {
+    if (window.localStorage.getItem(migrationFlagKey(scope))) return;
+  } catch {
+    return;
+  }
+
+  const localProfile = readProfile(scope);
+  const localAddresses = readAddresses(scope);
+  const localMeasurements = readMeasurements(scope);
+
+  const customName = localProfile.name !== DEFAULT_PROFILE.name;
+  const profileHasData = customName || !!localProfile.phone || !!localProfile.birthday;
+  const hasLocal = profileHasData || localAddresses.length > 0 || localMeasurements.length > 0;
+  const serverEmpty =
+    !snapshot.profile && snapshot.addresses.length === 0 && snapshot.measurements.length === 0;
+
+  // Nothing to salvage, or the server already holds account data (it is the
+  // truth) — seal the migration and drop the stale local copy.
+  if (!hasLocal || !serverEmpty) {
+    sealMigration(scope);
+    return;
+  }
+
+  const payload = {
+    profile: profileHasData
+      ? {
+          fullName: customName ? clip(localProfile.name) : "",
+          phone: clip(localProfile.phone),
+          birthday: clip(localProfile.birthday),
+        }
+      : undefined,
+    addresses: localAddresses.slice(0, 20).map((a) => ({
+      label: clip(a.label ?? ""),
+      recipient: clip(a.recipient),
+      phone: clip(a.phone),
+      district: clip(a.district),
+      area: clip(a.area),
+      address: clip(a.address),
+      isDefault: a.isDefault,
+    })),
+    measurements: localMeasurements.slice(0, 20).map((m) => ({
+      name: clip(m.name),
+      bust: clip(m.bust),
+      waist: clip(m.waist),
+      hip: clip(m.hip),
+      shoulder: clip(m.shoulder),
+      sleeve: clip(m.sleeve),
+      dressLength: clip(m.dressLength),
+      fitPreference: m.fitPreference,
+    })),
+  };
+
+  try {
+    const res = await importAccountDataFn({ data: payload });
+    const alreadyImported = !res.success && (res as { code?: string }).code === "already_imported";
+    if (!res.success && !alreadyImported) return; // retry on the next visit
+
+    // Confirmed server-side — show the imported rows, then seal + purge.
+    try {
+      const fresh = await getMyAccountFn();
+      if (fresh.success) onSynced(fresh.account);
+    } catch {
+      // refresh is cosmetic — the import itself is confirmed
+    }
+    sealMigration(scope);
+    if (res.success) {
+      toast.success("Your saved details from this browser are now synced to your account.");
+    }
+  } catch {
+    // Network failure — keep the local data; retried on the next account visit.
+  }
+}
+
 // ---- Reactive provider ------------------------------------------------------
 
 interface AccountUIContextValue {
@@ -377,149 +503,270 @@ interface AccountUIContextValue {
   addresses: SavedAddress[];
   measurements: MeasurementProfile[];
 
-  saveProfile(profile: AccountProfile): boolean;
+  saveProfile(profile: AccountProfile): Promise<boolean>;
 
-  addAddress(address: Omit<SavedAddress, "id">): boolean;
-  updateAddress(address: SavedAddress): boolean;
-  deleteAddress(id: string): boolean;
-  setDefaultAddress(id: string): boolean;
+  addAddress(address: Omit<SavedAddress, "id">): Promise<boolean>;
+  updateAddress(address: SavedAddress): Promise<boolean>;
+  deleteAddress(id: string): Promise<boolean>;
+  setDefaultAddress(id: string): Promise<boolean>;
 
-  addMeasurement(profile: Omit<MeasurementProfile, "id" | "updatedAt">): boolean;
-  updateMeasurement(profile: MeasurementProfile): boolean;
-  duplicateMeasurement(id: string): boolean;
-  deleteMeasurement(id: string): boolean;
+  addMeasurement(profile: Omit<MeasurementProfile, "id" | "updatedAt">): Promise<boolean>;
+  updateMeasurement(profile: MeasurementProfile): Promise<boolean>;
+  duplicateMeasurement(id: string): Promise<boolean>;
+  deleteMeasurement(id: string): Promise<boolean>;
 }
 
 const AccountUIContext = createContext<AccountUIContextValue | null>(null);
 
+/** Run a write server fn; on failure toast the specific message and return null. */
+async function runWrite<T extends { success: boolean }>(
+  op: () => Promise<T>,
+): Promise<Extract<T, { success: true }> | null> {
+  try {
+    const res = await op();
+    if (!res.success) {
+      toast.error((res as { error?: string }).error || accountErrorMessage(null));
+      return null;
+    }
+    return res as Extract<T, { success: true }>;
+  } catch {
+    toast.error(accountErrorMessage(null));
+    return null;
+  }
+}
+
 export function AccountUIProvider({
   children,
   scope,
+  initialSnapshot,
   initialProfile,
 }: {
   children: ReactNode;
-  /** Verified auth user id — partitions this user's PII from any other account. */
+  /** Verified auth user id — keys the migration flag; the server scopes data. */
   scope: string;
+  /** Loader-fetched server snapshot; null when that load failed. */
+  initialSnapshot: AccountSnapshot | null;
+  /** Session fallbacks for the header until a profile row exists. */
   initialProfile?: Partial<AccountProfile>;
 }) {
-  const [hydrated, setHydrated] = useState(false);
-  const [profile, setProfile] = useState<AccountProfile>(DEFAULT_PROFILE);
-  const [addresses, setAddresses] = useState<SavedAddress[]>(DEFAULT_ADDRESSES);
-  const [measurements, setMeasurements] = useState<MeasurementProfile[]>(DEFAULT_MEASUREMENTS);
+  const [profile, setProfile] = useState<AccountProfile>(() =>
+    toAccountProfile(initialSnapshot, initialProfile),
+  );
+  const [addresses, setAddresses] = useState<SavedAddress[]>(
+    () => initialSnapshot?.addresses ?? [],
+  );
+  const [measurements, setMeasurements] = useState<MeasurementProfile[]>(
+    () => initialSnapshot?.measurements ?? [],
+  );
 
+  // One-time legacy import (client only; the ref survives loader re-renders).
+  const importStarted = useRef(false);
   useEffect(() => {
-    // Drop any pre-namespacing keys, then load THIS user's partition. Re-running
-    // on `scope` change resets state when a different account signs in on the
-    // same browser, so PII can never carry over.
     purgeLegacyAccountKeys();
-    const localProfile = readProfile(scope);
-    setProfile({
-      ...localProfile,
-      ...(initialProfile?.name ? { name: initialProfile.name } : {}),
-      ...(initialProfile?.email ? { email: initialProfile.email } : {}),
+    if (importStarted.current || !initialSnapshot) return;
+    importStarted.current = true;
+    void runLegacyImport(scope, initialSnapshot, (fresh) => {
+      setProfile(toAccountProfile(fresh, initialProfile));
+      setAddresses(fresh.addresses);
+      setMeasurements(fresh.measurements);
     });
-    setAddresses(readAddresses(scope));
-    setMeasurements(readMeasurements(scope));
-    setHydrated(true);
-  }, [scope, initialProfile]);
+    // initialProfile is a per-render object; the ref guard makes re-runs no-ops.
+  }, [scope, initialSnapshot, initialProfile]);
 
-  const saveProfile: AccountUIContextValue["saveProfile"] = (next) => {
-    const ok = writeProfile(scope, next);
-    if (ok) setProfile(next);
-    return ok;
-  };
-
-  const persistAddresses = (next: SavedAddress[]): boolean => {
-    const normalized = normalizeDefaults(next);
-    const ok = writeAddresses(scope, normalized);
-    if (ok) setAddresses(normalized);
-    return ok;
-  };
-
-  const addAddress: AccountUIContextValue["addAddress"] = (address) => {
-    const isFirst = addresses.length === 0;
-    const entry: SavedAddress = {
-      ...address,
-      id: newId("addr"),
-      isDefault: isFirst ? true : address.isDefault,
-    };
-    let next = [...addresses, entry];
-    if (entry.isDefault) {
-      next = next.map((a) => (a.id === entry.id ? a : { ...a, isDefault: false }));
+  const saveProfile: AccountUIContextValue["saveProfile"] = async (next) => {
+    const prev = profile;
+    setProfile({ ...next, email: prev.email }); // email is auth-owned
+    const res = await runWrite(() =>
+      saveProfileFn({
+        data: { fullName: next.name, phone: next.phone, birthday: next.birthday },
+      }),
+    );
+    if (!res) {
+      setProfile(prev);
+      return false;
     }
-    return persistAddresses(next);
+    setProfile((cur) => ({
+      ...cur,
+      name: res.profile.fullName,
+      phone: res.profile.phone,
+      birthday: res.profile.birthday,
+    }));
+    return true;
   };
 
-  const updateAddress: AccountUIContextValue["updateAddress"] = (address) => {
-    let next = addresses.map((a) => (a.id === address.id ? address : a));
+  const addAddress: AccountUIContextValue["addAddress"] = async (address) => {
+    // Pessimistic: the row id (and first-address default promotion) come from
+    // the server; the canonical row is appended on success.
+    const res = await runWrite(() =>
+      upsertAddressFn({
+        data: {
+          label: address.label,
+          recipient: address.recipient,
+          phone: address.phone,
+          district: address.district,
+          area: address.area,
+          address: address.address,
+          isDefault: address.isDefault,
+        },
+      }),
+    );
+    if (!res) return false;
+    setAddresses((cur) => applyServerAddress(cur, res.address));
+    return true;
+  };
+
+  const updateAddress: AccountUIContextValue["updateAddress"] = async (address) => {
+    const prev = addresses;
+    let next = prev.map((a) => (a.id === address.id ? address : a));
     if (address.isDefault) {
       next = next.map((a) => (a.id === address.id ? a : { ...a, isDefault: false }));
     } else if (!next.some((a) => a.isDefault) && next.length > 0) {
       next = next.map((a, i) => (i === 0 ? { ...a, isDefault: true } : a));
     }
-    return persistAddresses(next);
+    setAddresses(next);
+    const res = await runWrite(() =>
+      upsertAddressFn({
+        data: {
+          id: address.id,
+          label: address.label,
+          recipient: address.recipient,
+          phone: address.phone,
+          district: address.district,
+          area: address.area,
+          address: address.address,
+          isDefault: address.isDefault,
+        },
+      }),
+    );
+    if (!res) {
+      setAddresses(prev);
+      return false;
+    }
+    setAddresses((cur) => applyServerAddress(cur, res.address));
+    return true;
   };
 
-  const deleteAddress: AccountUIContextValue["deleteAddress"] = (id) => {
-    const removed = addresses.find((a) => a.id === id);
-    let next = addresses.filter((a) => a.id !== id);
-    if (removed?.isDefault && next.length > 0 && !next.some((a) => a.isDefault)) {
+  const deleteAddress: AccountUIContextValue["deleteAddress"] = async (id) => {
+    const prev = addresses;
+    const removed = prev.find((a) => a.id === id);
+    if (!removed) return false;
+    // Mirror the server: deleting the default promotes the oldest remaining
+    // (lists arrive created_at-ordered, so index 0 IS the oldest).
+    let next = prev.filter((a) => a.id !== id);
+    if (removed.isDefault && next.length > 0 && !next.some((a) => a.isDefault)) {
       next = next.map((a, i) => (i === 0 ? { ...a, isDefault: true } : a));
     }
-    return persistAddresses(next);
+    setAddresses(next);
+    const res = await runWrite(() => deleteAddressFn({ data: { id } }));
+    if (!res) {
+      setAddresses(prev);
+      return false;
+    }
+    return true;
   };
 
-  const setDefaultAddress: AccountUIContextValue["setDefaultAddress"] = (id) => {
-    if (!addresses.some((a) => a.id === id)) return false;
-    const next = addresses.map((a) => ({ ...a, isDefault: a.id === id }));
-    return persistAddresses(next);
+  const setDefaultAddress: AccountUIContextValue["setDefaultAddress"] = async (id) => {
+    const prev = addresses;
+    if (!prev.some((a) => a.id === id)) return false;
+    setAddresses(prev.map((a) => ({ ...a, isDefault: a.id === id })));
+    const res = await runWrite(() => setDefaultAddressFn({ data: { id } }));
+    if (!res) {
+      setAddresses(prev);
+      return false;
+    }
+    setAddresses((cur) => applyServerAddress(cur, res.address));
+    return true;
   };
 
-  const persistMeasurements = (next: MeasurementProfile[]): boolean => {
-    const ok = writeMeasurements(scope, next);
-    if (ok) setMeasurements(next);
-    return ok;
-  };
-
-  const addMeasurement: AccountUIContextValue["addMeasurement"] = (p) => {
-    const entry: MeasurementProfile = {
-      ...p,
-      id: newId("meas"),
-      updatedAt: new Date().toISOString(),
-    };
-    return persistMeasurements([...measurements, entry]);
-  };
-
-  const updateMeasurement: AccountUIContextValue["updateMeasurement"] = (p) => {
-    const next = measurements.map((m) =>
-      m.id === p.id ? { ...p, updatedAt: new Date().toISOString() } : m,
+  const addMeasurement: AccountUIContextValue["addMeasurement"] = async (p) => {
+    const res = await runWrite(() =>
+      upsertMeasurementFn({
+        data: {
+          name: p.name,
+          bust: p.bust,
+          waist: p.waist,
+          hip: p.hip,
+          shoulder: p.shoulder,
+          sleeve: p.sleeve,
+          dressLength: p.dressLength,
+          fitPreference: p.fitPreference,
+        },
+      }),
     );
-    return persistMeasurements(next);
+    if (!res) return false;
+    setMeasurements((cur) => [...cur, res.measurement]);
+    return true;
   };
 
-  const duplicateMeasurement: AccountUIContextValue["duplicateMeasurement"] = (id) => {
+  const updateMeasurement: AccountUIContextValue["updateMeasurement"] = async (p) => {
+    const prev = measurements;
+    setMeasurements(
+      prev.map((m) => (m.id === p.id ? { ...p, updatedAt: new Date().toISOString() } : m)),
+    );
+    const res = await runWrite(() =>
+      upsertMeasurementFn({
+        data: {
+          id: p.id,
+          name: p.name,
+          bust: p.bust,
+          waist: p.waist,
+          hip: p.hip,
+          shoulder: p.shoulder,
+          sleeve: p.sleeve,
+          dressLength: p.dressLength,
+          fitPreference: p.fitPreference,
+        },
+      }),
+    );
+    if (!res) {
+      setMeasurements(prev);
+      return false;
+    }
+    setMeasurements((cur) => cur.map((m) => (m.id === p.id ? res.measurement : m)));
+    return true;
+  };
+
+  const duplicateMeasurement: AccountUIContextValue["duplicateMeasurement"] = async (id) => {
     const src = measurements.find((m) => m.id === id);
     if (!src) return false;
-    const entry: MeasurementProfile = {
-      ...src,
-      id: newId("meas"),
-      name: duplicateName(
-        src.name,
-        measurements.map((m) => m.name),
-      ),
-      updatedAt: new Date().toISOString(),
-    };
-    return persistMeasurements([...measurements, entry]);
+    const res = await runWrite(() =>
+      upsertMeasurementFn({
+        data: {
+          name: duplicateName(
+            src.name,
+            measurements.map((m) => m.name),
+          ),
+          bust: src.bust,
+          waist: src.waist,
+          hip: src.hip,
+          shoulder: src.shoulder,
+          sleeve: src.sleeve,
+          dressLength: src.dressLength,
+          fitPreference: src.fitPreference,
+        },
+      }),
+    );
+    if (!res) return false;
+    setMeasurements((cur) => [...cur, res.measurement]);
+    return true;
   };
 
-  const deleteMeasurement: AccountUIContextValue["deleteMeasurement"] = (id) => {
-    return persistMeasurements(measurements.filter((m) => m.id !== id));
+  const deleteMeasurement: AccountUIContextValue["deleteMeasurement"] = async (id) => {
+    const prev = measurements;
+    setMeasurements(prev.filter((m) => m.id !== id));
+    const res = await runWrite(() => deleteMeasurementFn({ data: { id } }));
+    if (!res) {
+      setMeasurements(prev);
+      return false;
+    }
+    return true;
   };
 
   return (
     <AccountUIContext.Provider
       value={{
-        hydrated,
+        // Data now arrives via the SSR route loader — kept for contract compat.
+        hydrated: true,
         profile,
         addresses,
         measurements,

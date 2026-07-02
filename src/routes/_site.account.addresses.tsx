@@ -60,6 +60,7 @@ function AddressesPage() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<AddrForm>(EMPTY_FORM);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [pendingDelete, setPendingDelete] = useState<SavedAddress | null>(null);
@@ -113,8 +114,8 @@ function AddressesPage() {
     return Object.keys(e).length === 0;
   }
 
-  function onSave() {
-    if (!validate()) return;
+  async function onSave() {
+    if (saving || !validate()) return;
     const base = {
       recipient: form.recipient.trim(),
       phone: normalizeBDPhone(form.phone),
@@ -124,37 +125,35 @@ function AddressesPage() {
       label: form.label.trim() || undefined,
     };
 
+    setSaving(true);
     let ok: boolean;
     if (editingId) {
       const existing = addresses.find((a) => a.id === editingId);
-      ok = updateAddress({
+      ok = await updateAddress({
         ...base,
         id: editingId,
         isDefault: existing?.isDefault ?? false,
       });
     } else {
-      ok = addAddress({ ...base, isDefault: false });
+      ok = await addAddress({ ...base, isDefault: false });
     }
+    setSaving(false);
 
     if (ok) {
       toast.success(editingId ? "Address updated" : "Address added");
       handleDialogChange(false);
-    } else {
-      toast.error("Could not save in this browser.");
     }
+    // On failure the provider shows the specific error; keep the dialog open.
   }
 
-  function confirmDelete() {
+  async function confirmDelete() {
     if (!pendingDelete) return;
-    const ok = deleteAddress(pendingDelete.id);
-    if (ok) toast.success("Address removed");
-    else toast.error("Could not save in this browser.");
     setPendingDelete(null);
+    if (await deleteAddress(pendingDelete.id)) toast.success("Address removed");
   }
 
-  function onSetDefault(id: string) {
-    if (setDefaultAddress(id)) toast.success("Default address updated");
-    else toast.error("Could not save in this browser.");
+  async function onSetDefault(id: string) {
+    if (await setDefaultAddress(id)) toast.success("Default address updated");
   }
 
   if (!hydrated) {
@@ -172,7 +171,7 @@ function AddressesPage() {
         <div>
           <h2 className="font-display text-xl text-foreground">Delivery addresses</h2>
           <p className="text-sm text-muted-foreground">
-            Keep your delivery addresses ready locally for faster checkout.
+            Keep your delivery addresses ready for faster checkout — saved to your account.
           </p>
         </div>
         <Button onClick={openAdd} size="sm">
@@ -184,7 +183,7 @@ function AddressesPage() {
         <EmptyState
           icon={<MapPin className="h-6 w-6" />}
           title="No saved addresses"
-          description="Add a delivery address to reuse it at checkout. Stored only in this browser."
+          description="Add a delivery address to reuse it at checkout, on any device."
           primaryAction={
             <Button onClick={openAdd}>
               <Plus className="mr-2 h-4 w-4" /> Add your first address
@@ -282,10 +281,12 @@ function AddressesPage() {
             </AddrField>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => handleDialogChange(false)}>
+            <Button variant="ghost" onClick={() => handleDialogChange(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button onClick={onSave}>{editingId ? "Save changes" : "Add address"}</Button>
+            <Button onClick={onSave} disabled={saving}>
+              {saving ? "Saving…" : editingId ? "Save changes" : "Add address"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

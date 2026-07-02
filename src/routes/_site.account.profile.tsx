@@ -1,12 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import {
-  useAccountUI,
-  initials,
-  isValidAccountPhone,
-  isValidEmail,
-  type AccountProfile,
-} from "@/lib/account-ui";
+import { useAccountUI, initials, isValidAccountPhone, type AccountProfile } from "@/lib/account-ui";
 import { normalizeBDPhone } from "@/lib/bd-phone";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +19,7 @@ const today = new Date().toISOString().slice(0, 10);
 function ProfilePage() {
   const { hydrated, profile, saveProfile } = useAccountUI();
   const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<AccountProfile>(profile);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -42,7 +37,6 @@ function ProfilePage() {
   function validate() {
     const e: Record<string, string> = {};
     if (!form.name.trim()) e.name = "Name is required.";
-    if (form.email.trim() && !isValidEmail(form.email)) e.email = "Enter a valid email address.";
     if (form.phone.trim() && !isValidAccountPhone(form.phone))
       e.phone = "Enter a valid Bangladeshi number (01XXXXXXXXX).";
     if (form.birthday) {
@@ -53,21 +47,22 @@ function ProfilePage() {
     return Object.keys(e).length === 0;
   }
 
-  function onSave() {
-    if (!validate()) return;
+  async function onSave() {
+    if (saving || !validate()) return;
     const normalized: AccountProfile = {
       name: form.name.trim(),
-      email: form.email.trim(),
+      email: profile.email, // read-only — auth owns the email
       phone: form.phone.trim() ? normalizeBDPhone(form.phone) : "",
       birthday: form.birthday,
     };
-    const ok = saveProfile(normalized);
+    setSaving(true);
+    const ok = await saveProfile(normalized);
+    setSaving(false);
     if (ok) {
       toast.success("Profile saved");
       setEditing(false);
-    } else {
-      toast.error("Could not save in this browser.");
     }
+    // On failure the provider shows the specific error; stay in edit mode.
   }
 
   function onCancel() {
@@ -108,15 +103,11 @@ function ProfilePage() {
             className={cn(errors.name && "border-destructive")}
           />
         </Field>
-        <Field label="Email (optional)" error={errors.email}>
-          <Input
-            type="email"
-            value={form.email}
-            disabled={!editing}
-            onChange={set("email")}
-            placeholder="you@email.com"
-            className={cn(errors.email && "border-destructive")}
-          />
+        <Field label="Email">
+          <Input type="email" value={profile.email} disabled readOnly />
+          <p className="text-xs text-muted-foreground">
+            Your sign-in email — it identifies your account and can't be edited here.
+          </p>
         </Field>
         <Field label="Phone (optional)" error={errors.phone}>
           <Input
@@ -142,15 +133,17 @@ function ProfilePage() {
 
       {editing && (
         <div className="mt-6 flex gap-3">
-          <Button onClick={onSave}>Save</Button>
-          <Button variant="ghost" onClick={onCancel}>
+          <Button onClick={onSave} disabled={saving}>
+            {saving ? "Saving…" : "Save"}
+          </Button>
+          <Button variant="ghost" onClick={onCancel} disabled={saving}>
             Cancel
           </Button>
         </div>
       )}
 
       <p className="mt-6 text-xs text-muted-foreground">
-        Your profile is stored only in this browser. It is not synced or sent to a server.
+        Your profile is saved securely to your Nongorr account and follows you across devices.
       </p>
     </div>
   );
