@@ -66,6 +66,12 @@ export const RATE_LIMITS = {
   accountRead: { limit: 60, windowSec: 60 },
   /** Account writes (profile / addresses / measurements / one-time import). */
   accountWrite: { limit: 30, windowSec: 60 * 10 },
+  /**
+   * Wishlist sync + heart toggles — cheap idempotent writes fired while
+   * browsing, so more generous than accountWrite (and isolated from it: an
+   * enthusiastic hearting session never starves address/profile saves).
+   */
+  wishlistWrite: { limit: 60, windowSec: 60 * 10 },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 export type RateLimitAction = keyof typeof RATE_LIMITS;

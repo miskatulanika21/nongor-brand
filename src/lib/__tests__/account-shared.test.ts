@@ -6,6 +6,8 @@ import {
   KNOWN_ACCOUNT_ERROR_CODES,
   MAX_SAVED_ADDRESSES,
   MAX_SAVED_MEASUREMENTS,
+  MAX_WISHLIST_ITEMS,
+  WISHLIST_SYNC_MAX_CODES,
   accountErrorMessage,
   accountIdSchema,
   addressInputSchema,
@@ -15,12 +17,17 @@ import {
   mapImportResult,
   mapMeasurementRow,
   mapProfileRow,
+  mapWishlistCodes,
+  mapWishlistToggle,
   measurementInputSchema,
   profilePatchSchema,
+  sanitizeWishlistCodes,
   toAddressPayload,
   toImportPayload,
   toMeasurementPayload,
   toProfilePatch,
+  wishlistSyncSchema,
+  wishlistToggleSchema,
 } from "@/lib/account-shared";
 
 const UUID = "11111111-1111-1111-1111-111111111111";
@@ -321,6 +328,8 @@ describe("stable error codes", () => {
       "too_many_measurements",
       "duplicate_measurement_name",
       "already_imported",
+      "wishlist_full",
+      "product_not_found",
       "internal_error",
     ];
     for (const code of rpcCodes) {
@@ -340,5 +349,52 @@ describe("stable error codes", () => {
     expect(BD_PHONE_RE.test("01712345678")).toBe(true);
     expect(BD_PHONE_RE.test("01212345678")).toBe(false);
     expect(BD_PHONE_RE.test("017123456789")).toBe(false);
+  });
+});
+
+describe("wishlist (P6)", () => {
+  it("sanitizeWishlistCodes salvages a device list without ever throwing", () => {
+    expect(
+      sanitizeWishlistCodes(["p1", "  p2  ", "", "   ", "p1", 7, null, "x".repeat(65), "p3"]),
+    ).toEqual(["p1", "p2", "p3"]);
+    expect(sanitizeWishlistCodes("junk")).toEqual([]);
+    expect(sanitizeWishlistCodes(undefined)).toEqual([]);
+    // clamps to the sync payload bound
+    const big = Array.from({ length: WISHLIST_SYNC_MAX_CODES + 50 }, (_, i) => `c${i}`);
+    expect(sanitizeWishlistCodes(big)).toHaveLength(WISHLIST_SYNC_MAX_CODES);
+  });
+
+  it("wishlistSyncSchema mirrors the RPC bounds", () => {
+    expect(wishlistSyncSchema.parse({ codes: [" p1 ", "p2"] }).codes).toEqual(["p1", "p2"]);
+    expect(wishlistSyncSchema.parse({ codes: [] }).codes).toEqual([]);
+    expect(wishlistSyncSchema.safeParse({ codes: [""] }).success).toBe(false);
+    expect(wishlistSyncSchema.safeParse({ codes: ["x".repeat(65)] }).success).toBe(false);
+    expect(
+      wishlistSyncSchema.safeParse({
+        codes: Array.from({ length: WISHLIST_SYNC_MAX_CODES + 1 }, (_, i) => `c${i}`),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("wishlistToggleSchema requires one plausible code", () => {
+    expect(wishlistToggleSchema.parse({ code: " p1 " }).code).toBe("p1");
+    expect(wishlistToggleSchema.safeParse({ code: "" }).success).toBe(false);
+    expect(wishlistToggleSchema.safeParse({ code: "x".repeat(65) }).success).toBe(false);
+  });
+
+  it("maps RPC snapshots defensively", () => {
+    expect(mapWishlistCodes({ codes: ["p1", "", 3, "p2"], count: 2 })).toEqual(["p1", "p2"]);
+    expect(mapWishlistCodes({ codes: "junk" })).toEqual([]);
+    expect(mapWishlistCodes(null)).toEqual([]);
+    expect(mapWishlistToggle({ wishlisted: true, codes: ["p1"], count: 1 })).toEqual({
+      wishlisted: true,
+      codes: ["p1"],
+    });
+    expect(mapWishlistToggle(undefined)).toEqual({ wishlisted: false, codes: [] });
+  });
+
+  it("cap messages reference the real cap", () => {
+    expect(accountErrorMessage("wishlist_full")).toContain(String(MAX_WISHLIST_ITEMS));
+    expect(accountErrorMessage("product_not_found")).toBeTruthy();
   });
 });

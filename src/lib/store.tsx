@@ -1,6 +1,9 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 import { type DeliveryZone, normalizeZone } from "@/lib/checkout-ui";
 import { normalizeCouponCode } from "@/lib/checkout-shared";
+import { accountErrorMessage, sanitizeWishlistCodes } from "@/lib/account-shared";
+import { syncWishlistFn, toggleWishlistFn } from "@/lib/account.api";
 
 export interface CartItem {
   id: string;
@@ -69,6 +72,25 @@ interface StoreState {
 
 const StoreContext = createContext<StoreState | null>(null);
 
+// ---- Wishlist persistence (Stage 4 P6) ---------------------------------------
+// Guests keep the historic key; a signed-in user's list lives on the SERVER
+// (api.sync_wishlist / api.toggle_wishlist) with a per-user localStorage mirror
+// for instant paint. On login the guest list is merged server-side once, then
+// the guest key is purged — so hearts collected before signing in survive, and
+// a later account on the same browser never inherits them.
+
+const GUEST_WISHLIST_KEY = "nongorr_wishlist";
+
+function scopedWishlistKey(userId: string): string {
+  return `${GUEST_WISHLIST_KEY}::u:${userId}`;
+}
+
+export interface StoreSession {
+  isAuthenticated: boolean;
+  /** The caller's own id — partitions the signed-in wishlist mirror. */
+  userId: string | null;
+}
+
 function load<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
   try {
@@ -95,28 +117,75 @@ function newCartId(productId: string) {
   return `${productId}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 }
 
-export function StoreProvider({ children }: { children: ReactNode }) {
+export function StoreProvider({
+  children,
+  session,
+}: {
+  children: ReactNode;
+  /** Omitted (tests / guest shells) → guest behavior, exactly as before P6. */
+  session?: StoreSession;
+}) {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [wishlist, setWishlist] = useState<string[]>([]);
   const [checkoutUI, setCheckoutUI] = useState<CheckoutUIState>(DEFAULT_CHECKOUT_UI);
   const [hydrated, setHydrated] = useState(false);
 
+  const userId = session?.isAuthenticated === true ? session.userId : null;
+  const signedIn = !!userId;
+  const wishlistKey = userId ? scopedWishlistKey(userId) : GUEST_WISHLIST_KEY;
+
   useEffect(() => {
     setCart(load<CartItem[]>("nongorr_cart", []));
-    setWishlist(load<string[]>("nongorr_wishlist", []));
+    setWishlist(sanitizeWishlistCodes(load<string[]>(wishlistKey, [])));
     setCheckoutUI(loadCheckoutUI());
     setHydrated(true);
-  }, []);
+    // Login/logout is an SPA navigation (no remount): the key flips and this
+    // re-hydrates from the right partition. Declared before the persist
+    // effects so the read always precedes any same-commit write.
+  }, [wishlistKey]);
 
   useEffect(() => {
     if (hydrated) localStorage.setItem("nongorr_cart", JSON.stringify(cart));
   }, [cart, hydrated]);
   useEffect(() => {
-    if (hydrated) localStorage.setItem("nongorr_wishlist", JSON.stringify(wishlist));
-  }, [wishlist, hydrated]);
+    if (hydrated) localStorage.setItem(wishlistKey, JSON.stringify(wishlist));
+  }, [wishlist, hydrated, wishlistKey]);
   useEffect(() => {
     if (hydrated) localStorage.setItem("nongorr_checkout_ui", JSON.stringify(checkoutUI));
   }, [checkoutUI, hydrated]);
+
+  // Guards stale canonical responses: only the newest in-flight toggle's
+  // server list may reconcile state (and a slow login-sync response never
+  // clobbers a heart toggled while it was in flight).
+  const toggleSeq = useRef(0);
+
+  // One-shot merge on login (per user): union this device's guest hearts +
+  // the user's mirror into the server list, then the server is the truth.
+  // The guest key is purged only after the server confirms; a network failure
+  // just retries on the next visit. Failures stay silent — sync is a
+  // background accelerator, never a gate.
+  const syncedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!hydrated || !userId || syncedFor.current === userId) return;
+    syncedFor.current = userId;
+    const codes = sanitizeWishlistCodes([
+      ...load<string[]>(wishlistKey, []),
+      ...load<string[]>(GUEST_WISHLIST_KEY, []),
+    ]);
+    syncWishlistFn({ data: { codes } })
+      .then((res) => {
+        if (!res.success) return;
+        if (toggleSeq.current === 0) setWishlist(res.codes);
+        try {
+          localStorage.removeItem(GUEST_WISHLIST_KEY);
+        } catch {
+          // ignore storage failures
+        }
+      })
+      .catch(() => {
+        // offline — the local mirror stands until the next visit
+      });
+  }, [hydrated, userId, wishlistKey]);
 
   const addToCart: StoreState["addToCart"] = (item) => {
     setCart((prev) => {
@@ -141,10 +210,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setCheckoutUI((s) => ({ ...s, couponCode: null, orderNote: "", deliveryNote: "" }));
   };
 
-  const toggleWishlist = (productId: string) =>
-    setWishlist((p) =>
-      p.includes(productId) ? p.filter((x) => x !== productId) : [...p, productId],
-    );
+  // Optimistic for everyone; signed-in flips also go to the server, which
+  // returns the canonical list (reconciled unless a newer toggle is in flight).
+  // On failure the flip is rolled back with the server's specific message
+  // (wishlist_full / product_not_found / session expired).
+  const toggleWishlist = (productId: string) => {
+    let adding = false;
+    setWishlist((p) => {
+      adding = !p.includes(productId);
+      return adding ? [...p, productId] : p.filter((x) => x !== productId);
+    });
+    if (!signedIn) return;
+
+    const rollback = () =>
+      setWishlist((p) =>
+        adding ? p.filter((x) => x !== productId) : p.includes(productId) ? p : [...p, productId],
+      );
+    const seq = ++toggleSeq.current;
+    toggleWishlistFn({ data: { code: productId } })
+      .then((res) => {
+        if (!res.success) {
+          rollback();
+          toast.error((res as { error?: string }).error || accountErrorMessage(null));
+          return;
+        }
+        if (seq === toggleSeq.current) setWishlist(res.codes);
+      })
+      .catch(() => {
+        rollback();
+        toast.error(accountErrorMessage(null));
+      });
+  };
   const isWishlisted = (productId: string) => wishlist.includes(productId);
 
   const cartCount = cart.reduce((s, c) => s + c.qty, 0);

@@ -18,6 +18,8 @@ import {
   mapImportResult,
   mapMeasurementRow,
   mapProfileRow,
+  mapWishlistCodes,
+  mapWishlistToggle,
   toAddressPayload,
   toImportPayload,
   toMeasurementPayload,
@@ -31,6 +33,7 @@ import {
   type ProfilePatchInput,
   type ServerMeasurement,
   type ServerSavedAddress,
+  type WishlistToggleResult,
 } from "@/lib/account-shared";
 
 export class AccountError extends Error {
@@ -128,6 +131,28 @@ export async function deleteMeasurement(userId: string, id: string): Promise<voi
     p_id: id,
   });
   if (error) throwAccountError(error);
+}
+
+/** Merge a device's local wishlist into the server (union, capped) — P6. */
+export async function syncWishlist(userId: string, codes: string[]): Promise<string[]> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin.schema("api").rpc("sync_wishlist", {
+    p_user: userId,
+    p_codes: codes,
+  });
+  if (error) throwAccountError(error);
+  return mapWishlistCodes(data);
+}
+
+/** Flip one wishlist heart; returns the new state + canonical list — P6. */
+export async function toggleWishlist(userId: string, code: string): Promise<WishlistToggleResult> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin.schema("api").rpc("toggle_wishlist", {
+    p_user: userId,
+    p_code: code,
+  });
+  if (error) throwAccountError(error);
+  return mapWishlistToggle(data);
 }
 
 export async function importAccountData(

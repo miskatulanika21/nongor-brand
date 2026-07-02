@@ -18,6 +18,8 @@ import {
   importPayloadSchema,
   measurementInputSchema,
   profilePatchSchema,
+  wishlistSyncSchema,
+  wishlistToggleSchema,
 } from "@/lib/account-shared";
 
 interface GuardOk {
@@ -30,8 +32,10 @@ interface GuardFail {
   requiresAuth?: true;
 }
 
-/** CSRF + verified session + accountWrite rate limit (write path). */
-async function guardAccountWrite(): Promise<GuardOk | GuardFail> {
+/** CSRF + verified session + independent rate limit (write path). */
+async function guardAccountWrite(
+  action: "accountWrite" | "wishlistWrite" = "accountWrite",
+): Promise<GuardOk | GuardFail> {
   const { getPublicSupabaseEnv } = await import("@/lib/server/env.server");
   const { checkCsrfOrigin, getClientIp } = await import("@/lib/server/security.server");
   const { createServerSupabaseClient } = await import("@/lib/server/supabase.server");
@@ -51,7 +55,7 @@ async function guardAccountWrite(): Promise<GuardOk | GuardFail> {
   }
   const userId = result.identity.userId;
 
-  const rl = await checkIndependentRateLimit("accountWrite", {
+  const rl = await checkIndependentRateLimit(action, {
     ip: getClientIp(),
     account: userId,
   });
@@ -201,6 +205,38 @@ export const deleteMeasurementFn = createServerFn({ method: "POST" })
       const repo = await import("@/lib/server/account.server");
       await repo.deleteMeasurement(guard.userId, data.id);
       return { success: true as const };
+    } catch (e) {
+      return accountFailure(e);
+    }
+  });
+
+// ── Wishlist (P6) ────────────────────────────────────────────────────────────
+// Both share the dedicated wishlistWrite bucket: hearts are flipped while
+// browsing and must never starve profile/address saves (or vice versa).
+
+export const syncWishlistFn = createServerFn({ method: "POST" })
+  .validator(wishlistSyncSchema)
+  .handler(async ({ data }) => {
+    const guard = await guardAccountWrite("wishlistWrite");
+    if (!guard.ok) return guardFailure(guard);
+    try {
+      const repo = await import("@/lib/server/account.server");
+      const codes = await repo.syncWishlist(guard.userId, data.codes);
+      return { success: true as const, codes };
+    } catch (e) {
+      return accountFailure(e);
+    }
+  });
+
+export const toggleWishlistFn = createServerFn({ method: "POST" })
+  .validator(wishlistToggleSchema)
+  .handler(async ({ data }) => {
+    const guard = await guardAccountWrite("wishlistWrite");
+    if (!guard.ok) return guardFailure(guard);
+    try {
+      const repo = await import("@/lib/server/account.server");
+      const result = await repo.toggleWishlist(guard.userId, data.code);
+      return { success: true as const, wishlisted: result.wishlisted, codes: result.codes };
     } catch (e) {
       return accountFailure(e);
     }
