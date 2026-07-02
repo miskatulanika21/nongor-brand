@@ -13,6 +13,7 @@ import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { absUrl } from "@/lib/site-config";
 import { NotFoundPage } from "@/components/NotFoundPage";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 
 // Root not-found fallback: any URL outside the /_site shell (e.g. an
 // unmatched /admin/* path) renders the same branded 404 page. Inside
@@ -133,6 +134,7 @@ function RootShell({ children }: { children: ReactNode }) {
       <body>
         {children}
         <Scripts />
+        <SpeedInsights />
       </body>
     </html>
   );
