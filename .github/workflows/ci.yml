@@ -169,6 +169,16 @@ jobs:
           [ -z "$DB_URL" ] && DB_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
           psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/pass4_db.test.sql
 
+      # Stage-4 customer-account schema: RPC-only posture, CHECK bounds,
+      # one-default-per-user partial index, case-insensitive measurement-name
+      # dedupe, updated_at touch trigger, auth.users cascade.
+      - name: DB integration tests (stage-4 accounts)
+        run: |
+          command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
+          DB_URL=$(supabase status -o env 2>/dev/null | sed -n 's/^DB_URL=//p' | tr -d '"')
+          [ -z "$DB_URL" ] && DB_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/stage4_db.test.sql
+
       # Two-connection concurrency test: launches parallel psql sessions to verify
       # that advisory-lock serialization in api.bulk_set_inventory actually works
       # across genuine concurrent database connections (not single-session sequential).

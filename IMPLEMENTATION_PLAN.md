@@ -241,9 +241,11 @@ order history, guest capability tracking and order-time measurement capture
 were already delivered by Stage 3 P4f/P4g — Stage 4 does not rebuild them.
 Sub-passes:
 
-- [ ] **P1** — schema: `customer_profiles` / `saved_addresses` /
-      `saved_measurements` (RPC-only deny-all; caps 10/12; one-default
-      partial unique index; bounded CHECKs)
+- [x] **P1** (2026-07-02) — schema: `customer_profiles` / `saved_addresses` /
+      `saved_measurements` (RPC-only deny-all; caps 10/12 documented for the P2
+      RPCs; one-default partial unique index; bounded CHECKs; touch triggers).
+      Migration `20260702080032` (prod-applied + rolled-back proof);
+      `stage4_db.test.sql` §1–§6 wired into CI.
 - [ ] **P2** — account RPCs (`get_my_account`, `save_profile`, address +
       measurement CRUD, one-time `import_account_data`) + DB tests
 - [ ] **P3** — app server layer (`account-shared.ts` / `account.server.ts` /
