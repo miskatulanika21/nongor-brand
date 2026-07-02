@@ -3,6 +3,7 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import tsConfigPaths from "vite-tsconfig-paths";
+import { nitro } from "nitro/vite";
 
 // Plain TanStack Start + React + Tailwind Vite config.
 // VITE_* env vars are exposed to the client by Vite natively via import.meta.env.
@@ -60,6 +61,7 @@ export default defineConfig(({ command, mode }) => {
         // SSR entry → src/server.ts (our security-header + error wrapper).
         server: { entry: "server" },
       }),
+      nitro(),
       viteReact(),
     ],
   };
