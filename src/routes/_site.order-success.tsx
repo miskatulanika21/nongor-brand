@@ -1,7 +1,9 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouteContext } from "@tanstack/react-router";
+import { useState } from "react";
 import { formatBDT, BRAND } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ClaimOrderCard } from "@/components/orders/ClaimOrderCard";
 import { Copy, Truck, MessageCircle, Check, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
@@ -69,6 +71,15 @@ function ServerOrderSuccess({
 }) {
   const statusLabel = SERVER_STATUS_LABEL[serverOrder.status] ?? serverOrder.status;
   const isCod = serverOrder.status === "pending_confirmation";
+
+  const { sessionSummary } = useRouteContext({ from: "/_site" }) as {
+    sessionSummary: { isAuthenticated: boolean };
+  };
+  // Claiming consumes the capability token (the RPC clears its hash), so once
+  // claimed this page renders exactly like a signed-in order: account actions,
+  // no guest tracking-link card.
+  const [claimed, setClaimed] = useState(false);
+  const guestToken = claimed ? null : serverOrder.token;
 
   const waText = `Hi Nongorr! 🛍️ My order ${serverOrder.orderNo} is placed. Please confirm! 💕`;
   const waLink = `https://wa.me/${BRAND.whatsapp}?text=${encodeURIComponent(waText)}`;
@@ -182,7 +193,7 @@ function ServerOrderSuccess({
       </div>
 
       {/* Guest tracking link — surface the capability so guests can return later */}
-      {serverOrder.token && (
+      {guestToken && (
         <div className="mt-6 rounded-xl border border-gold/40 bg-gold/5 p-5 text-sm">
           <p className="font-medium text-foreground">Save your tracking link</p>
           <p className="mt-1 text-muted-foreground">
@@ -191,18 +202,30 @@ function ServerOrderSuccess({
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button size="sm" asChild>
-              <Link to="/track" search={{ o: serverOrder.orderNo, t: serverOrder.token }}>
+              <Link to="/track" search={{ o: serverOrder.orderNo, t: guestToken }}>
                 <Truck className="h-4 w-4" /> Track Your Order
               </Link>
             </Button>
-            <CopyTrackLink orderNo={serverOrder.orderNo} token={serverOrder.token} />
+            <CopyTrackLink orderNo={serverOrder.orderNo} token={guestToken} />
           </div>
+        </div>
+      )}
+
+      {/* Claim — turn the guest capability into a permanent account order */}
+      {guestToken && (
+        <div className="mt-6">
+          <ClaimOrderCard
+            orderNo={serverOrder.orderNo}
+            token={guestToken}
+            signedIn={sessionSummary.isAuthenticated}
+            onClaimed={() => setClaimed(true)}
+          />
         </div>
       )}
 
       {/* Actions */}
       <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-center">
-        {serverOrder.token ? (
+        {guestToken ? (
           <Button variant="outline" asChild>
             <a href={waLink} target="_blank" rel="noreferrer">
               <MessageCircle className="h-4 w-4" /> Chat on WhatsApp

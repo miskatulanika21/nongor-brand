@@ -33,6 +33,7 @@ import {
   type MyOrderLine,
   type MyOrderHistoryEntry,
   type TrackOrderResult,
+  type ClaimGuestOrderResult,
   type CustomMeasurements,
   type AdminOrderStats,
 } from "@/lib/orders-shared";
@@ -654,5 +655,39 @@ export async function trackOrder(orderNo: string, token: string): Promise<TrackO
       customMeasurements: normalizeRawMeasures(i.custom_measurements),
     })),
     history: (raw.history ?? []).map(mapMyHistory),
+  };
+}
+
+/**
+ * Claim a guest order into the verified user's account (api.claim_guest_order,
+ * P7). The raw capability token is hashed exactly like trackOrder — the DB
+ * only ever sees the sha256 hex. The RPC verifies the hash, flips ownership
+ * atomically (user_id set + guest_token_hash cleared) and writes the
+ * order.claimed audit row; a same-user retry is an idempotent success.
+ */
+export async function claimGuestOrder(
+  userId: string,
+  orderNo: string,
+  token: string,
+): Promise<ClaimGuestOrderResult> {
+  const admin = createAdminSupabaseClient();
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const { data, error } = await admin.schema("api").rpc("claim_guest_order", {
+    p_user: userId,
+    p_order_no: orderNo,
+    p_token_hash: tokenHash,
+  });
+  if (error) throwOrderError(error);
+  const raw = data as {
+    order_id: string;
+    order_no: string;
+    claimed: boolean;
+    already_owned: boolean;
+  };
+  return {
+    orderId: raw.order_id,
+    orderNo: raw.order_no,
+    claimed: raw.claimed === true,
+    alreadyOwned: raw.already_owned === true,
   };
 }
