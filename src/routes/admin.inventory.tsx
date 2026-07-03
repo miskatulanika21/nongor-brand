@@ -33,6 +33,7 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Boxes, History, Loader2, Plus, Trash2 } from "lucide-react";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 const LOW_STOCK = 10;
 
@@ -519,13 +520,10 @@ function VariantDialog({
 }) {
   const [newSize, setNewSize] = useState("");
   const [saving, setSaving] = useState(false);
-  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   useEffect(() => {
-    if (target) {
-      setNewSize("");
-      setConfirmRemove(null);
-    }
+    if (target) setNewSize("");
   }, [target]);
 
   if (!target) return null;
@@ -549,18 +547,23 @@ function VariantDialog({
     }
   };
 
-  const handleRemove = async (size: string) => {
-    setSaving(true);
-    const res = await removeVariant({ data: { code: target.code, size } });
-    setSaving(false);
-    setConfirmRemove(null);
-    if (res.success) {
-      toast.success(`Size "${size}" removed.`);
-      onChanged();
-    } else {
-      toast.error(res.error);
-    }
-  };
+  const askRemove = (size: string) =>
+    confirm({
+      tone: "danger",
+      title: `Remove size ${size}?`,
+      description: `This removes the “${size}” variant from ${target.name}. This can't be undone.`,
+      confirmText: "Remove",
+      icon: <Trash2 className="h-6 w-6" />,
+      onConfirm: async () => {
+        const res = await removeVariant({ data: { code: target.code, size } });
+        if (res.success) {
+          toast.success(`Size "${size}" removed.`);
+          onChanged();
+        } else {
+          toast.error(res.error);
+        }
+      },
+    });
 
   return (
     <Dialog open={!!target} onOpenChange={(o) => !o && onClose()}>
@@ -586,40 +589,19 @@ function VariantDialog({
                       {s.size}{" "}
                       <span className="text-muted-foreground">({s.quantity} in stock)</span>
                     </span>
-                    {confirmRemove === s.size ? (
-                      <div className="flex items-center gap-1">
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          disabled={saving}
-                          onClick={() => handleRemove(s.size)}
-                        >
-                          {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Confirm"}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={saving}
-                          onClick={() => setConfirmRemove(null)}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={saving || s.quantity > 0}
-                        title={
-                          s.quantity > 0
-                            ? "Set stock to 0 before removing this size"
-                            : `Remove ${s.size}`
-                        }
-                        onClick={() => setConfirmRemove(s.size)}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={saving || s.quantity > 0}
+                      title={
+                        s.quantity > 0
+                          ? "Set stock to 0 before removing this size"
+                          : `Remove ${s.size}`
+                      }
+                      onClick={() => askRemove(s.size)}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
                   </li>
                 ))}
               </ul>

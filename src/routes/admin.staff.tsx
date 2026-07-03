@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { Check, Plus, ShieldAlert, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { listStaff, provisionStaff, updateStaffRole, setStaffActive } from "@/lib/staff.api";
 import { ADMIN_PERMISSIONS, ROLE_PERMISSIONS } from "@/lib/permissions";
 import type { StaffRole } from "@/lib/auth-types";
@@ -57,6 +58,7 @@ function StaffPage() {
   const [loading, setLoading] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   async function refresh() {
     setLoading(true);
@@ -87,6 +89,18 @@ function StaffPage() {
   }
 
   async function onActiveToggle(row: StaffRow, active: boolean) {
+    // Deactivation revokes admin access immediately — confirm it. Reactivating
+    // is safe and stays a direct toggle.
+    if (!active) {
+      const ok = await confirm({
+        tone: "danger",
+        title: "Deactivate this account?",
+        description: `${row.displayName || row.email} will immediately lose access to the admin panel. You can reactivate them anytime.`,
+        confirmText: "Deactivate",
+        icon: <ShieldAlert className="h-6 w-6" />,
+      });
+      if (!ok) return;
+    }
     setBusyId(row.userId);
     const result = await setStaffActive({ data: { targetUserId: row.userId, active } });
     if (result.success) {
