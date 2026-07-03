@@ -9,6 +9,7 @@
  * fake data.
  */
 import { createServerSupabaseClient } from "./supabase.server";
+import { cachedPublic } from "./public-cache.server";
 import { toCard, toProduct, type ProductCardRow, type ProductDetailRow } from "@/lib/catalog-map";
 import { normalizeFacets, type CatalogFacets } from "@/lib/catalog-facets";
 import type { Product } from "@/lib/products";
@@ -45,7 +46,7 @@ const DETAIL_SELECT = `
 `;
 
 /** Bounded card projection for grids / filters / search, ordered for display. */
-export async function fetchProductCards(): Promise<Product[]> {
+async function loadProductCards(): Promise<Product[]> {
   const sb = createServerSupabaseClient();
   const { data, error } = await sb
     .from("products")
@@ -54,6 +55,14 @@ export async function fetchProductCards(): Promise<Product[]> {
   if (error) throw new CatalogQueryError("Failed to load products", error.message);
   return ((data ?? []) as unknown as ProductCardRow[]).map(toCard);
 }
+
+/**
+ * Cached wrapper — the public card grid is the same for every visitor and is
+ * hit on the home page, shop, PDP related products and wishlist resolution, so
+ * a warm instance serves it from memory (new/edited products appear within the
+ * TTL). Same signature as before for all callers.
+ */
+export const fetchProductCards = cachedPublic("product-cards", 60_000, loadProductCards);
 
 /** Cards for a specific set of legacy codes (wishlist resolution). */
 export async function fetchProductCardsByCodes(codes: string[]): Promise<Product[]> {
@@ -74,12 +83,15 @@ export async function fetchProductCardsByCodes(codes: string[]): Promise<Product
  * `api.catalog_facets()`. The anon client respects RLS; the function's own
  * predicate guarantees the same visible set regardless.
  */
-export async function fetchCatalogFacets(): Promise<CatalogFacets> {
+async function loadCatalogFacets(): Promise<CatalogFacets> {
   const sb = createServerSupabaseClient();
   const { data, error } = await sb.schema("api").rpc("catalog_facets");
   if (error) throw new CatalogQueryError("Failed to load catalog facets", error.message);
   return normalizeFacets(data);
 }
+
+/** Cached wrapper — facet counts track the public catalog; refresh within TTL. */
+export const fetchCatalogFacets = cachedPublic("catalog-facets", 60_000, loadCatalogFacets);
 
 /** Full product detail by slug. Returns null when not found / not public. */
 export async function fetchProductDetail(slug: string): Promise<Product | null> {
