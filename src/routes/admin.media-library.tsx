@@ -8,16 +8,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { LayoutGrid, List, Search, Upload, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -58,7 +49,7 @@ function MediaLibraryAdmin() {
   const [view, setView] = useState<"grid" | "list">("grid");
   const [q, setQ] = useState("");
   const [uploading, setUploading] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState<MediaAsset | null>(null);
+  const confirm = useConfirm();
 
   const visible = media.filter((a) => !q || a.fileName.toLowerCase().includes(q.toLowerCase()));
 
@@ -125,17 +116,25 @@ function MediaLibraryAdmin() {
     }
   }
 
-  async function confirmDelete() {
-    const target = pendingDelete;
-    if (!target) return;
-    setPendingDelete(null);
-    const result = await removeMedia({ data: { id: target.id } });
-    if (result.success) {
-      toast.success("Media deleted.");
-      router.invalidate();
-    } else {
-      toast.error(result.error);
-    }
+  function askDelete(target: MediaAsset) {
+    return confirm({
+      tone: "danger",
+      title: "Delete this image?",
+      description: target.usageCount
+        ? `This image is used by ${target.usageCount} product(s). Deleting it removes the file from storage; those products will lose this image.`
+        : "This permanently removes the file from storage. This cannot be undone.",
+      confirmText: "Delete",
+      icon: <Trash2 className="h-6 w-6" />,
+      onConfirm: async () => {
+        const result = await removeMedia({ data: { id: target.id } });
+        if (result.success) {
+          toast.success("Media deleted.");
+          router.invalidate();
+        } else {
+          toast.error(result.error);
+        }
+      },
+    });
   }
 
   return (
@@ -215,7 +214,7 @@ function MediaLibraryAdmin() {
                     size="icon"
                     className="h-7 w-7"
                     aria-label={`Delete ${a.fileName}`}
-                    onClick={() => setPendingDelete(a)}
+                    onClick={() => askDelete(a)}
                   >
                     <Trash2 className="h-3.5 w-3.5 text-destructive" />
                   </Button>
@@ -245,7 +244,7 @@ function MediaLibraryAdmin() {
                 variant="ghost"
                 size="icon"
                 aria-label={`Delete ${a.fileName}`}
-                onClick={() => setPendingDelete(a)}
+                onClick={() => askDelete(a)}
               >
                 <Trash2 className="h-4 w-4 text-destructive" />
               </Button>
@@ -261,28 +260,6 @@ function MediaLibraryAdmin() {
             : "No media matches your search."}
         </p>
       )}
-
-      <AlertDialog open={!!pendingDelete} onOpenChange={(o) => !o && setPendingDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this image?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingDelete?.usageCount
-                ? `This image is used by ${pendingDelete.usageCount} product(s). Deleting it removes the file from storage; those products will lose this image.`
-                : "This permanently removes the file from storage. This cannot be undone."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={confirmDelete}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

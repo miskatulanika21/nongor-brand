@@ -13,16 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   Select,
   SelectContent,
@@ -102,7 +93,7 @@ function Cart() {
 
   const [couponInput, setCouponInput] = useState("");
   const [couponError, setCouponError] = useState<string | null>(null);
-  const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   // ── Server reconciliation ──────────────────────────────────────────────
   const [quote, setQuote] = useState<QuoteResult | null>(null);
@@ -204,14 +195,20 @@ function Cart() {
   }
 
   function requestRemove(item: CartItem) {
-    if (item.customSize) {
-      setPendingRemoveId(item.id);
-    } else {
+    if (!item.customSize) {
       removeFromCart(item.id);
+      return;
     }
+    void confirm({
+      tone: "danger",
+      title: "Remove this custom-size item?",
+      description: `Removing “${item.name}” will also delete the custom measurements you entered for it. This can't be undone.`,
+      confirmText: "Remove",
+      cancelText: "Keep item",
+      icon: <Trash2 className="h-6 w-6" />,
+      onConfirm: () => removeFromCart(item.id),
+    });
   }
-
-  const pendingItem = cart.find((c) => c.id === pendingRemoveId) ?? null;
 
   if (!cart.length && !savedForLater.length) {
     const suggestions = allProducts.slice(0, 4);
@@ -597,33 +594,6 @@ function Cart() {
 
       {/* Complete the Look */}
       {completeTheLook.length > 0 && <CompleteTheLook items={completeTheLook} />}
-
-      <AlertDialog
-        open={Boolean(pendingRemoveId)}
-        onOpenChange={(o) => !o && setPendingRemoveId(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove this custom-size item?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingItem
-                ? `Removing “${pendingItem.name}” will also delete the custom measurements you entered for it. This cannot be undone.`
-                : ""}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep item</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (pendingRemoveId) removeFromCart(pendingRemoveId);
-                setPendingRemoveId(null);
-              }}
-            >
-              Remove
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

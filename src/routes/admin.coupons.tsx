@@ -14,16 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   Select,
   SelectContent,
@@ -67,7 +58,7 @@ function Coupons() {
   const router = useRouter();
   const [editing, setEditing] = useState<AdminCoupon | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<AdminCoupon | null>(null);
+  const confirm = useConfirm();
   const [busyCode, setBusyCode] = useState<string | null>(null);
 
   const refresh = () => router.invalidate();
@@ -93,20 +84,26 @@ function Coupons() {
     }
   };
 
-  const confirmDelete = async () => {
-    if (!deleteTarget) return;
-    const code = deleteTarget.code;
-    setDeleteTarget(null);
-    setBusyCode(code);
-    const res = await deleteCoupon({ data: { code } });
-    setBusyCode(null);
-    if (res.success) {
-      toast.success(`Coupon ${code} deleted.`);
-      refresh();
-    } else {
-      toast.error(res.error);
-    }
-  };
+  const askDelete = (c: AdminCoupon) =>
+    confirm({
+      tone: "danger",
+      title: `Delete ${c.code}?`,
+      description:
+        "This removes the coupon permanently. A coupon that has already been used cannot be deleted — disable it instead.",
+      confirmText: "Delete",
+      icon: <Trash2 className="h-6 w-6" />,
+      onConfirm: async () => {
+        setBusyCode(c.code);
+        const res = await deleteCoupon({ data: { code: c.code } });
+        setBusyCode(null);
+        if (res.success) {
+          toast.success(`Coupon ${c.code} deleted.`);
+          refresh();
+        } else {
+          toast.error(res.error);
+        }
+      },
+    });
 
   return (
     <div>
@@ -191,7 +188,7 @@ function Coupons() {
                           variant="ghost"
                           size="sm"
                           className="text-destructive"
-                          onClick={() => setDeleteTarget(c)}
+                          onClick={() => askDelete(c)}
                           disabled={busyCode === c.code}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -221,27 +218,6 @@ function Coupons() {
           refresh();
         }}
       />
-
-      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {deleteTarget?.code}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This removes the coupon permanently. A coupon that has already been used cannot be
-              deleted — disable it instead.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={confirmDelete}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

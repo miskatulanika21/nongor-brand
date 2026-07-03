@@ -7,16 +7,7 @@ import type { ReviewStatus } from "@/lib/catalog-admin.schema";
 import { StarRating } from "@/components/StarRating";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Check, Loader2, MessageSquare, Trash2, Undo2, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -42,7 +33,7 @@ function Reviews() {
   const router = useRouter();
   const [filter, setFilter] = useState<Filter>("pending");
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<AdminReview | null>(null);
+  const confirm = useConfirm();
 
   const refresh = () => router.invalidate();
 
@@ -72,18 +63,30 @@ function Reviews() {
     }
   };
 
-  const doDelete = async (review: AdminReview) => {
-    setBusyId(review.id);
-    const res = await removeReview({ data: { id: review.id } });
-    setBusyId(null);
-    setConfirmDelete(null);
-    if (res.success) {
-      toast.success("Review deleted.");
-      await refresh();
-    } else {
-      toast.error(res.error);
-    }
-  };
+  const askDelete = (review: AdminReview) =>
+    confirm({
+      tone: "danger",
+      title: "Delete this review?",
+      description: (
+        <>
+          This permanently removes {review.authorName}&rsquo;s review of {review.productName}. To
+          merely hide it, use Reject instead.
+        </>
+      ),
+      confirmText: "Delete",
+      icon: <Trash2 className="h-6 w-6" />,
+      onConfirm: async () => {
+        setBusyId(review.id);
+        const res = await removeReview({ data: { id: review.id } });
+        setBusyId(null);
+        if (res.success) {
+          toast.success("Review deleted.");
+          await refresh();
+        } else {
+          toast.error(res.error);
+        }
+      },
+    });
 
   return (
     <div>
@@ -196,7 +199,7 @@ function Reviews() {
                     disabled={busy}
                     title="Delete permanently"
                     aria-label="Delete review"
-                    onClick={() => setConfirmDelete(r)}
+                    onClick={() => askDelete(r)}
                   >
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
@@ -206,27 +209,6 @@ function Reviews() {
           })}
         </div>
       )}
-
-      <AlertDialog open={confirmDelete !== null} onOpenChange={(o) => !o && setConfirmDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this review?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This permanently removes {confirmDelete?.authorName}&rsquo;s review of{" "}
-              {confirmDelete?.productName}. To merely hide it, use Reject instead.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => confirmDelete && doDelete(confirmDelete)}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
