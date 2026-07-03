@@ -14,6 +14,13 @@ import {
   type AnnouncementState,
   type PublicSettings,
 } from "@/lib/settings.schema";
+import { getCachedSiteContext, setCachedSiteContext } from "@/lib/site-context-cache";
+
+interface SiteContext {
+  sessionSummary: Awaited<ReturnType<typeof getSessionSummary>>;
+  announcement: AnnouncementState;
+  publicSettings: PublicSettings | null;
+}
 
 export const Route = createFileRoute("/_site")({
   component: SiteLayout,
@@ -26,18 +33,25 @@ export const Route = createFileRoute("/_site")({
       { name: "robots", content: "noindex,nofollow" },
     ],
   }),
-  beforeLoad: async () => {
+  beforeLoad: async (): Promise<SiteContext> => {
+    // beforeLoad re-runs on EVERY in-site navigation, so on the client the
+    // last result is reused for a short TTL (see site-context-cache) instead
+    // of paying two server round-trips per click. Login/logout bust it.
+    const hit = getCachedSiteContext<SiteContext>();
+    if (hit) return hit;
     // Load session summary for header/menu role display (NOT authorization —
     // just UI hints) and the DB-backed announcement bar, in parallel.
     const [sessionSummary, settings] = await Promise.all([
       getSessionSummary(),
       getPublicSettings(),
     ]);
-    return {
+    const value: SiteContext = {
       sessionSummary,
       announcement: announcementState(settings),
       publicSettings: settings,
     };
+    setCachedSiteContext(value);
+    return value;
   },
 });
 

@@ -15,6 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { loadAdminArea, logout as serverLogout } from "@/lib/auth.api";
 import { setLoggedInHint } from "@/lib/auth-state";
+import { bustSiteContext } from "@/lib/site-context-cache";
 import type { AdminIconKey, AdminNavGroup } from "@/lib/admin-routes";
 import type { StaffRole } from "@/lib/auth-types";
 import {
@@ -167,6 +168,7 @@ function AdminLayout() {
 
   const handleLogout = async () => {
     await serverLogout();
+    bustSiteContext();
     setLoggedInHint(false);
     navigate({ to: "/login", search: { next: undefined } });
   };
