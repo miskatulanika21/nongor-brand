@@ -11,6 +11,7 @@ import { type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
+import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 import { absUrl } from "@/lib/site-config";
 import { NotFoundPage } from "@/components/NotFoundPage";
 
@@ -144,7 +145,9 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      <ConfirmProvider>
+        <Outlet />
+      </ConfirmProvider>
       {/* Branded boutique toasts — per-type accents come from .nongorr-toast
           (styles.css), so richColors' stock green/red palette stays off. */}
       <Toaster position="top-center" closeButton />

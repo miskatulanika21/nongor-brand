@@ -16,16 +16,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { MapPin, Plus, Pencil, Trash2, Star } from "lucide-react";
@@ -63,7 +54,7 @@ function AddressesPage() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<AddrForm>(EMPTY_FORM);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [pendingDelete, setPendingDelete] = useState<SavedAddress | null>(null);
+  const confirm = useConfirm();
 
   const set =
     (k: keyof AddrForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -146,10 +137,17 @@ function AddressesPage() {
     // On failure the provider shows the specific error; keep the dialog open.
   }
 
-  async function confirmDelete() {
-    if (!pendingDelete) return;
-    setPendingDelete(null);
-    if (await deleteAddress(pendingDelete.id)) toast.success("Address removed");
+  async function onDelete(a: SavedAddress) {
+    await confirm({
+      tone: "danger",
+      title: "Delete address?",
+      description: `This will remove the address for ${a.label || a.recipient}. This can't be undone.`,
+      confirmText: "Delete",
+      icon: <Trash2 className="h-6 w-6" />,
+      onConfirm: async () => {
+        if (await deleteAddress(a.id)) toast.success("Address removed");
+      },
+    });
   }
 
   async function onSetDefault(id: string) {
@@ -232,7 +230,7 @@ function AddressesPage() {
                   variant="ghost"
                   size="sm"
                   className="text-destructive hover:text-destructive"
-                  onClick={() => setPendingDelete(a)}
+                  onClick={() => onDelete(a)}
                 >
                   <Trash2 className="mr-2 h-4 w-4" /> Delete
                 </Button>
@@ -290,30 +288,6 @@ function AddressesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Delete confirmation */}
-      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete address?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingDelete &&
-                `This will remove the address for ${
-                  pendingDelete.label || pendingDelete.recipient
-                }. This cannot be undone.`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

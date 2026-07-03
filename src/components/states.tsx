@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils";
-import { Loader2, PackageOpen, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { PackageOpen, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BrandLoader } from "@/components/BrandLoader";
 
 export function LoadingState({
   label = "Loading…",
@@ -10,14 +11,8 @@ export function LoadingState({
   className?: string;
 }) {
   return (
-    <div
-      className={cn(
-        "flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground",
-        className,
-      )}
-    >
-      <Loader2 className="h-7 w-7 animate-spin text-gold" />
-      <p className="text-sm">{label}</p>
+    <div className={cn("flex items-center justify-center py-16", className)}>
+      <BrandLoader size="md" label={label} />
     </div>
   );
 }

@@ -30,16 +30,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Ruler, Plus, Pencil, Trash2, Copy, BookOpen } from "lucide-react";
@@ -81,7 +72,7 @@ function MeasurementsPage() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<MeasureForm>(EMPTY_FORM);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [pendingDelete, setPendingDelete] = useState<MeasurementProfile | null>(null);
+  const confirm = useConfirm();
 
   function openAdd() {
     setEditingId(null);
@@ -159,10 +150,17 @@ function MeasurementsPage() {
     if (await duplicateMeasurement(id)) toast.success("Profile duplicated");
   }
 
-  async function confirmDelete() {
-    if (!pendingDelete) return;
-    setPendingDelete(null);
-    if (await deleteMeasurement(pendingDelete.id)) toast.success("Profile removed");
+  async function onDelete(m: MeasurementProfile) {
+    await confirm({
+      tone: "danger",
+      title: "Delete measurement profile?",
+      description: `This will remove “${m.name}”. This can't be undone.`,
+      confirmText: "Delete",
+      icon: <Trash2 className="h-6 w-6" />,
+      onConfirm: async () => {
+        if (await deleteMeasurement(m.id)) toast.success("Profile removed");
+      },
+    });
   }
 
   if (!hydrated) {
@@ -237,7 +235,7 @@ function MeasurementsPage() {
                   variant="ghost"
                   size="sm"
                   className="text-destructive hover:text-destructive"
-                  onClick={() => setPendingDelete(m)}
+                  onClick={() => onDelete(m)}
                 >
                   <Trash2 className="mr-2 h-4 w-4" /> Delete
                 </Button>
@@ -307,27 +305,6 @@ function MeasurementsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Delete confirmation */}
-      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete measurement profile?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingDelete && `This will remove “${pendingDelete.name}”. This cannot be undone.`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

@@ -1,13 +1,13 @@
 import { QueryClient } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
-import { Loader2 } from "lucide-react";
+import { BrandLoader } from "./components/BrandLoader";
 import { routeTree } from "./routeTree.gen";
 
 /** Shown only when a navigation blocks past defaultPendingMs (rare). */
 function RoutePending() {
   return (
-    <div className="grid min-h-[40vh] place-items-center">
-      <Loader2 className="h-6 w-6 animate-spin text-primary" aria-label="Loading" />
+    <div className="grid min-h-[50vh] place-items-center">
+      <BrandLoader size="lg" label="Nongorr" />
     </div>
   );
 }
