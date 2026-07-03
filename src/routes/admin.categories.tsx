@@ -22,16 +22,7 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   Plus,
   Pencil,
@@ -74,7 +65,7 @@ function Categories() {
   const [view, setView] = useState<"card" | "list">("card");
   const [editing, setEditing] = useState<AdminCategory | null>(null);
   const [adding, setAdding] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<AdminCategory | null>(null);
+  const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
 
   const refresh = () => router.invalidate();
@@ -103,15 +94,27 @@ function Categories() {
     await refresh();
   };
 
-  const removeCat = async (slug: string) => {
-    setBusy(true);
-    const res = await deleteCategoryFn({ data: { slug } });
-    setBusy(false);
-    setDeleteTarget(null);
-    if (res.success) toast.success("Category deleted.");
-    else toast.error(res.error);
-    await refresh();
-  };
+  const removeCat = (c: AdminCategory) =>
+    confirm({
+      tone: "danger",
+      title: "Delete this category?",
+      description: (
+        <>
+          This permanently deletes <strong>{c.name}</strong>. A category that still has products
+          cannot be deleted — reassign or remove its products first.
+        </>
+      ),
+      confirmText: "Delete",
+      icon: <Trash2 className="h-6 w-6" />,
+      onConfirm: async () => {
+        setBusy(true);
+        const res = await deleteCategoryFn({ data: { slug: c.slug } });
+        setBusy(false);
+        if (res.success) toast.success("Category deleted.");
+        else toast.error(res.error);
+        await refresh();
+      },
+    });
 
   const onSaved = async () => {
     setAdding(false);
@@ -181,7 +184,7 @@ function Categories() {
                 onMove={move}
                 onToggleActive={toggleActive}
                 onEdit={() => setEditing(c)}
-                onDelete={() => setDeleteTarget(c)}
+                onDelete={() => removeCat(c)}
               />
             </div>
           ))}
@@ -215,7 +218,7 @@ function Categories() {
                 onMove={move}
                 onToggleActive={toggleActive}
                 onEdit={() => setEditing(c)}
-                onDelete={() => setDeleteTarget(c)}
+                onDelete={() => removeCat(c)}
               />
             </div>
           ))}
@@ -232,27 +235,6 @@ function Categories() {
         }}
         onSaved={onSaved}
       />
-
-      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this category?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This permanently deletes <strong>{deleteTarget?.name}</strong>. A category that still
-              has products cannot be deleted — reassign or remove its products first.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => deleteTarget && removeCat(deleteTarget.slug)}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
