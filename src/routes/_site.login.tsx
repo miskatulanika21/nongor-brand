@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { setLoggedInHint } from "@/lib/auth-state";
+import { bustSiteContext } from "@/lib/site-context-cache";
 import {
   loginWithEmail,
   registerWithEmail,
@@ -247,6 +248,7 @@ function LoginForm({ onForgot, next }: { onForgot: () => void; next?: string }) 
       }
 
       setLoggedInHint(true);
+      bustSiteContext();
       navigate({ to: result.destination });
     } catch {
       setErrors({ password: "Something went wrong. Please try again." });

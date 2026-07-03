@@ -77,10 +77,13 @@ interface ReviewItem {
 
 export const Route = createFileRoute("/_site/product/$slug")({
   loader: async ({ params }) => {
-    const product = await getProductDetail({ data: { slug: params.slug } });
+    // Lean cards power related products + recently-viewed resolution; fetched
+    // in parallel with the detail so the loader costs one round-trip, not two.
+    const [product, cards] = await Promise.all([
+      getProductDetail({ data: { slug: params.slug } }),
+      listProductCards(),
+    ]);
     if (!product) throw notFound();
-    // Lean cards power related products + recently-viewed resolution.
-    const cards = await listProductCards();
     return { product, cards };
   },
   head: ({ loaderData, params }) => ({

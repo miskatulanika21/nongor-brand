@@ -11,6 +11,7 @@ import { getMyAccountFn } from "@/lib/account.api";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { loadCustomerArea, logout as serverLogout } from "@/lib/auth.api";
+import { bustSiteContext } from "@/lib/site-context-cache";
 import { setLoggedInHint } from "@/lib/auth-state";
 import { useNoticeToast } from "@/lib/auth-notices";
 import {
@@ -115,6 +116,7 @@ function AccountShell({ children, loadError }: { children: React.ReactNode; load
   useNoticeToast();
   async function onLogout() {
     await serverLogout();
+    bustSiteContext();
     setLoggedInHint(false);
     toast.success("You have been signed out.");
     navigate({ to: "/login", search: { next: undefined } });
