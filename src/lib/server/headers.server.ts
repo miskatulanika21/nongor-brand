@@ -28,7 +28,14 @@ function buildCsp(): string {
   const supabaseWs = supabaseOrigin ? supabaseOrigin.replace(/^http/, "ws") : null;
   const upstashOrigin = originOf(process.env.UPSTASH_REDIS_REST_URL);
 
-  const connectSrc = ["'self'", supabaseOrigin, supabaseWs, upstashOrigin].filter(Boolean);
+  // Vercel Web Analytics + Speed Insights: on Vercel the script is served
+  // same-origin (/_vercel/…), but dev/preview load it from this host and the
+  // insights beacon can post here too — allow it so RUM isn't CSP-blocked.
+  const vercelAnalytics = "https://va.vercel-scripts.com";
+
+  const connectSrc = ["'self'", supabaseOrigin, supabaseWs, upstashOrigin, vercelAnalytics].filter(
+    Boolean,
+  );
 
   return [
     "default-src 'self'",
@@ -36,8 +43,8 @@ function buildCsp(): string {
     "object-src 'none'",
     "frame-ancestors 'none'",
     "form-action 'self'",
-    // Hydration + ld+json inline scripts.
-    "script-src 'self' 'unsafe-inline'",
+    // Hydration + ld+json inline scripts; Vercel analytics/speed-insights.
+    `script-src 'self' 'unsafe-inline' ${vercelAnalytics}`,
     // Tailwind inline styles + Google Fonts stylesheet.
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
