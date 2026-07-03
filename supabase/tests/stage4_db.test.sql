@@ -43,6 +43,15 @@
 --   * idempotent same-user re-claim; cross-account claim → order_not_claimable
 --   * auth gate: null user → actor_not_authorized
 --
+-- §18 (P8) covers the admin customers directory:
+--   * active-staff gate (actor_not_authorized for customers/null)
+--   * aggregates: orders_count/lifetime_spent exclude cancelled+expired,
+--     returns counted, has_custom_size from line items, zeroes for
+--     profile-only accounts
+--   * identity fallback: profile name/phone, else latest order snapshot
+--   * search by displayed name / phone / email; staff never listed
+--   * recency sort (last_order_at DESC NULLS LAST) + pagination with total
+--
 -- Conventions (same as pass2/pass3/pass4): expected-SUCCESS runs plainly;
 -- expected-FAILURE wraps in a sub-block and RAISE 'FAIL:' if it did NOT raise;
 -- value checks RAISE 'FAIL:' on a violated invariant.
@@ -539,7 +548,8 @@ BEGIN
     'api.import_account_data(uuid,jsonb)',
     'api.sync_wishlist(uuid,text[])',
     'api.toggle_wishlist(uuid,text)',
-    'api.claim_guest_order(uuid,text,text)'
+    'api.claim_guest_order(uuid,text,text)',
+    'api.admin_list_customers(uuid,text,integer,integer)'
   ] LOOP
     IF NOT has_function_privilege('service_role', fn, 'EXECUTE') THEN
       RAISE EXCEPTION 'FAIL: service_role lacks EXECUTE on %', fn; END IF;
@@ -797,6 +807,112 @@ BEGIN
     RAISE EXCEPTION 'FAIL: s17 null user accepted';
   EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
     IF got <> 'actor_not_authorized' THEN RAISE EXCEPTION 'FAIL: s17 gate=%', got; END IF; END;
+END $$;
+
+-- ============================================================
+-- §18 — admin_list_customers: staff directory + aggregates (P8)
+-- ============================================================
+-- Fixtures: one staff actor, three customer shapes (profile-only /
+-- orders-only / both), scoped under a 'p8-' search key so earlier sections'
+-- users never interfere with the assertions.
+INSERT INTO auth.users (id, email) VALUES
+  ('00000000-0000-0000-0000-0000000000f1', 'p8-staff@test.local'),
+  ('00000000-0000-0000-0000-0000000000f2', 'p8-profile-only@test.local'),
+  ('00000000-0000-0000-0000-0000000000f3', 'p8-orders-only@test.local'),
+  ('00000000-0000-0000-0000-0000000000f4', 'p8-both@test.local');
+INSERT INTO public.staff_profiles (user_id, role, is_active) VALUES
+  ('00000000-0000-0000-0000-0000000000f1', 'admin', true);
+INSERT INTO public.customer_profiles (user_id, full_name, phone) VALUES
+  ('00000000-0000-0000-0000-0000000000f2', 'P8 Profile Only', '01711110001'),
+  ('00000000-0000-0000-0000-0000000000f4', 'P8 Both Worlds', '01711110004');
+
+-- orders-only: 1 completed (counted), 1 cancelled (ignored), 1 returned
+INSERT INTO public.orders
+  (order_no, user_id, customer_name, customer_phone, ship_district, ship_zone,
+   ship_address, subtotal, discount, shipping_fee, total, payment_method,
+   status, idempotency_key, placed_at)
+VALUES
+  ('NGR-P8-000001', '00000000-0000-0000-0000-0000000000f3', 'P8 Orders Only',
+   '01722220003', 'Dhaka', 'dhaka', 'H1', 1000, 0, 80, 1080, 'cod',
+   'completed', 'p8-k1', now() - interval '3 days'),
+  ('NGR-P8-000002', '00000000-0000-0000-0000-0000000000f3', 'P8 Orders Only',
+   '01722220003', 'Dhaka', 'dhaka', 'H1', 500, 0, 80, 580, 'cod',
+   'cancelled', 'p8-k2', now() - interval '2 days'),
+  ('NGR-P8-000003', '00000000-0000-0000-0000-0000000000f3', 'P8 Orders Only',
+   '01722220003', 'Dhaka', 'dhaka', 'H1', 2000, 0, 80, 2080, 'cod',
+   'returned', 'p8-k3', now() - interval '1 day');
+
+-- both: 1 delivered order carrying a custom-measurement line item
+INSERT INTO public.orders
+  (order_no, user_id, customer_name, customer_phone, ship_district, ship_zone,
+   ship_address, subtotal, discount, shipping_fee, total, payment_method,
+   status, idempotency_key, placed_at)
+VALUES
+  ('NGR-P8-000004', '00000000-0000-0000-0000-0000000000f4', 'P8 Both Worlds',
+   '01711110004', 'Dhaka', 'dhaka', 'H2', 3000, 0, 80, 3080, 'cod',
+   'delivered', 'p8-k4', now() - interval '6 hours');
+INSERT INTO public.order_items
+    (order_id, product_id, name, unit_price, qty, line_total, custom_measurements)
+  SELECT o.id, (SELECT id FROM public.products WHERE code = 'p-wl-a'),
+         'P8 custom kameez', 3000, 1, 3000, '{"bust":"36"}'::jsonb
+    FROM public.orders o WHERE o.order_no = 'NGR-P8-000004';
+
+DO $$
+DECLARE
+  staff constant uuid := '00000000-0000-0000-0000-0000000000f1';
+  r jsonb; c jsonb; got text;
+BEGIN
+  -- auth gate: a plain customer and a null actor are both refused
+  BEGIN
+    r := api.admin_list_customers('00000000-0000-0000-0000-0000000000f2');
+    RAISE EXCEPTION 'FAIL: s18 non-staff allowed';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'actor_not_authorized' THEN RAISE EXCEPTION 'FAIL: s18 gate=%', got; END IF; END;
+  BEGIN
+    r := api.admin_list_customers(NULL);
+    RAISE EXCEPTION 'FAIL: s18 null actor allowed';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'actor_not_authorized' THEN RAISE EXCEPTION 'FAIL: s18 gate2=%', got; END IF; END;
+
+  -- orders-only: aggregates + identity falls back to the order snapshot
+  r := api.admin_list_customers(staff, 'p8-orders-only@test.local');
+  IF (r->>'total')::int <> 1 THEN RAISE EXCEPTION 'FAIL: s18 email search %', r; END IF;
+  c := r->'customers'->0;
+  IF c->>'name' <> 'P8 Orders Only' OR c->>'phone' <> '01722220003'
+     OR (c->>'orders_count')::int <> 2 OR (c->>'lifetime_spent')::int <> 3160
+     OR (c->>'returns_count')::int <> 1 OR (c->>'has_custom_size')::boolean THEN
+    RAISE EXCEPTION 'FAIL: s18 orders-only %', c; END IF;
+
+  -- profile-only: zero aggregates, profile identity, phone search
+  r := api.admin_list_customers(staff, '01711110001');
+  c := r->'customers'->0;
+  IF (r->>'total')::int <> 1 OR c->>'name' <> 'P8 Profile Only'
+     OR (c->>'orders_count')::int <> 0 OR (c->>'lifetime_spent')::int <> 0
+     OR c->>'last_order_at' IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL: s18 profile-only %', c; END IF;
+
+  -- both: name search, custom-size flag on
+  r := api.admin_list_customers(staff, 'Both Worlds');
+  c := r->'customers'->0;
+  IF (r->>'total')::int <> 1 OR NOT (c->>'has_custom_size')::boolean
+     OR (c->>'lifetime_spent')::int <> 3080 THEN
+    RAISE EXCEPTION 'FAIL: s18 both/custom %', c; END IF;
+
+  -- staff accounts are never listed as customers
+  r := api.admin_list_customers(staff, 'p8-staff@test.local');
+  IF (r->>'total')::int <> 0 THEN RAISE EXCEPTION 'FAIL: s18 staff leaked %', r; END IF;
+
+  -- recency sort over the three p8 customers, then pagination + stable total
+  r := api.admin_list_customers(staff, 'p8-');
+  IF (r->>'total')::int <> 3 THEN RAISE EXCEPTION 'FAIL: s18 fixture total %', r; END IF;
+  IF r->'customers'->0->>'email' <> 'p8-both@test.local'
+     OR r->'customers'->1->>'email' <> 'p8-orders-only@test.local'
+     OR r->'customers'->2->>'email' <> 'p8-profile-only@test.local' THEN
+    RAISE EXCEPTION 'FAIL: s18 sort %', r; END IF;
+  r := api.admin_list_customers(staff, 'p8-', 1, 1);
+  IF jsonb_array_length(r->'customers') <> 1 OR (r->>'total')::int <> 3
+     OR r->'customers'->0->>'email' <> 'p8-orders-only@test.local' THEN
+    RAISE EXCEPTION 'FAIL: s18 pagination %', r; END IF;
 END $$;
 
 ROLLBACK;
