@@ -264,15 +264,42 @@ Sub-passes:
       60/min); `account.imported` added to the audit-action union;
       `account-shared.test.ts` (schema↔CHECK parity, builders, mappers,
       error-map exhaustiveness). No UI change (P4).
-- [ ] **P4** — account UI rewire (same provider contract, async + optimistic) + one-time localStorage import then purge (V3 migration table)
-- [ ] **P5** — prefill: checkout saved-address picker + save-back; PDP
-      custom-size measurement picker + save-back
-- [ ] **P6** — `wishlist_items` server sync (guest local → merge on login)
-- [ ] **P7** — guest-order claim via capability token (`api.claim_guest_order`)
-- [ ] **P8** — DB-backed `admin.customers.tsx` (`admin_list_customers`
-      aggregates; retire mock `CUSTOMERS`)
-- [ ] **P9** — closure: `stage4_db.test.sql` complete + E2E + advisors +
-      status docs
+- [x] **P4** (2026-07-02) — account UI rewire: `AccountUIProvider` seeded from
+      the `/account` layout loader (SSR snapshot, keyed per user), mutations
+      async + optimistic with rollback and stable-code error toasts; one-time
+      localStorage import → purge after server confirmation (sealed per user;
+      `already_imported` seals too). 15-case provider test.
+- [x] **P5** (2026-07-02) — prefill: checkout saved-address chips + post-order
+      save-back; PDP saved-measurement picker + inline save-back (`f16532c`).
+- [x] **P6** (2026-07-03) — `wishlist_items` server sync (migration
+      `20260702175557`): `sync_wishlist` union-merge (dedupe, unknown-drop,
+      cap 100) + `toggle_wishlist` (stable `product_not_found`/`wishlist_full`);
+      store keeps guests local, gives signed-in users a per-user mirror key,
+      one-shot merge on login, optimistic toggles with a stale-response guard;
+      new `wishlistWrite` bucket. `stage4_db.test.sql` §13–§16 (`2120e0a`).
+- [x] **P7** (2026-07-03) — guest-order claim (migration `20260702181916`):
+      `api.claim_guest_order` — token hash is the only proof, `FOR UPDATE`
+      row lock, single-statement owner flip preserving the XOR, non-oracular
+      `order_not_found` collapse, `order_not_claimable` cross-account,
+      idempotent same-user retry, in-transaction `order.claimed` audit;
+      `ClaimOrderCard` on order-success + `/track` (sign-in round-trip via
+      `next`). `stage4_db.test.sql` §17 (`ce66aff`).
+- [x] **P8** (2026-07-03) — DB-backed `admin.customers.tsx` (migration
+      `20260703062945`): `admin_list_customers` aggregates (counts/spend
+      exclude cancelled+expired, returns, custom-size flag, profile→order
+      snapshot identity fallback, search over displayed name/phone + email),
+      P4b board pattern UI + detail sheet linking to the orders board; derived
+      VIP/Repeat/High-Risk/Custom-Size tags computed in-app; mock `CUSTOMERS`
+      retired. `stage4_db.test.sql` §18 (`6a80c1c`).
+- [x] **P9** (2026-07-03) — closure: `stage4_db.test.sql` complete (§1–§18 in
+      CI), `e2e/account.spec.ts` (account CRUD + checkout prefill; validated
+      6/6 against a live dev server), advisors clean, visual pass on
+      `/account/*` (desktop + mobile), status docs updated.
+
+**Exit:** account data server-authoritative under deny-all RLS with owner-scoped
+RPCs; one-time local import; checkout/PDP prefill one tap from saved data;
+wishlist survives devices; guest orders claimable by token only; admin sees real
+customers. **STAGE 4 COMPLETE** (P1–P9, 2026-07-03).
 
 ## Stage 5 — Admin sales ops & integrations
 

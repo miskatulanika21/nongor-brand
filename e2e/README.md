@@ -45,6 +45,11 @@ Read-only flows (browsing the storefront) are safe against any backend.
   on `E2E_BASE_URL` **and** `E2E_ADMIN_EMAIL` / `E2E_ADMIN_PASSWORD`.
 - `reviews-moderation.spec.ts` — admin review moderation (performs a write if a
   pending review exists). Same admin-cred gating; use a SAFE backend.
+- `account.spec.ts` — Stage 4 customer-account happy path: sign-in, profile
+  edit, address + measurement CRUD, checkout prefill from a saved address.
+  Gated on `E2E_BASE_URL` **and** `E2E_CUSTOMER_EMAIL` / `E2E_CUSTOMER_PASSWORD`
+  (a dedicated test customer). WRITES to that customer's own account rows and
+  cleans up after itself; use a SAFE backend.
 
 All specs `test.skip` themselves when their env vars are unset, so
 `bun run test:e2e` stays green where nothing is wired up. (E2E is not run in CI.)
