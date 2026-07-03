@@ -170,7 +170,7 @@ function AccountOverview() {
             </Button>
             <Button asChild variant="outline" className="justify-start">
               <Link to="/account/measurements">
-                <Ruler className="mr-2 h-4 w-4" /> Manage measurements
+                <Ruler className="mr-2 h-4 w-4" /> Measurements
               </Link>
             </Button>
             <Button asChild variant="outline" className="justify-start">

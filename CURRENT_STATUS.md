@@ -3,7 +3,39 @@
 Authoritative record of verified project state. Code and live-environment
 behavior are the source of truth; this file is updated after every stage.
 
-\_Last updated: 2026-07-01 — **Stage 3 Pass-5 real coupons: COMPLETE → STAGE 3
+\_Last updated: 2026-07-03 — **Stage 4 customer accounts: COMPLETE → STAGE 4
+CLOSED (P1–P9, CI-green).** Accounts are fully server-authoritative end to end.
+**P1/P2** (migrations `20260702080032`, `20260702081309`): `customer_profiles` /
+`saved_addresses` / `saved_measurements` (RPC-only deny-all; caps 10/12;
+one-default partial unique index) + the 8 account RPCs (CASE-presence patching,
+exactly-one-default with oldest-promotion, per-user advisory write lock,
+one-shot `import_account_data` with `account.imported` audit). **P3/P4**: shared
+DTO/zod layer + service-role repo + guarded server fns (`accountRead`/
+`accountWrite` buckets); `/account/*` rewired onto the server with optimistic
+mutations + rollback and a one-time localStorage import → purge (sealed per
+user). **P5**: checkout saved-address picker + post-order save-back; PDP
+saved-measurement prefill + inline save-back. **P6** (`20260702175557`):
+`wishlist_items` server sync — guests stay local, signed-in users get per-user
+mirror + one-shot merge + optimistic `toggle_wishlist` (stale-response guard);
+new `wishlistWrite` rate bucket. **P7** (`20260702181916`):
+`api.claim_guest_order` — a signed-in viewer holding the guest capability token
+(the ONLY proof; never phone/email matching) attaches the order to their
+account in one row-locked update that preserves the owner XOR, kills the
+tracking link, audits `order.claimed`, and is idempotent for same-user retries
+(cross-account → `order_not_claimable`, non-oracular otherwise);
+`ClaimOrderCard` on order-success + `/track` with a sign-in round-trip. **P8**
+(`20260703062945`): DB-backed `admin.customers.tsx` on `admin_list_customers`
+(auth.users minus staff, LEFT JOIN profile + live order aggregates, derived
+VIP/Repeat/High-Risk/Custom-Size tags computed in-app, search + pagination,
+sheet linking to the orders board) — mock `CUSTOMERS` retired. **P9** closure:
+`stage4_db.test.sql` §1–§18 in CI; new `e2e/account.spec.ts` (sign-in, profile
+edit, address + measurement CRUD, checkout prefill — validated 6/6 green
+against a live dev server); visual pass on `/account/*` desktop + mobile
+(one polish fix: overview quick-action label); advisors clean (security +
+performance: only pre-existing INFO items). 5 new prod migrations (56 total);
+478 Vitest tests; build/CI green per-job. Prior context:\_
+
+_Earlier (2026-07-01) — **Stage 3 Pass-5 real coupons: COMPLETE → STAGE 3
 CLOSED (P1–P5, CI-green).** Replaced the display-only mock coupons with a
 server-authoritative, race-safe coupon system end to end. **P5a** (migration
 `20260701150858`): `coupons` + `coupon_usages` (RPC-only deny-all) — premium
@@ -28,7 +60,7 @@ delete guard) + a DB-backed `admin.coupons.tsx`. **P5e**: `pass3_db.test.sql`
 enforcement, usage-counter increment, admin CRUD + guards, grant posture) — this
 also fixed the grant-check signatures the P5b function-signature change had left
 stale (a from-empty CI regression). 3 new prod migrations (51 total); 388 Vitest
-tests and 3 DB integration suites; advisors clean; build clean.\_
+tests and 3 DB integration suites; advisors clean; build clean._
 
 _Sub-pass detail: **P4a** (`f76f009`): isomorphic 15-status model
 (`orders-shared.ts`) + server layer (`orders.server.ts` / `orders.api.ts`).

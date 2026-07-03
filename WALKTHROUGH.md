@@ -1,8 +1,8 @@
 # WALKTHROUGH — actual data flows
 
-Reflects what the code does today (Stage 2 closed; Stage 3 checkout + order
-management complete — backend + full app integration live, 48 migrations, Pass-4
-finished). Updated each stage.
+Reflects what the code does today (Stages 2–4 closed; Stage 3 checkout + order
+management and Stage 4 customer accounts fully live — 56 migrations). Updated
+each stage.
 
 ## Request → response security wrapper
 
@@ -210,6 +210,46 @@ server fns backed by `SECURITY DEFINER` service-role RPCs.
   non-existent `set_inventory` signature — fixed (migration `20260701110357`) to
   use the real parameter names, read `product_size_stock`, and skip 'Custom' lines.
 
+## Customer accounts (Stage 4) — live
+
+- **Read path:** the `/account` layout loader calls `getMyAccountFn` (GET,
+  no-store, `accountRead` bucket) → `api.get_my_account(p_user)` under the
+  service role — SSR snapshot seeds `AccountUIProvider` (keyed per user, no
+  content flash). Email stays in `auth.users` (read-only in the UI).
+- **Write path:** every mutation is a POST server fn (CSRF origin + verified
+  session + `accountWrite` 30/10min) → owner-scoped SECURITY DEFINER RPC under
+  a per-user advisory lock. Caps (10 addresses / 12 measurements), exactly-one-
+  default with oldest-promotion, and field CHECKs are enforced at the DB; the
+  provider applies optimistic updates and rolls back on the stable error code.
+- **One-time import:** first signed-in visit posts legacy localStorage PII to
+  `import_account_data` (row-by-row salvage, single default, `account.imported`
+  audit); local keys are purged only after the server confirms, then the flow
+  is sealed per user (`already_imported` seals too).
+- **Prefill:** checkout renders saved-address chips (one tap fills the form,
+  post-order save-back offered); the PDP custom-size flow offers saved
+  measurement profiles with inline save-back.
+- **Wishlist:** guests stay in `localStorage`; signed-in users get a per-user
+  mirror key for instant paint, a one-shot guest→server merge on login
+  (`sync_wishlist` union, cap 100), and optimistic `toggle_wishlist` with a
+  stale-response guard. Login/logout is SPA navigation — the store re-hydrates
+  on the key flip, no remount.
+- **Guest-order claim:** a signed-in viewer holding a guest tracking link
+  (`/track?o=&t=` — the token is the ONLY proof) can claim the order via
+  `claimGuestOrderFn` → `api.claim_guest_order`: row-locked single-statement
+  owner flip (XOR preserved), guest token hash cleared (link dies), audited
+  `order.claimed`, idempotent same-user retry; wrong/unknown tokens collapse
+  to `order_not_found` (non-oracular) and cross-account claims raise
+  `order_not_claimable`. `ClaimOrderCard` renders on order-success and /track;
+  signed-out visitors get a sign-in round-trip back to the tracking URL.
+- **Admin customers:** `/admin/customers` (behind `customers.view`) reads
+  `admin_list_customers` — every non-staff account with live order aggregates
+  and a profile→latest-order-snapshot identity fallback; VIP/Repeat/High-Risk/
+  Custom-Size tags are derived in `customers-shared.ts`, never stored; the
+  detail sheet links to the orders board by phone.
+- **Tests:** `stage4_db.test.sql` §1–§18 runs in CI from-empty;
+  `e2e/account.spec.ts` drives sign-in → profile edit → address/measurement
+  CRUD → checkout prefill in a real browser (env-gated).
+
 ## CI
 
 `.github/workflows/ci.yml` runs on push to `main` and all PRs: Bun (pinned
@@ -226,9 +266,9 @@ does not validate pending migrations — that is the `migrations-local` job's ro
 
 ## Still mock / localStorage (later stages)
 
-Cart and wishlist hold item IDs in `localStorage` only (no server-side cart).
-Coupons (display-only until Stage 5); customer profiles/addresses/measurements
-(Stage 4), courier adapters + `orders.ts`/`PRODUCTS` retirement (Stage 5),
-CMS/banners/newsletter (Stage 6), reports (Stage 6). (Reviews moderation, site
-settings, checkout, and the full order lifecycle are DB-backed.) See
+Cart holds item IDs in `localStorage` only (no server-side cart; the signed-in
+wishlist is server-synced as of Stage 4). Courier adapters +
+`orders.ts`/`PRODUCTS` retirement (Stage 5), CMS/banners/newsletter (Stage 6),
+reports (Stage 6). (Reviews moderation, site settings, checkout, the full order
+lifecycle, coupons, and customer accounts are DB-backed.) See
 `CURRENT_STATUS.md`.
