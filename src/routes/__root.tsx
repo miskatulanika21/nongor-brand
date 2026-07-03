@@ -12,6 +12,8 @@ import { type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { ConfirmProvider } from "@/components/ui/confirm-dialog";
+import { SpeedInsights } from "@vercel/speed-insights/react";
+import { Analytics } from "@vercel/analytics/react";
 import { absUrl } from "@/lib/site-config";
 import { NotFoundPage } from "@/components/NotFoundPage";
 
@@ -134,6 +136,10 @@ function RootShell({ children }: { children: ReactNode }) {
       <body>
         {children}
         <Scripts />
+        {/* Vercel real-user monitoring — Core Web Vitals + page analytics.
+            Client-only script injectors; no-op locally, active in production. */}
+        <SpeedInsights />
+        <Analytics />
       </body>
     </html>
   );
