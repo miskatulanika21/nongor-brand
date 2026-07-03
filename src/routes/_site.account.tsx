@@ -14,6 +14,7 @@ import { loadCustomerArea, logout as serverLogout } from "@/lib/auth.api";
 import { bustSiteContext } from "@/lib/site-context-cache";
 import { setLoggedInHint } from "@/lib/auth-state";
 import { useNoticeToast } from "@/lib/auth-notices";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   LayoutDashboard,
   Package,
@@ -113,13 +114,23 @@ function AccountShell({ children, loadError }: { children: React.ReactNode; load
   const { profile } = useAccountUI();
   const navigate = useNavigate();
   const { session } = useRouteContext({ from: "/_site/account" }) as { session: CustomerSession };
+  const confirm = useConfirm();
   useNoticeToast();
   async function onLogout() {
-    await serverLogout();
-    bustSiteContext();
-    setLoggedInHint(false);
-    toast.success("You have been signed out.");
-    navigate({ to: "/login", search: { next: undefined } });
+    await confirm({
+      title: "Sign out?",
+      description: "You'll need to sign in again to view your orders and saved details.",
+      confirmText: "Sign out",
+      cancelText: "Stay signed in",
+      icon: <LogOut className="h-6 w-6" />,
+      onConfirm: async () => {
+        await serverLogout();
+        bustSiteContext();
+        setLoggedInHint(false);
+        toast.success("You have been signed out.");
+        navigate({ to: "/login", search: { next: undefined } });
+      },
+    });
   }
 
   return (

@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { loadAdminArea, logout as serverLogout } from "@/lib/auth.api";
 import { setLoggedInHint } from "@/lib/auth-state";
 import { bustSiteContext } from "@/lib/site-context-cache";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import type { AdminIconKey, AdminNavGroup } from "@/lib/admin-routes";
 import type { StaffRole } from "@/lib/auth-types";
 import {
@@ -165,12 +166,22 @@ function AdminLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
   const { staff, nav } = useRouteContext({ from: "/admin" }) as AdminContext;
+  const confirm = useConfirm();
 
   const handleLogout = async () => {
-    await serverLogout();
-    bustSiteContext();
-    setLoggedInHint(false);
-    navigate({ to: "/login", search: { next: undefined } });
+    await confirm({
+      title: "Sign out of the admin panel?",
+      description: "You'll need to sign in again to manage the store.",
+      confirmText: "Sign out",
+      cancelText: "Stay signed in",
+      icon: <LogOut className="h-6 w-6" />,
+      onConfirm: async () => {
+        await serverLogout();
+        bustSiteContext();
+        setLoggedInHint(false);
+        navigate({ to: "/login", search: { next: undefined } });
+      },
+    });
   };
 
   const displayName = staff.name || staff.email || "Account";
