@@ -9,6 +9,7 @@
  */
 import { createServerSupabaseClient } from "./supabase.server";
 import { createAdminSupabaseClient } from "./supabase-admin.server";
+import { cachedPublic } from "./public-cache.server";
 import {
   KNOWN_SETTINGS_ERROR_CODES,
   normalizePublicSettings,
@@ -33,12 +34,19 @@ function throwSettingsError(error: { code?: string; message?: string }): never {
 }
 
 /** Public storefront settings (no payment secrets). Returns null on failure. */
-export async function fetchPublicSettings(): Promise<PublicSettings | null> {
+async function loadPublicSettings(): Promise<PublicSettings | null> {
   const sb = createServerSupabaseClient();
   const { data, error } = await sb.schema("api").rpc("get_public_settings");
   if (error) return null;
   return normalizePublicSettings(data);
 }
+
+/**
+ * Cached wrapper — public/anon settings are identical for every visitor and
+ * change rarely, so a warm instance serves them from memory (admin edits show
+ * within the TTL). Same call signature as before for all callers.
+ */
+export const fetchPublicSettings = cachedPublic("public-settings", 60_000, loadPublicSettings);
 
 /** Full settings incl. payment — caller must already be an authorized admin. */
 export async function fetchAdminSettings(actorId: string): Promise<AdminSettings | null> {
