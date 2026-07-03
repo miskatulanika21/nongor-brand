@@ -35,6 +35,14 @@
 --   * cascades: product delete + auth.users delete remove wishlist rows; a
 --     direct insert of an unknown code violates the FK
 --
+-- §17 (P7) covers guest-order claim:
+--   * happy path: token-verified claim flips user_id, clears guest_token_hash
+--     (owner-XOR intact), writes the order.claimed audit row, surfaces the
+--     order in list_my_orders, and kills the old guest tracking link
+--   * wrong token / unknown order collapse to order_not_found (non-oracular)
+--   * idempotent same-user re-claim; cross-account claim → order_not_claimable
+--   * auth gate: null user → actor_not_authorized
+--
 -- Conventions (same as pass2/pass3/pass4): expected-SUCCESS runs plainly;
 -- expected-FAILURE wraps in a sub-block and RAISE 'FAIL:' if it did NOT raise;
 -- value checks RAISE 'FAIL:' on a violated invariant.
@@ -530,7 +538,8 @@ BEGIN
     'api.delete_measurement(uuid,uuid)',
     'api.import_account_data(uuid,jsonb)',
     'api.sync_wishlist(uuid,text[])',
-    'api.toggle_wishlist(uuid,text)'
+    'api.toggle_wishlist(uuid,text)',
+    'api.claim_guest_order(uuid,text,text)'
   ] LOOP
     IF NOT has_function_privilege('service_role', fn, 'EXECUTE') THEN
       RAISE EXCEPTION 'FAIL: service_role lacks EXECUTE on %', fn; END IF;
@@ -700,6 +709,94 @@ BEGIN
       VALUES ('00000000-0000-0000-0000-0000000000d2', 'ghost-code');
     RAISE EXCEPTION 'FAIL: s16 unknown code inserted';
   EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+END $$;
+
+-- ============================================================
+-- §17 — claim_guest_order: token-proof ownership transfer (P7)
+-- ============================================================
+INSERT INTO auth.users (id) VALUES
+  ('00000000-0000-0000-0000-0000000000e1'),  -- claimant
+  ('00000000-0000-0000-0000-0000000000e2');  -- rival account
+
+-- A guest order (raw capability token = 'claim-proof-token').
+INSERT INTO public.orders
+  (order_no, guest_token_hash, customer_name, customer_phone,
+   ship_district, ship_zone, ship_address,
+   subtotal, discount, shipping_fee, total, payment_method, status, idempotency_key)
+VALUES
+  ('NGR-CLAIM-000001', encode(extensions.digest('claim-proof-token', 'sha256'), 'hex'),
+   'Guest Buyer', '01712345678', 'Dhaka', 'dhaka', 'House 1, Road 2',
+   1000, 0, 80, 1080, 'cod', 'pending_confirmation', 'claim-test-key-1');
+
+DO $$
+DECLARE
+  u1 constant uuid := '00000000-0000-0000-0000-0000000000e1';
+  u2 constant uuid := '00000000-0000-0000-0000-0000000000e2';
+  h constant text := encode(extensions.digest('claim-proof-token', 'sha256'), 'hex');
+  r jsonb; got text; v_owner uuid; v_hash text;
+BEGIN
+  -- wrong token collapses to order_not_found (non-oracular, mirrors track_order)
+  BEGIN
+    r := api.claim_guest_order(u1, 'NGR-CLAIM-000001', repeat('a', 64));
+    RAISE EXCEPTION 'FAIL: s17 wrong token accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'order_not_found' THEN RAISE EXCEPTION 'FAIL: s17 wrong-token=%', got; END IF; END;
+
+  -- unknown order + malformed hash
+  BEGIN
+    r := api.claim_guest_order(u1, 'NGR-NOPE-000000', h);
+    RAISE EXCEPTION 'FAIL: s17 unknown order accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'order_not_found' THEN RAISE EXCEPTION 'FAIL: s17 unknown=%', got; END IF; END;
+  BEGIN
+    r := api.claim_guest_order(u1, 'NGR-CLAIM-000001', 'short-hash');
+    RAISE EXCEPTION 'FAIL: s17 malformed hash accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'order_not_found' THEN RAISE EXCEPTION 'FAIL: s17 malformed=%', got; END IF; END;
+
+  -- happy path: ownership flips, token cleared, XOR intact
+  r := api.claim_guest_order(u1, 'NGR-CLAIM-000001', h);
+  IF NOT (r->>'claimed')::boolean OR (r->>'already_owned')::boolean THEN
+    RAISE EXCEPTION 'FAIL: s17 claim %', r; END IF;
+  SELECT user_id, guest_token_hash INTO v_owner, v_hash
+    FROM public.orders WHERE order_no = 'NGR-CLAIM-000001';
+  IF v_owner <> u1 OR v_hash IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL: s17 row owner=% hash=%', v_owner, v_hash; END IF;
+
+  -- canonical audit row in the same transaction
+  IF NOT EXISTS (SELECT 1 FROM public.audit_logs
+                  WHERE actor_id = u1 AND action = 'order.claimed') THEN
+    RAISE EXCEPTION 'FAIL: s17 audit missing'; END IF;
+
+  -- claimed order joins the account's history
+  r := api.list_my_orders(u1, 20, 0);
+  IF (r->>'total')::int <> 1 THEN RAISE EXCEPTION 'FAIL: s17 list %', r; END IF;
+
+  -- the old guest tracking link is dead
+  BEGIN
+    r := api.track_order('NGR-CLAIM-000001', h);
+    RAISE EXCEPTION 'FAIL: s17 guest track survived the claim';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'order_not_found' THEN RAISE EXCEPTION 'FAIL: s17 track=%', got; END IF; END;
+
+  -- idempotent same-user re-claim
+  r := api.claim_guest_order(u1, 'NGR-CLAIM-000001', h);
+  IF NOT (r->>'claimed')::boolean OR NOT (r->>'already_owned')::boolean THEN
+    RAISE EXCEPTION 'FAIL: s17 re-claim %', r; END IF;
+
+  -- another account can never take it (even holding the old token)
+  BEGIN
+    r := api.claim_guest_order(u2, 'NGR-CLAIM-000001', h);
+    RAISE EXCEPTION 'FAIL: s17 cross-account claim accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'order_not_claimable' THEN RAISE EXCEPTION 'FAIL: s17 cross=%', got; END IF; END;
+
+  -- auth gate
+  BEGIN
+    r := api.claim_guest_order(NULL, 'NGR-CLAIM-000001', h);
+    RAISE EXCEPTION 'FAIL: s17 null user accepted';
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+    IF got <> 'actor_not_authorized' THEN RAISE EXCEPTION 'FAIL: s17 gate=%', got; END IF; END;
 END $$;
 
 ROLLBACK;

@@ -503,6 +503,7 @@ export interface OrderTransitionResult {
 
 export const ORDER_ERROR_MESSAGES: Record<string, string> = {
   order_not_found: "That order no longer exists. Refresh and try again.",
+  order_not_claimable: "This order is already linked to an account.",
   actor_not_authorized: "You are not authorized to perform this action.",
   invalid_transition:
     "That status change isn't allowed from the order's current state. Refresh and try again.",
@@ -580,6 +581,21 @@ export const trackOrderSchema = z.object({
 });
 
 export type TrackOrderInput = z.infer<typeof trackOrderSchema>;
+
+/**
+ * Validator for claiming a guest order into the signed-in account (P7).
+ * The same capability pair as tracking — the token IS the proof of ownership;
+ * phone/email matching is never used.
+ */
+export const claimGuestOrderSchema = trackOrderSchema;
+
+export interface ClaimGuestOrderResult {
+  orderId: string;
+  orderNo: string;
+  claimed: boolean;
+  /** True when the order already belonged to this same account (retried click). */
+  alreadyOwned: boolean;
+}
 
 export interface MyOrderListItem {
   id: string;

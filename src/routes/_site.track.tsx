@@ -1,8 +1,9 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { trackOrderFn } from "@/lib/orders.api";
 import { CustomerStatusBadge, fmtDate } from "@/components/admin/order-status";
 import { MeasurementsList } from "@/components/orders/MeasurementsList";
+import { ClaimOrderCard } from "@/components/orders/ClaimOrderCard";
 import { CUSTOMER_STEPS, customerProgress, type TrackOrderResult } from "@/lib/orders-shared";
 import { formatBDT, BRAND } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,9 @@ type State =
 function Track() {
   const { o = "", t = "" } = Route.useSearch();
   const navigate = useNavigate();
+  const { sessionSummary } = useRouteContext({ from: "/_site" }) as {
+    sessionSummary: { isAuthenticated: boolean };
+  };
   const [orderNo, setOrderNo] = useState(o);
   const [token, setToken] = useState(t);
   const [state, setState] = useState<State>({ phase: "idle" });
@@ -157,7 +161,18 @@ function Track() {
           <Skeleton className="h-48 w-full rounded-xl" />
         </div>
       ) : state.phase === "ready" ? (
-        <OrderTimeline result={state.result} orderNo={o} token={t} />
+        <div className="space-y-6">
+          {/* A valid tracked order is still guest-owned — offer to claim it.
+              After the claim the token is dead, so leave straight for the
+              account's own order page. */}
+          <ClaimOrderCard
+            orderNo={o}
+            token={t}
+            signedIn={sessionSummary.isAuthenticated}
+            onClaimed={(r) => navigate({ to: "/orders/$id", params: { id: r.orderId } })}
+          />
+          <OrderTimeline result={state.result} orderNo={o} token={t} />
+        </div>
       ) : state.phase === "missing" ? (
         <EmptyState
           icon={<PackageSearch className="h-6 w-6" />}

@@ -21,6 +21,7 @@ import {
   returnOrderSchema,
   listMyOrdersSchema,
   trackOrderSchema,
+  claimGuestOrderSchema,
 } from "@/lib/orders-shared";
 
 /** Map any thrown repo error to a safe, granular message via the stable code. */
@@ -281,5 +282,51 @@ export const trackOrderFn = createServerFn({ method: "POST" })
         error: "We couldn't find an order matching those details.",
         result: null,
       };
+    }
+  });
+
+/**
+ * Claim a guest order into the signed-in account (Stage 4 P7). The capability
+ * token is the ONLY proof — the RPC verifies its hash and flips ownership
+ * atomically. Guarded like an account write: CSRF + verified session + the
+ * accountWrite rate bucket (claims are rare, deliberate actions).
+ */
+export const claimGuestOrderFn = createServerFn({ method: "POST" })
+  .validator(claimGuestOrderSchema)
+  .handler(async ({ data }) => {
+    const { getPublicSupabaseEnv } = await import("@/lib/server/env.server");
+    const { checkCsrfOrigin, getClientIp } = await import("@/lib/server/security.server");
+    const { createServerSupabaseClient } = await import("@/lib/server/supabase.server");
+    const { getAuthenticatedIdentity } = await import("@/lib/server/identity.server");
+    const { checkIndependentRateLimit, rateLimitMessage } =
+      await import("@/lib/server/rate-limit.server");
+
+    const env = getPublicSupabaseEnv();
+    if (!checkCsrfOrigin(env.siteUrl)) {
+      return { success: false as const, error: "Invalid request origin." };
+    }
+
+    const supabase = createServerSupabaseClient();
+    const idn = await getAuthenticatedIdentity({ strict: true, client: supabase });
+    if (!idn.ok) {
+      return {
+        success: false as const,
+        requiresAuth: true as const,
+        error: "Please sign in to add this order to your account.",
+      };
+    }
+
+    const rl = await checkIndependentRateLimit("accountWrite", {
+      ip: getClientIp(),
+      account: idn.identity.userId,
+    });
+    if (!rl.allowed) return { success: false as const, error: rateLimitMessage() };
+
+    const { claimGuestOrder } = await import("@/lib/server/orders.server");
+    try {
+      const result = await claimGuestOrder(idn.identity.userId, data.orderNo, data.token);
+      return { success: true as const, result };
+    } catch (e) {
+      return { success: false as const, error: await messageFromOrderError(e) };
     }
   });

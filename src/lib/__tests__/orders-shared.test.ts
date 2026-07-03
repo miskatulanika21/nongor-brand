@@ -319,3 +319,28 @@ describe("customer read validators + wiring", () => {
     expect(RATE_LIMITS.trackOrder.limit).toBeGreaterThan(0);
   });
 });
+
+describe("guest-order claim (P7)", () => {
+  it("claimGuestOrderSchema takes the same capability pair as trackOrderSchema", async () => {
+    const { claimGuestOrderSchema } = await import("@/lib/orders-shared");
+    expect(
+      claimGuestOrderSchema.safeParse({ orderNo: "NGR-2026-000123", token: "tok" }).success,
+    ).toBe(true);
+    expect(claimGuestOrderSchema.safeParse({ orderNo: "", token: "tok" }).success).toBe(false);
+    expect(claimGuestOrderSchema.safeParse({ orderNo: "x", token: "" }).success).toBe(false);
+  });
+
+  it("maps order_not_claimable to a safe message and keeps wrong-token non-oracular", () => {
+    // Cross-account claims get an explicit message; a wrong token must NOT get
+    // its own code — the RPC collapses it into order_not_found so the endpoint
+    // can't be used as a token oracle.
+    expect(orderErrorMessage("order_not_claimable")).toContain("already linked");
+    expect(ORDER_ERROR_MESSAGES).not.toHaveProperty("invalid_token");
+    expect(ORDER_ERROR_MESSAGES).not.toHaveProperty("wrong_token");
+  });
+
+  it("orders.api exposes claimGuestOrderFn", async () => {
+    const api = await import("@/lib/orders.api");
+    expect(typeof (api as Record<string, unknown>).claimGuestOrderFn).toBe("function");
+  });
+});
