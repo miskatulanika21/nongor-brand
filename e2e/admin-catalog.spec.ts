@@ -23,9 +23,11 @@ test.skip(!BASE || !ADMIN_EMAIL || !ADMIN_PASSWORD, "set E2E_BASE_URL + admin cr
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/admin/login");
-  await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-  await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
-  await page.getByRole("button", { name: /sign in|log in/i }).click();
+  await page.waitForLoadState("networkidle");
+  await page.getByPlaceholder("you@email.com").first().fill(ADMIN_EMAIL!);
+  await page.getByPlaceholder("••••••••").fill(ADMIN_PASSWORD!);
+  await page.getByRole("button", { name: "Sign In", exact: true }).click();
+  await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 10_000 });
 });
 
 test("dashboard shows the live catalog widgets", async ({ page }) => {
@@ -36,7 +38,7 @@ test("dashboard shows the live catalog widgets", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Low Stock" })).toBeVisible();
   await expect(page.getByRole("heading", { name: /Best Sellers/ })).toBeVisible();
   // The live-data framing replaced the old "seed demo data" copy.
-  await expect(page.getByText(/reflect the live catalog/i)).toBeVisible();
+  await expect(page.getByText(/figures are live/i)).toBeVisible();
 });
 
 test("products page renders the catalog table", async ({ page }) => {

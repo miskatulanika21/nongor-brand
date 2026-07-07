@@ -702,7 +702,7 @@ export async function claimGuestOrder(
  */
 export async function getOrderForBooking(
   orderId: string,
-  actorId: string,
+  _actorId: string,
 ): Promise<{
   orderNo: string;
   customerName: string;

@@ -258,8 +258,9 @@ function LoginForm({ onForgot, next }: { onForgot: () => void; next?: string }) 
 
   return (
     <form className="space-y-4" onSubmit={onSubmit} noValidate>
-      <Field label="Email address" error={errors.email}>
+      <Field id="email" label="Email address" error={errors.email}>
         <Input
+          id="email"
           type="email"
           inputMode="email"
           autoComplete="email"
@@ -271,9 +272,10 @@ function LoginForm({ onForgot, next }: { onForgot: () => void; next?: string }) 
         />
       </Field>
 
-      <Field label="Password" error={errors.password}>
+      <Field id="password" label="Password" error={errors.password}>
         <div className="relative">
           <Input
+            id="password"
             autoComplete="current-password"
             type={show ? "text" : "password"}
             placeholder="••••••••"
@@ -285,7 +287,7 @@ function LoginForm({ onForgot, next }: { onForgot: () => void; next?: string }) 
           <button
             type="button"
             onClick={() => setShow((s) => !s)}
-            aria-label={show ? "Hide password" : "Show password"}
+            aria-label={show ? "Hide text" : "Show text"}
             className="absolute right-3 top-1/2 z-10 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
           >
             {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -380,8 +382,9 @@ function RegisterForm({ onDone }: { onDone: () => void }) {
 
   return (
     <form className="space-y-4" onSubmit={onSubmit} noValidate>
-      <Field label="Full name" error={errors.name}>
+      <Field id="reg-name" label="Full name" error={errors.name}>
         <Input
+          id="reg-name"
           placeholder="Your name"
           autoComplete="name"
           value={form.name}
@@ -389,8 +392,9 @@ function RegisterForm({ onDone }: { onDone: () => void }) {
           className={inputCls(errors.name)}
         />
       </Field>
-      <Field label="Phone number" error={errors.phone}>
+      <Field id="reg-phone" label="Phone number" error={errors.phone}>
         <Input
+          id="reg-phone"
           inputMode="tel"
           autoComplete="tel"
           placeholder="01XXXXXXXXX"
@@ -399,8 +403,9 @@ function RegisterForm({ onDone }: { onDone: () => void }) {
           className={inputCls(errors.phone)}
         />
       </Field>
-      <Field label="Email address" error={errors.email}>
+      <Field id="reg-email" label="Email address" error={errors.email}>
         <Input
+          id="reg-email"
           type="email"
           inputMode="email"
           autoComplete="email"
@@ -410,9 +415,10 @@ function RegisterForm({ onDone }: { onDone: () => void }) {
           className={inputCls(errors.email)}
         />
       </Field>
-      <Field label="Password" error={errors.password}>
+      <Field id="reg-password" label="Password" error={errors.password}>
         <div className="relative">
           <Input
+            id="reg-password"
             type={show ? "text" : "password"}
             autoComplete="new-password"
             placeholder="At least 8 characters"
@@ -423,15 +429,16 @@ function RegisterForm({ onDone }: { onDone: () => void }) {
           <button
             type="button"
             onClick={() => setShow((s) => !s)}
-            aria-label={show ? "Hide password" : "Show password"}
+            aria-label={show ? "Hide text" : "Show text"}
             className="absolute right-3 top-1/2 z-10 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
           >
             {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>
         </div>
       </Field>
-      <Field label="Confirm password" error={errors.confirm}>
+      <Field id="reg-confirm" label="Confirm password" error={errors.confirm}>
         <Input
+          id="reg-confirm"
           type={show ? "text" : "password"}
           autoComplete="new-password"
           placeholder="Re-enter password"
@@ -536,8 +543,9 @@ function ForgotPasswordDialog({
           </div>
         ) : (
           <form className="space-y-4" onSubmit={onSubmit} noValidate>
-            <Field label="Email address" error={error}>
+            <Field id="forgot-email" label="Email address" error={error}>
               <Input
+                id="forgot-email"
                 type="email"
                 inputMode="email"
                 autoComplete="email"
@@ -581,17 +589,21 @@ function inputCls(error?: string) {
 }
 
 function Field({
+  id,
   label,
   error,
   children,
 }: {
+  id?: string;
   label: string;
   error?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-sm text-foreground">{label}</Label>
+      <Label htmlFor={id} className="text-sm text-foreground">
+        {label}
+      </Label>
       {children}
       {error && <ErrorMsg msg={error} />}
     </div>

@@ -61,6 +61,8 @@ import { Route as SiteAccountRouteImport } from './routes/_site.account'
 import { Route as SiteAboutRouteImport } from './routes/_site.about'
 import { Route as SiteSplatRouteImport } from './routes/_site.$'
 import { Route as SiteAccountIndexRouteImport } from './routes/_site.account.index'
+import { Route as ApiWebhookSteadfastRouteImport } from './routes/api.webhook.steadfast'
+import { Route as ApiWebhookPathaoRouteImport } from './routes/api.webhook.pathao'
 import { Route as SiteProductSlugRouteImport } from './routes/_site.product.$slug'
 import { Route as SiteOrdersIdRouteImport } from './routes/_site.orders.$id'
 import { Route as SiteAccountSecurityRouteImport } from './routes/_site.account.security'
@@ -327,6 +329,16 @@ const SiteAccountIndexRoute = SiteAccountIndexRouteImport.update({
   path: '/',
   getParentRoute: () => SiteAccountRoute,
 } as any)
+const ApiWebhookSteadfastRoute = ApiWebhookSteadfastRouteImport.update({
+  id: '/api/webhook/steadfast',
+  path: '/api/webhook/steadfast',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiWebhookPathaoRoute = ApiWebhookPathaoRouteImport.update({
+  id: '/api/webhook/pathao',
+  path: '/api/webhook/pathao',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SiteProductSlugRoute = SiteProductSlugRouteImport.update({
   id: '/product/$slug',
   path: '/product/$slug',
@@ -415,6 +427,8 @@ export interface FileRoutesByFullPath {
   '/account/security': typeof SiteAccountSecurityRoute
   '/orders/$id': typeof SiteOrdersIdRoute
   '/product/$slug': typeof SiteProductSlugRoute
+  '/api/webhook/pathao': typeof ApiWebhookPathaoRoute
+  '/api/webhook/steadfast': typeof ApiWebhookSteadfastRoute
   '/account/': typeof SiteAccountIndexRoute
 }
 export interface FileRoutesByTo {
@@ -472,6 +486,8 @@ export interface FileRoutesByTo {
   '/account/security': typeof SiteAccountSecurityRoute
   '/orders/$id': typeof SiteOrdersIdRoute
   '/product/$slug': typeof SiteProductSlugRoute
+  '/api/webhook/pathao': typeof ApiWebhookPathaoRoute
+  '/api/webhook/steadfast': typeof ApiWebhookSteadfastRoute
   '/account': typeof SiteAccountIndexRoute
 }
 export interface FileRoutesById {
@@ -533,6 +549,8 @@ export interface FileRoutesById {
   '/_site/account/security': typeof SiteAccountSecurityRoute
   '/_site/orders/$id': typeof SiteOrdersIdRoute
   '/_site/product/$slug': typeof SiteProductSlugRoute
+  '/api/webhook/pathao': typeof ApiWebhookPathaoRoute
+  '/api/webhook/steadfast': typeof ApiWebhookSteadfastRoute
   '/_site/account/': typeof SiteAccountIndexRoute
 }
 export interface FileRouteTypes {
@@ -594,6 +612,8 @@ export interface FileRouteTypes {
     | '/account/security'
     | '/orders/$id'
     | '/product/$slug'
+    | '/api/webhook/pathao'
+    | '/api/webhook/steadfast'
     | '/account/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -651,6 +671,8 @@ export interface FileRouteTypes {
     | '/account/security'
     | '/orders/$id'
     | '/product/$slug'
+    | '/api/webhook/pathao'
+    | '/api/webhook/steadfast'
     | '/account'
   id:
     | '__root__'
@@ -711,6 +733,8 @@ export interface FileRouteTypes {
     | '/_site/account/security'
     | '/_site/orders/$id'
     | '/_site/product/$slug'
+    | '/api/webhook/pathao'
+    | '/api/webhook/steadfast'
     | '/_site/account/'
   fileRoutesById: FileRoutesById
 }
@@ -722,6 +746,8 @@ export interface RootRouteChildren {
   AuthCallbackRoute: typeof AuthCallbackRoute
   AuthConfirmRoute: typeof AuthConfirmRoute
   AuthUpdatePasswordRoute: typeof AuthUpdatePasswordRoute
+  ApiWebhookPathaoRoute: typeof ApiWebhookPathaoRoute
+  ApiWebhookSteadfastRoute: typeof ApiWebhookSteadfastRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1090,6 +1116,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SiteAccountIndexRouteImport
       parentRoute: typeof SiteAccountRoute
     }
+    '/api/webhook/steadfast': {
+      id: '/api/webhook/steadfast'
+      path: '/api/webhook/steadfast'
+      fullPath: '/api/webhook/steadfast'
+      preLoaderRoute: typeof ApiWebhookSteadfastRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/webhook/pathao': {
+      id: '/api/webhook/pathao'
+      path: '/api/webhook/pathao'
+      fullPath: '/api/webhook/pathao'
+      preLoaderRoute: typeof ApiWebhookPathaoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_site/product/$slug': {
       id: '/_site/product/$slug'
       path: '/product/$slug'
@@ -1281,6 +1321,8 @@ const rootRouteChildren: RootRouteChildren = {
   AuthCallbackRoute: AuthCallbackRoute,
   AuthConfirmRoute: AuthConfirmRoute,
   AuthUpdatePasswordRoute: AuthUpdatePasswordRoute,
+  ApiWebhookPathaoRoute: ApiWebhookPathaoRoute,
+  ApiWebhookSteadfastRoute: ApiWebhookSteadfastRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

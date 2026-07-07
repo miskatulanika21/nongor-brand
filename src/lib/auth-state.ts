@@ -7,7 +7,7 @@
  *
  * SSR-safe: returns false during SSR, checks real session after hydration.
  */
-import { useState, useEffect, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 let cachedLoggedIn = false;
