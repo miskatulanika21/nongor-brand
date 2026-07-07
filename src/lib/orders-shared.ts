@@ -12,7 +12,7 @@
 import { z } from "zod";
 import type { PaymentMethod } from "@/lib/checkout-shared";
 
-// ── The 15 statuses (DB CHECK order) ─────────────────────────────────────────
+// ── The 17 statuses (DB CHECK order) ─────────────────────────────────────────
 
 export const ORDER_STATUSES = [
   "pending_payment",
@@ -22,9 +22,11 @@ export const ORDER_STATUSES = [
   "confirmed",
   "processing",
   "ready_to_ship",
+  "courier_booked",
   "shipped",
   "delivered",
   "completed",
+  "delivery_failed",
   "cancelled",
   "expired",
   "returned",
@@ -109,6 +111,12 @@ export const ORDER_STATUS_META: Record<OrderStatus, OrderStatusMeta> = {
     tone: "blue",
     lane: "in_progress",
   },
+  courier_booked: {
+    label: "Courier booked",
+    customerLabel: "Courier booked",
+    tone: "blue",
+    lane: "in_progress",
+  },
   shipped: {
     label: "Shipped",
     customerLabel: "Shipped",
@@ -126,6 +134,12 @@ export const ORDER_STATUS_META: Record<OrderStatus, OrderStatusMeta> = {
     customerLabel: "Completed",
     tone: "green",
     lane: "closed",
+  },
+  delivery_failed: {
+    label: "Delivery failed",
+    customerLabel: "Delivery unsuccessful",
+    tone: "red",
+    lane: "problem",
   },
   cancelled: {
     label: "Cancelled",
@@ -175,10 +189,12 @@ export const ALLOWED_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = 
   pending_confirmation: ["confirmed", "cancelled", "expired"],
   confirmed: ["processing", "cancelled"],
   processing: ["ready_to_ship", "cancelled"],
-  ready_to_ship: ["shipped", "cancelled"],
-  shipped: ["delivered"],
+  ready_to_ship: ["courier_booked", "shipped", "cancelled"],
+  courier_booked: ["shipped", "cancelled"],
+  shipped: ["delivered", "delivery_failed"],
   delivered: ["completed", "returned"],
   completed: ["returned"],
+  delivery_failed: ["shipped", "returned"],
   cancelled: [],
   expired: [],
   returned: ["refund_pending"],
@@ -289,9 +305,27 @@ export function nextActions(status: OrderStatus): OrderAction[] {
         { key: "to_shipped", label: "Mark shipped", rpc: "transition", toStatus: "shipped" },
         CANCEL_ACTION,
       ];
+    case "courier_booked":
+      return [
+        { key: "to_shipped", label: "Mark shipped", rpc: "transition", toStatus: "shipped" },
+        CANCEL_ACTION,
+      ];
     case "shipped":
       return [
         { key: "to_delivered", label: "Mark delivered", rpc: "transition", toStatus: "delivered" },
+      ];
+    case "delivery_failed":
+      return [
+        { key: "to_shipped", label: "Reattempt delivery", rpc: "transition", toStatus: "shipped" },
+        {
+          key: "return",
+          label: "Return order",
+          rpc: "return",
+          toStatus: "returned",
+          allowsRestock: true,
+          optionalReason: true,
+          destructive: true,
+        },
       ];
     case "delivered":
       return [
@@ -670,13 +704,14 @@ export interface TrackOrderResult {
   history: MyOrderHistoryEntry[];
 }
 
-// ── Customer progress timeline (the 15 statuses → a 6-step happy path) ────────
+// ── Customer progress timeline (the 17 statuses → a 7-step happy path) ────────
 
 export const CUSTOMER_STEPS = [
   "Order placed",
   "Payment",
   "Confirmed",
   "Preparing",
+  "Courier booked",
   "Shipped",
   "Delivered",
 ] as const;
@@ -684,9 +719,10 @@ export const CUSTOMER_STEPS = [
 export type CustomerStep = (typeof CUSTOMER_STEPS)[number];
 
 /**
- * Map a real status to a position on the customer's 6-step timeline, plus an
+ * Map a real status to a position on the customer's 7-step timeline, plus an
  * `exception` flag for off-path states (cancelled / expired / payment_rejected /
- * returned / refund_*), which the UI renders as a callout instead of progress.
+ * returned / refund_* / delivery_failed), which the UI renders as a callout
+ * instead of progress.
  */
 export function customerProgress(status: OrderStatus): { stepIndex: number; exception: boolean } {
   switch (status) {
@@ -700,11 +736,14 @@ export function customerProgress(status: OrderStatus): { stepIndex: number; exce
     case "processing":
     case "ready_to_ship":
       return { stepIndex: 3, exception: false };
-    case "shipped":
+    case "courier_booked":
       return { stepIndex: 4, exception: false };
+    case "shipped":
+      return { stepIndex: 5, exception: false };
     case "delivered":
     case "completed":
-      return { stepIndex: 5, exception: false };
+      return { stepIndex: 6, exception: false };
+    case "delivery_failed":
     case "payment_rejected":
     case "cancelled":
     case "expired":

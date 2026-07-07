@@ -691,3 +691,71 @@ export async function claimGuestOrder(
     alreadyOwned: raw.already_owned === true,
   };
 }
+
+// ── Courier booking data ─────────────────────────────────────────────────────
+
+/**
+ * Fetch the minimal order data needed for courier booking.
+ *
+ * This is NOT a full order detail — it only returns what the courier adapter
+ * and COD computation require. Called by bookCourierFn in courier.api.ts.
+ */
+export async function getOrderForBooking(
+  orderId: string,
+  actorId: string,
+): Promise<{
+  orderNo: string;
+  customerName: string;
+  customerPhone: string;
+  shipAddress: string;
+  shipDistrict: string;
+  total: number;
+  paymentMethod: PaymentMethod;
+  paymentStatus: PaymentStatus;
+}> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin
+    .from("orders")
+    .select(
+      "order_no, customer_name, customer_phone, ship_address, ship_district, total, payment_method, status",
+    )
+    .eq("id", orderId)
+    .single();
+
+  if (error || !data) throw new OrderError("order_not_found");
+
+  const order = data as {
+    order_no: string;
+    customer_name: string;
+    customer_phone: string;
+    ship_address: string;
+    ship_district: string;
+    total: number;
+    payment_method: PaymentMethod;
+    status: OrderStatus;
+  };
+
+  // Order must be in ready_to_ship (or courier_booked for re-attempts)
+  if (order.status !== "ready_to_ship" && order.status !== "courier_booked" && order.status !== "delivery_failed") {
+    throw new OrderError("invalid_transition");
+  }
+
+  // Get payment status
+  const { data: payment } = await admin
+    .from("order_payments")
+    .select("status")
+    .eq("order_id", orderId)
+    .limit(1)
+    .maybeSingle();
+
+  return {
+    orderNo: order.order_no,
+    customerName: order.customer_name,
+    customerPhone: order.customer_phone,
+    shipAddress: order.ship_address,
+    shipDistrict: order.ship_district,
+    total: order.total,
+    paymentMethod: order.payment_method,
+    paymentStatus: (payment?.status as PaymentStatus) ?? "pending",
+  };
+}

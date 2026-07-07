@@ -28,9 +28,9 @@ import {
 const UUID = "11111111-1111-1111-1111-111111111111";
 
 describe("status set", () => {
-  it("has exactly the 15 statuses, unique", () => {
-    expect(ORDER_STATUSES).toHaveLength(15);
-    expect(new Set(ORDER_STATUSES).size).toBe(15);
+  it("has exactly the 17 statuses, unique", () => {
+    expect(ORDER_STATUSES).toHaveLength(17);
+    expect(new Set(ORDER_STATUSES).size).toBe(17);
   });
 
   it("isOrderStatus is a precise guard", () => {
@@ -52,7 +52,7 @@ describe("status metadata", () => {
     }
   });
 
-  it("has no extra keys beyond the 15 statuses", () => {
+  it("has no extra keys beyond the 17 statuses", () => {
     expect(Object.keys(ORDER_STATUS_META).sort()).toEqual([...ORDER_STATUSES].sort());
   });
 });
@@ -67,10 +67,12 @@ describe("transition parity with api.transition_order", () => {
     pending_confirmation: ["confirmed", "cancelled", "expired"],
     confirmed: ["processing", "cancelled"],
     processing: ["ready_to_ship", "cancelled"],
-    ready_to_ship: ["shipped", "cancelled"],
-    shipped: ["delivered"],
+    ready_to_ship: ["courier_booked", "shipped", "cancelled"],
+    courier_booked: ["shipped", "cancelled"],
+    shipped: ["delivered", "delivery_failed"],
     delivered: ["completed", "returned"],
     completed: ["returned"],
+    delivery_failed: ["shipped", "returned"],
     cancelled: [],
     expired: [],
     returned: ["refund_pending"],
@@ -273,11 +275,12 @@ describe("customer progress timeline", () => {
       "payment_submitted",
       "confirmed",
       "processing",
+      "courier_booked",
       "shipped",
       "delivered",
     ];
     const idx = order.map((s) => customerProgress(s).stepIndex);
-    expect(idx).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(idx).toEqual([0, 1, 2, 3, 4, 5, 6]);
   });
 
   it("flags off-path states as exceptions", async () => {
