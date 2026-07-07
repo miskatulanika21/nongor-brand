@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { LayoutGrid, List, Search, Upload, Trash2 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/admin/media-library")({

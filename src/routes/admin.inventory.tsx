@@ -8,7 +8,7 @@ import {
   addVariant,
   removeVariant,
 } from "@/lib/catalog-admin.api";
-import type { InventoryItem, InventoryMovement } from "@/lib/server/catalog-admin.server";
+import type { InventoryItem } from "@/lib/server/catalog-admin.server";
 import { inventoryErrorMessage } from "@/lib/catalog-admin.schema";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,7 +30,6 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Boxes, History, Loader2, Plus, Trash2 } from "lucide-react";
 import { useConfirm } from "@/components/ui/confirm-dialog";

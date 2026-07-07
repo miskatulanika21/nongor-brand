@@ -23,9 +23,11 @@ test.skip(!BASE || !ADMIN_EMAIL || !ADMIN_PASSWORD, "set E2E_BASE_URL + admin cr
 test("admin can open the reviews queue and moderate", async ({ page }) => {
   // Log in via the admin login route.
   await page.goto("/admin/login");
-  await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-  await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
-  await page.getByRole("button", { name: /sign in|log in/i }).click();
+  await page.waitForLoadState("networkidle");
+  await page.getByPlaceholder("you@email.com").first().fill(ADMIN_EMAIL!);
+  await page.getByPlaceholder("••••••••").fill(ADMIN_PASSWORD!);
+  await page.getByRole("button", { name: "Sign In", exact: true }).click();
+  await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 10_000 });
 
   // Reviews moderation page renders with the status filter.
   await page.goto("/admin/reviews");

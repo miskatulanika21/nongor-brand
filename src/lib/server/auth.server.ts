@@ -107,7 +107,7 @@ export async function performEmailLogin(data: z.infer<typeof loginSchema>) {
 
 // ---- Password Update (user is authenticated) --------------------------------
 
-const passwordUpdateWithNextSchema = z
+export const passwordUpdateWithNextSchema = z
   .object({
     password: passwordSchema,
     confirm: z.string(),
@@ -288,7 +288,7 @@ export async function performPasswordUpdate(data: z.infer<typeof passwordUpdateW
 
 // ---- OAuth callback (PKCE code exchange) ------------------------------------
 
-const oauthCallbackSchema = z.object({
+export const oauthCallbackSchema = z.object({
   code: z.string().min(1),
   next: z.string().max(2048).optional(),
 });
@@ -341,7 +341,7 @@ export async function performOAuthCallback(data: z.infer<typeof oauthCallbackSch
 
 // ---- Token confirmation with destination resolution (OTP / magic link) ------
 
-const authTokenConfirmSchema = z.object({
+export const authTokenConfirmSchema = z.object({
   token_hash: z.string().min(1).max(2048),
   type: z.enum(["email", "recovery", "magiclink", "invite"]),
   next: z.string().max(2048).optional(),
