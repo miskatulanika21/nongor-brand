@@ -22,7 +22,7 @@ export const manualAdapter: CourierAdapter = {
     return {
       success: true,
       consignmentId: null, // no courier-side ID for manual
-      trackingCode: null,  // tracking code is set by the caller (courier.server.ts)
+      trackingCode: null, // tracking code is set by the caller (courier.server.ts)
       rawResponse: { manual: true, orderNo: req.orderNo },
     };
   },

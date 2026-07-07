@@ -35,7 +35,9 @@ let tokenCache: TokenCache | null = null;
 function getConfig(sandbox: boolean) {
   if (sandbox) {
     return {
-      baseUrl: (process.env.PATHAO_SANDBOX_BASE_URL || "https://courier-api-sandbox.pathao.com").replace(/\/+$/, ""),
+      baseUrl: (
+        process.env.PATHAO_SANDBOX_BASE_URL || "https://courier-api-sandbox.pathao.com"
+      ).replace(/\/+$/, ""),
       clientId: process.env.PATHAO_SANDBOX_CLIENT_ID || "",
       clientSecret: process.env.PATHAO_SANDBOX_CLIENT_SECRET || "",
       username: process.env.PATHAO_SANDBOX_USERNAME,
@@ -60,7 +62,9 @@ function isSandbox(): boolean {
 function getStoreId(): string {
   const storeId = process.env.PATHAO_STORE_ID;
   if (!storeId) {
-    throw new Error("PATHAO_STORE_ID is not configured. Set it in env or fetch via /stores endpoint.");
+    throw new Error(
+      "PATHAO_STORE_ID is not configured. Set it in env or fetch via /stores endpoint.",
+    );
   }
   return storeId;
 }
@@ -191,9 +195,10 @@ export const pathaoAdapter: CourierAdapter = {
       }
 
       // Pathao error format: { message, type, code, errors }
-      const errMsg = body?.message || body?.errors
-        ? `Pathao: ${body.message || ""} ${JSON.stringify(body.errors || {})}`
-        : `Pathao API error: HTTP ${resp.status}`;
+      const errMsg =
+        body?.message || body?.errors
+          ? `Pathao: ${body.message || ""} ${JSON.stringify(body.errors || {})}`
+          : `Pathao API error: HTTP ${resp.status}`;
 
       return {
         success: false,

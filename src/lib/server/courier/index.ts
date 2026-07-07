@@ -72,4 +72,9 @@ export function hasAnyCourierConfigured(): boolean {
 }
 
 // Re-export types for convenience
-export type { CourierAdapter, CourierBookingRequest, CourierBookingResult, CourierStatusResult } from "./types";
+export type {
+  CourierAdapter,
+  CourierBookingRequest,
+  CourierBookingResult,
+  CourierStatusResult,
+} from "./types";

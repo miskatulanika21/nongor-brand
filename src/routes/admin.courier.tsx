@@ -18,7 +18,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Truck, MapPin, RefreshCw, Package, AlertTriangle, CheckCircle, XCircle, Loader2 } from "lucide-react";
+import {
+  Truck,
+  MapPin,
+  RefreshCw,
+  Package,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  Loader2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { listOrdersFn } from "@/lib/orders.api";
 import {
@@ -49,35 +58,49 @@ const STATUS_COLORS: Record<string, string> = {
 const BOOKABLE_STATUSES: OrderStatus[] = ["ready_to_ship", "courier_booked", "delivery_failed"];
 
 function CourierPage() {
-  const [orders, setOrders] = useState<Array<{
-    id: string;
-    orderNo: string;
-    customerName: string;
-    customerPhone: string;
-    shipDistrict: string;
-    shipZone: string;
-    total: number;
-    status: OrderStatus;
-    paymentMethod: string;
-  }>>([]);
+  const [orders, setOrders] = useState<
+    Array<{
+      id: string;
+      orderNo: string;
+      customerName: string;
+      customerPhone: string;
+      shipDistrict: string;
+      shipZone: string;
+      total: number;
+      status: OrderStatus;
+      paymentMethod: string;
+    }>
+  >([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [providers, setProviders] = useState<Array<{ id: string; display_name: string; enabled: boolean }>>([]);
-  const [bookingState, setBookingState] = useState<Record<string, {
-    provider: CourierProviderId;
-    trackingCode: string;
-    loading: boolean;
-  }>>({});
-  const [shipments, setShipments] = useState<Record<string, Array<{
-    id: string;
-    provider: string;
-    booking_status: string;
-    tracking_code: string | null;
-    consignment_id: string | null;
-    courier_status: string | null;
-    created_at: string;
-    cancelled_at: string | null;
-  }>>>({});
+  const [providers, setProviders] = useState<
+    Array<{ id: string; display_name: string; enabled: boolean }>
+  >([]);
+  const [bookingState, setBookingState] = useState<
+    Record<
+      string,
+      {
+        provider: CourierProviderId;
+        trackingCode: string;
+        loading: boolean;
+      }
+    >
+  >({});
+  const [shipments, setShipments] = useState<
+    Record<
+      string,
+      Array<{
+        id: string;
+        provider: string;
+        booking_status: string;
+        tracking_code: string | null;
+        consignment_id: string | null;
+        courier_status: string | null;
+        created_at: string;
+        cancelled_at: string | null;
+      }>
+    >
+  >({});
 
   // ── Load orders ──────────────────────────────────────────────────────────
   const loadOrders = useCallback(async () => {
@@ -85,9 +108,7 @@ function CourierPage() {
     try {
       // Load courier-bookable orders
       const results = await Promise.all(
-        BOOKABLE_STATUSES.map((status) =>
-          listOrdersFn({ data: { status, limit: 100 } }),
-        ),
+        BOOKABLE_STATUSES.map((status) => listOrdersFn({ data: { status, limit: 100 } })),
       );
       const all = results
         .filter((r) => r.success)
@@ -111,8 +132,9 @@ function CourierPage() {
       const provResult = await listCourierProvidersFn();
       if (provResult.success) {
         setProviders(
-          (provResult.providers as Array<{ id: string; display_name: string; enabled: boolean }>)
-            .filter((p) => p.enabled),
+          (
+            provResult.providers as Array<{ id: string; display_name: string; enabled: boolean }>
+          ).filter((p) => p.enabled),
         );
       }
 
@@ -122,9 +144,11 @@ function CourierPage() {
         try {
           const shipResult = await listShipmentsFn({ data: { orderId: o.id } });
           if (shipResult.success && Array.isArray(shipResult.shipments)) {
-            shipMap[o.id] = shipResult.shipments as typeof shipments[string];
+            shipMap[o.id] = shipResult.shipments as (typeof shipments)[string];
           }
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
       setShipments(shipMap);
     } catch {
@@ -227,7 +251,11 @@ function CourierPage() {
           <span>{orders.length} order(s) ready for courier</span>
         </div>
         <Button size="sm" variant="outline" onClick={loadOrders} disabled={loading}>
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4" />
+          )}
           Refresh
         </Button>
       </div>

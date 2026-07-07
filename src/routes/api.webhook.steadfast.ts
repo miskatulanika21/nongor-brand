@@ -22,9 +22,7 @@ export const Route = createFileRoute("/api/webhook/steadfast")({
         // Dynamic imports to keep the bundle lean
         const process = (await import("node:process")).default;
         const { safeServerLog } = await import("@/lib/server/security.server");
-        const { checkRateLimit, rateLimitMessage } = await import(
-          "@/lib/server/rate-limit.server"
-        );
+        const { checkRateLimit, rateLimitMessage } = await import("@/lib/server/rate-limit.server");
 
         // ── Rate limit ──────────────────────────────────────────────────
         const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
@@ -32,7 +30,10 @@ export const Route = createFileRoute("/api/webhook/steadfast")({
         if (!rl.allowed) {
           return new Response(JSON.stringify({ message: rateLimitMessage() }), {
             status: 429,
-            headers: { "Content-Type": "application/json", "Retry-After": String(rl.retryAfterSec) },
+            headers: {
+              "Content-Type": "application/json",
+              "Retry-After": String(rl.retryAfterSec),
+            },
           });
         }
 

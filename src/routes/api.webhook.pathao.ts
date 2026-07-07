@@ -21,9 +21,7 @@ export const Route = createFileRoute("/api/webhook/pathao")({
       POST: async ({ request }: { request: Request }) => {
         const process = (await import("node:process")).default;
         const { safeServerLog } = await import("@/lib/server/security.server");
-        const { checkRateLimit, rateLimitMessage } = await import(
-          "@/lib/server/rate-limit.server"
-        );
+        const { checkRateLimit, rateLimitMessage } = await import("@/lib/server/rate-limit.server");
 
         // ── Rate limit ──────────────────────────────────────────────────
         const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
@@ -31,7 +29,10 @@ export const Route = createFileRoute("/api/webhook/pathao")({
         if (!rl.allowed) {
           return new Response(JSON.stringify({ message: rateLimitMessage() }), {
             status: 429,
-            headers: { "Content-Type": "application/json", "Retry-After": String(rl.retryAfterSec) },
+            headers: {
+              "Content-Type": "application/json",
+              "Retry-After": String(rl.retryAfterSec),
+            },
           });
         }
 
