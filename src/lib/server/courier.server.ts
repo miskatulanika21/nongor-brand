@@ -83,13 +83,19 @@ export async function bookShipment(params: BookShipmentParams): Promise<BookShip
   if (provider === "manual") {
     const trimmed = trackingCode?.trim();
     if (!trimmed || trimmed.length < 2) {
-      throw new CourierError("manual_tracking_required", "Manual shipments require a tracking code (min 2 chars).");
+      throw new CourierError(
+        "manual_tracking_required",
+        "Manual shipments require a tracking code (min 2 chars).",
+      );
     }
   }
 
   // Block booking if bKash/Nagad not verified
   if (order.paymentMethod !== "cod" && order.paymentStatus !== "verified") {
-    throw new CourierError("payment_not_verified", "Payment must be verified before booking a courier.");
+    throw new CourierError(
+      "payment_not_verified",
+      "Payment must be verified before booking a courier.",
+    );
   }
 
   // Compute COD amount from amount due
@@ -111,7 +117,12 @@ export async function bookShipment(params: BookShipmentParams): Promise<BookShip
   }
 
   // Build canonical request hash for idempotency
-  const requestPayload = JSON.stringify({ orderId, provider, codAmount, ts: Math.floor(Date.now() / 60000) });
+  const requestPayload = JSON.stringify({
+    orderId,
+    provider,
+    codAmount,
+    ts: Math.floor(Date.now() / 60000),
+  });
   const hashBuffer = new TextEncoder().encode(requestPayload);
   const hashArray = await crypto.subtle.digest("SHA-256", hashBuffer);
   const requestHash = Array.from(new Uint8Array(hashArray))
@@ -154,7 +165,8 @@ export async function bookShipment(params: BookShipmentParams): Promise<BookShip
   const result = await adapter.book(bookingReq);
 
   // For manual: use the admin-provided tracking code
-  const finalTrackingCode = provider === "manual" ? (trackingCode?.trim() ?? null) : result.trackingCode;
+  const finalTrackingCode =
+    provider === "manual" ? (trackingCode?.trim() ?? null) : result.trackingCode;
 
   // ── Phase 3: record outcome (committed) ────────────────────────────────
   if (result.success || provider === "manual") {
@@ -218,10 +230,7 @@ export async function cancelShipment(
 
 // ── Stale recovery ───────────────────────────────────────────────────────────
 
-export async function resolveStaleAttempt(
-  actorId: string,
-  shipmentId: string,
-): Promise<void> {
+export async function resolveStaleAttempt(actorId: string, shipmentId: string): Promise<void> {
   await rpc<void>("resolve_stale_attempt", {
     p_actor: actorId,
     p_shipment_id: shipmentId,
@@ -230,10 +239,7 @@ export async function resolveStaleAttempt(
 
 // ── List ──────────────────────────────────────────────────────────────────────
 
-export async function listShipments(
-  actorId: string,
-  orderId: string,
-): Promise<unknown[]> {
+export async function listShipments(actorId: string, orderId: string): Promise<unknown[]> {
   return rpc<unknown[]>("list_shipments", {
     p_actor: actorId,
     p_order_id: orderId,

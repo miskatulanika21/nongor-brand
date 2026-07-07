@@ -29,7 +29,9 @@ async function messageFromCourierError(e: unknown): Promise<string> {
 }
 
 /** JSON-safe row shape for serialization across the server/client boundary. */
-interface JsonRow { [key: string]: string | number | boolean | null | JsonRow[] | JsonRow }
+interface JsonRow {
+  [key: string]: string | number | boolean | null | JsonRow[] | JsonRow;
+}
 
 // ── Reads ────────────────────────────────────────────────────────────────────
 
@@ -40,8 +42,7 @@ export const listShipmentsFn = createServerFn({ method: "GET" })
     await setNoStore();
     const { requirePermission } = await import("@/lib/server/rbac.server");
     const authz = await requirePermission("orders.view");
-    if (!authz.ok)
-      return { success: false as const, error: "Not authorized.", shipments: [] };
+    if (!authz.ok) return { success: false as const, error: "Not authorized.", shipments: [] };
 
     const { listShipments } = await import("@/lib/server/courier.server");
     try {
@@ -57,8 +58,7 @@ export const listCourierProvidersFn = createServerFn({ method: "GET" }).handler(
   await setNoStore();
   const { requirePermission } = await import("@/lib/server/rbac.server");
   const authz = await requirePermission("orders.view");
-  if (!authz.ok)
-    return { success: false as const, error: "Not authorized.", providers: [] };
+  if (!authz.ok) return { success: false as const, error: "Not authorized.", providers: [] };
 
   const { listCourierProviders } = await import("@/lib/server/courier.server");
   try {

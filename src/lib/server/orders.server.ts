@@ -736,7 +736,11 @@ export async function getOrderForBooking(
   };
 
   // Order must be in ready_to_ship (or courier_booked for re-attempts)
-  if (order.status !== "ready_to_ship" && order.status !== "courier_booked" && order.status !== "delivery_failed") {
+  if (
+    order.status !== "ready_to_ship" &&
+    order.status !== "courier_booked" &&
+    order.status !== "delivery_failed"
+  ) {
     throw new OrderError("invalid_transition");
   }
 

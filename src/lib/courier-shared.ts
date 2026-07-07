@@ -56,10 +56,7 @@ export const PATHAO_STATUS_LABELS: Record<string, string> = {
 };
 
 /** Map raw provider status to internal shipment status. */
-export function mapCourierStatusToInternal(
-  provider: string,
-  rawStatus: string,
-): string | null {
+export function mapCourierStatusToInternal(provider: string, rawStatus: string): string | null {
   const normalized = rawStatus.toLowerCase().replace(/[\s_-]+/g, "_");
 
   if (provider === "steadfast") {
@@ -129,9 +126,7 @@ export function computeCodAmount(
   }
   // Not verified yet — compute remaining due
   const due = Math.max(0, orderTotal - verifiedPaidAmount);
-  return due > 0
-    ? { mode: "partial_cod", codAmount: due }
-    : { mode: "prepaid", codAmount: 0 };
+  return due > 0 ? { mode: "partial_cod", codAmount: due } : { mode: "prepaid", codAmount: 0 };
 }
 
 // ── Customer-safe shipment DTO ───────────────────────────────────────────────
@@ -165,9 +160,7 @@ export function toCustomerShipmentInfo(
     provider: providerDisplayName,
     trackingCode,
     trackingUrl,
-    friendlyStatus: courierStatus
-      ? courierStatusLabel(provider, courierStatus)
-      : "Booked",
+    friendlyStatus: courierStatus ? courierStatusLabel(provider, courierStatus) : "Booked",
   };
 }
 

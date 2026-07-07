@@ -27,7 +27,9 @@ function getConfig() {
   const baseUrl = (process.env.STEADFAST_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
 
   if (!apiKey || !secretKey) {
-    throw new Error("SteadFast credentials not configured: STEADFAST_API_KEY / STEADFAST_SECRET_KEY");
+    throw new Error(
+      "SteadFast credentials not configured: STEADFAST_API_KEY / STEADFAST_SECRET_KEY",
+    );
   }
 
   return { apiKey, secretKey, baseUrl };
@@ -83,7 +85,9 @@ export const steadfastAdapter: CourierAdapter = {
         return {
           success: true,
           consignmentId: String(body.consignment?.consignment_id ?? ""),
-          trackingCode: String(body.consignment?.tracking_code ?? body.consignment?.consignment_id ?? ""),
+          trackingCode: String(
+            body.consignment?.tracking_code ?? body.consignment?.consignment_id ?? "",
+          ),
           rawResponse: body,
         };
       }
