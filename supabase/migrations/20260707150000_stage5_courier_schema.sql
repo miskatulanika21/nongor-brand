@@ -125,27 +125,42 @@ BEGIN
     PERFORM private.release_reservations(p_order_id);
   END IF;
 
+  -- Rejected payment is retryable: keep the hold but refresh its window so the
+  -- customer can resubmit and the reserved stock isn't lazily freed mid-retry.
+  IF p_to_status = 'payment_rejected' THEN
+    DECLARE v_new_expiry timestamptz;
+    BEGIN
+      SELECT now() + make_interval(hours => COALESCE(order_hold_hours, 24))
+        INTO v_new_expiry FROM public.site_settings WHERE id = 1;
+      UPDATE public.orders SET reservation_expires_at = v_new_expiry WHERE id = p_order_id;
+      UPDATE public.inventory_reservations SET expires_at = v_new_expiry
+        WHERE order_id = p_order_id AND status = 'active';
+    END;
+  END IF;
+
   IF p_to_status = 'returned' AND p_restock THEN
-    DECLARE r record; v_current integer;
+    DECLARE r record; v_code text; v_current integer;
     BEGIN
       FOR r IN
         SELECT oi.product_id, oi.variant_size, oi.qty
           FROM public.order_items oi WHERE oi.order_id = p_order_id
       LOOP
+        -- Made-to-order ('Custom') lines never consumed ready stock → never restock.
+        CONTINUE WHEN r.variant_size = 'Custom';
+        SELECT code INTO v_code FROM public.products WHERE id = r.product_id;
         IF r.variant_size IS NOT NULL THEN
-          SELECT stock INTO v_current FROM public.product_variants
+          SELECT quantity INTO v_current FROM public.product_size_stock
            WHERE product_id = r.product_id AND size = r.variant_size;
         ELSE
-          SELECT stock INTO v_current FROM public.products
-           WHERE id = r.product_id;
+          SELECT stock INTO v_current FROM public.products WHERE id = r.product_id;
         END IF;
         v_current := COALESCE(v_current, 0);
         PERFORM api.set_inventory(
-          p_product_id := r.product_id,
-          p_size       := r.variant_size,
-          p_new_qty    := v_current + r.qty,
-          p_actor_id   := p_actor,
-          p_reason     := 'return'
+          p_code     := v_code,
+          p_size     := r.variant_size,
+          p_quantity := v_current + r.qty,
+          p_reason   := 'return',
+          p_actor_id := p_actor
         );
       END LOOP;
     END;
