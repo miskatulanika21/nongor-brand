@@ -72,6 +72,10 @@ export const RATE_LIMITS = {
    * enthusiastic hearting session never starves address/profile saves).
    */
   wishlistWrite: { limit: 60, windowSec: 60 * 10 },
+  /** Courier admin writes (booking, cancel, reconciliation). */
+  courierWrite: { limit: 30, windowSec: 60 * 5 },
+  /** Inbound courier webhooks — higher volume, per-IP. */
+  courierWebhook: { limit: 120, windowSec: 60 },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 export type RateLimitAction = keyof typeof RATE_LIMITS;

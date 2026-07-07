@@ -162,6 +162,46 @@ export function validateEnvAtStartup(): void {
     }
   }
 
+  // ── Courier integration (Stage 5) ──────────────────────────────────────────
+  // Courier keys are optional (feature is degraded without them). These are
+  // non-blocking warnings — they never prevent server startup.
+  const courierWarnings: string[] = [];
+
+  if (!process.env.STEADFAST_API_KEY || !process.env.STEADFAST_SECRET_KEY) {
+    courierWarnings.push(
+      "STEADFAST_API_KEY / STEADFAST_SECRET_KEY not set — SteadFast courier booking will be unavailable.",
+    );
+  }
+  if (!process.env.PATHAO_CLIENT_ID || !process.env.PATHAO_CLIENT_SECRET) {
+    if (!process.env.PATHAO_SANDBOX_CLIENT_ID || !process.env.PATHAO_SANDBOX_CLIENT_SECRET) {
+      courierWarnings.push(
+        "PATHAO_CLIENT_ID / PATHAO_CLIENT_SECRET not set — Pathao courier booking will be unavailable.",
+      );
+    }
+  }
+
+  // Detect leaked courier secrets (VITE_ prefix → bundled to browser)
+  // These ARE blocking problems — a leaked secret is a security issue.
+  for (const name of [
+    "VITE_STEADFAST_API_KEY",
+    "VITE_STEADFAST_SECRET_KEY",
+    "VITE_PATHAO_CLIENT_ID",
+    "VITE_PATHAO_CLIENT_SECRET",
+    "VITE_STEADFAST_WEBHOOK_SECRET",
+    "VITE_PATHAO_WEBHOOK_SECRET",
+  ] as const) {
+    if (process.env[name]) {
+      problems.push(
+        `${name} is set — courier secrets must never use a VITE_ prefix (they would ship to the browser).`,
+      );
+    }
+  }
+
+  // Emit courier warnings (non-blocking, always warn)
+  if (courierWarnings.length > 0) {
+    console.warn(`[env] Courier warnings:\n  - ${courierWarnings.join("\n  - ")}`);
+  }
+
   if (problems.length === 0) return;
 
   const message = `[env] Configuration problems:\n  - ${problems.join("\n  - ")}`;
