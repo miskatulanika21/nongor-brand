@@ -45,8 +45,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, Loader2, PackageOpen, Paperclip } from "lucide-react";
+import { AlertTriangle, Loader2, PackageOpen, Paperclip, Truck } from "lucide-react";
 import { toast } from "sonner";
+import { listShipmentsFn } from "@/lib/courier.api";
 
 interface Props {
   orderId: string | null;
@@ -90,6 +91,8 @@ export function OrderDetailSheet({ orderId, onClose, onMutated }: Props) {
   const [restock, setRestock] = useState(false);
   const [busy, setBusy] = useState(false);
   const [shotBusy, setShotBusy] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [shipments, setShipments] = useState<any[]>([]);
 
   const resetAction = () => {
     setActiveAction(null);
@@ -100,10 +103,20 @@ export function OrderDetailSheet({ orderId, onClose, onMutated }: Props) {
   async function load(id: string) {
     setLoading(true);
     setLoadError(false);
+    setShipments([]);
     try {
       const res = await getOrderDetailFn({ data: { orderId: id } });
-      if (res.success) setDetail(res.order);
-      else {
+      if (res.success) {
+        setDetail(res.order);
+        // Load shipments in parallel (non-blocking)
+        listShipmentsFn({ data: { orderId: id } })
+          .then((sr) => {
+            if (sr.success && sr.shipments) setShipments(sr.shipments);
+          })
+          .catch(() => {
+            /* ignore — shipment section just stays empty */
+          });
+      } else {
         setDetail(null);
         setLoadError(true);
       }
@@ -333,6 +346,64 @@ export function OrderDetailSheet({ orderId, onClose, onMutated }: Props) {
                       ))}
                     </ol>
                   </div>
+                )}
+
+                {shipments.length > 0 && (
+                  <>
+                    <Separator />
+                    <div className="space-y-3">
+                      <p className="flex items-center gap-2 font-medium">
+                        <Truck className="h-4 w-4" /> Shipments
+                      </p>
+                      {shipments.map((s, i) => (
+                        <div
+                          key={s.id ?? i}
+                          className="rounded-lg border border-border bg-muted/30 p-3 space-y-1.5"
+                        >
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="font-medium">
+                              {s.courier_provider_id ?? "courier"}
+                            </span>
+                            <span
+                              className={cn(
+                                "rounded-full px-2 py-0.5 text-xs font-medium",
+                                s.courier_status === "delivered"
+                                  ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                                  : s.courier_status === "failed" ||
+                                      s.courier_status === "cancelled"
+                                    ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
+                                    : "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+                              )}
+                            >
+                              {s.courier_status ?? s.booking_status ?? "—"}
+                            </span>
+                          </div>
+                          {s.tracking_code && (
+                            <p className="text-xs text-muted-foreground">
+                              Tracking:{" "}
+                              {s.tracking_url ? (
+                                <a
+                                  href={s.tracking_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-primary underline"
+                                >
+                                  {s.tracking_code}
+                                </a>
+                              ) : (
+                                <span className="font-mono">{s.tracking_code}</span>
+                              )}
+                            </p>
+                          )}
+                          {s.consignment_id && (
+                            <p className="text-xs text-muted-foreground">
+                              Consignment: <span className="font-mono">{s.consignment_id}</span>
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
 
                 <Separator />

@@ -14,7 +14,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type {} from "@tanstack/react-start";
 
-// @ts-expect-error — route tree regenerated on next `bun run dev`
 export const Route = createFileRoute("/api/webhook/pathao")({
   server: {
     handlers: {
