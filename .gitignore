@@ -49,3 +49,7 @@ e2e/.auth/
 
 # Local Claude Code config (machine-specific; pre-approves local MCP servers)
 .claude/settings.local.json
+
+# Local Supabase config
+supabase/config.toml
+supabase/.gitignore
