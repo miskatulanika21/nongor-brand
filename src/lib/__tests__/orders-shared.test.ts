@@ -68,7 +68,7 @@ describe("transition parity with api.transition_order", () => {
     confirmed: ["processing", "cancelled"],
     processing: ["ready_to_ship", "cancelled"],
     ready_to_ship: ["courier_booked", "shipped", "cancelled"],
-    courier_booked: ["shipped", "cancelled"],
+    courier_booked: ["shipped", "delivered", "delivery_failed", "cancelled"],
     shipped: ["delivered", "delivery_failed"],
     delivered: ["completed", "returned"],
     completed: ["returned"],

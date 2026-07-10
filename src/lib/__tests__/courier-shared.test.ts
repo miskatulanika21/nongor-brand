@@ -65,6 +65,35 @@ describe("courier-shared", () => {
       expect(mapCourierStatusToInternal("steadfast", "In Transit")).toBe("in_transit");
       expect(mapCourierStatusToInternal("steadfast", "IN-TRANSIT")).toBe("in_transit");
     });
+
+    it("maps SteadFast partial_delivered → delivered (a delivery outcome)", async () => {
+      const { mapCourierStatusToInternal } = await load();
+      expect(mapCourierStatusToInternal("steadfast", "partial_delivered")).toBe("delivered");
+    });
+
+    it("records SteadFast non-transition statuses (hold/in_review/pending) as themselves", async () => {
+      const { mapCourierStatusToInternal } = await load();
+      expect(mapCourierStatusToInternal("steadfast", "hold")).toBe("on_hold");
+      expect(mapCourierStatusToInternal("steadfast", "in_review")).toBe("in_review");
+      expect(mapCourierStatusToInternal("steadfast", "pending")).toBe("pending");
+    });
+
+    it("maps Pathao In Transit / At the Sorting HUB → in_transit", async () => {
+      const { mapCourierStatusToInternal } = await load();
+      expect(mapCourierStatusToInternal("pathao", "In Transit")).toBe("in_transit");
+      expect(mapCourierStatusToInternal("pathao", "At the Sorting HUB")).toBe("in_transit");
+    });
+
+    it("maps Pathao Partial Delivery → delivered and Cancelled → returned_to_merchant", async () => {
+      const { mapCourierStatusToInternal } = await load();
+      expect(mapCourierStatusToInternal("pathao", "Partial Delivery")).toBe("delivered");
+      expect(mapCourierStatusToInternal("pathao", "Cancelled")).toBe("returned_to_merchant");
+    });
+
+    it("manual provider has no automatic status feed → null", async () => {
+      const { mapCourierStatusToInternal } = await load();
+      expect(mapCourierStatusToInternal("manual", "delivered")).toBeNull();
+    });
   });
 
   // ── courierStatusLabel ─────────────────────────────────────────────────
@@ -89,6 +118,15 @@ describe("courier-shared", () => {
     it("returns raw status for unknown provider", async () => {
       const { courierStatusLabel } = await load();
       expect(courierStatusLabel("fedex", "shipped")).toBe("shipped");
+    });
+
+    it("labels our stored internal canonical statuses", async () => {
+      const { courierStatusLabel } = await load();
+      // These are what we persist in shipments.courier_status now.
+      expect(courierStatusLabel("steadfast", "booked")).toBe("Booked");
+      expect(courierStatusLabel("pathao", "out_for_delivery")).toBe("Out for delivery");
+      expect(courierStatusLabel("steadfast", "returned_to_merchant")).toBe("Returned to merchant");
+      expect(courierStatusLabel("steadfast", "on_hold")).toBe("On hold");
     });
   });
 

@@ -171,4 +171,137 @@ BEGIN
   IF (v->>'total')::int <> 3 THEN RAISE EXCEPTION 'FAIL: total after offset, got %', v->>'total'; END IF;
 END $$;
 
+-- ============================================================
+-- §courier — shipment lifecycle → order status progression
+-- ============================================================
+-- Regression coverage for the #1 fix: SteadFast emits no pickup signal, so an
+-- order must be able to go courier_booked → delivered directly; Pathao reports
+-- transit, so in_transit → shipped → delivered; returned_to_merchant is a no-op
+-- (admin decides). Courier RPCs need only orders rows (no items/products).
+
+INSERT INTO public.orders (order_no, guest_token_hash, customer_name, customer_phone,
+  ship_district, ship_zone, ship_address, subtotal, discount, shipping_fee, total,
+  payment_method, status, idempotency_key)
+VALUES
+  ('NGR-TEST-STF1', repeat('a',64), 'Test Cust', '01700000000', 'Dhaka', 'dhaka',
+   'Rd 1', 1000, 0, 0, 1000, 'cod', 'ready_to_ship', 'idem-stf1'),
+  ('NGR-TEST-PTH1', repeat('b',64), 'Test Cust', '01700000000', 'Dhaka', 'dhaka',
+   'Rd 1', 1000, 0, 0, 1000, 'cod', 'ready_to_ship', 'idem-pth1'),
+  ('NGR-TEST-RET1', repeat('c',64), 'Test Cust', '01700000000', 'Dhaka', 'dhaka',
+   'Rd 1', 1000, 0, 0, 1000, 'cod', 'ready_to_ship', 'idem-ret1'),
+  ('NGR-TEST-STF2', repeat('d',64), 'Test Cust', '01700000000', 'Dhaka', 'dhaka',
+   'Rd 1', 1000, 0, 0, 1000, 'cod', 'ready_to_ship', 'idem-stf2');
+
+-- §courier-1 — SteadFast direct: courier_booked → delivered (THE #1 regression)
+DO $$
+DECLARE v_owner uuid := '00000000-0000-0000-0000-0000000000a1';
+        v_oid uuid; v_sid uuid; v jsonb; v_status text;
+BEGIN
+  SELECT id INTO v_oid FROM public.orders WHERE order_no = 'NGR-TEST-STF1';
+  v := api.create_shipment_attempt(p_actor := v_owner, p_order_id := v_oid,
+        p_provider := 'steadfast', p_collection_mode := 'cod', p_cod_amount := 1000,
+        p_request_hash := 'h-stf1');
+  v_sid := (v->>'shipment_id')::uuid;
+  PERFORM api.mark_shipment_booking_success(v_sid, 'CID-1', 'TRK-1', '{}'::jsonb);
+
+  SELECT status INTO v_status FROM public.orders WHERE id = v_oid;
+  IF v_status <> 'courier_booked' THEN
+    RAISE EXCEPTION 'FAIL: after booking expected courier_booked, got %', v_status;
+  END IF;
+
+  -- SteadFast reports delivered with NO prior shipped signal.
+  v := api.update_shipment_status(v_sid, 'delivered', '{}'::jsonb, 'webhook');
+  IF (v->>'order_transitioned')::boolean IS NOT TRUE THEN
+    RAISE EXCEPTION 'FAIL: delivered from courier_booked was not applied';
+  END IF;
+  SELECT status INTO v_status FROM public.orders WHERE id = v_oid;
+  IF v_status <> 'delivered' THEN
+    RAISE EXCEPTION 'FAIL: expected delivered direct from courier_booked, got %', v_status;
+  END IF;
+  IF (SELECT count(*) FROM public.notification_events
+        WHERE order_id = v_oid AND event_type = 'shipment_delivered') <> 1 THEN
+    RAISE EXCEPTION 'FAIL: missing shipment_delivered notification';
+  END IF;
+END $$;
+
+-- §courier-2 — Pathao normal: in_transit → shipped → delivered
+DO $$
+DECLARE v_owner uuid := '00000000-0000-0000-0000-0000000000a1';
+        v_oid uuid; v_sid uuid; v jsonb; v_status text;
+BEGIN
+  SELECT id INTO v_oid FROM public.orders WHERE order_no = 'NGR-TEST-PTH1';
+  v := api.create_shipment_attempt(p_actor := v_owner, p_order_id := v_oid,
+        p_provider := 'pathao', p_collection_mode := 'cod', p_cod_amount := 1000,
+        p_request_hash := 'h-pth1');
+  v_sid := (v->>'shipment_id')::uuid;
+  PERFORM api.mark_shipment_booking_success(v_sid, 'CID-2', 'TRK-2', '{}'::jsonb);
+
+  v := api.update_shipment_status(v_sid, 'in_transit', '{}'::jsonb, 'webhook');
+  SELECT status INTO v_status FROM public.orders WHERE id = v_oid;
+  IF v_status <> 'shipped' THEN
+    RAISE EXCEPTION 'FAIL: in_transit expected shipped, got %', v_status;
+  END IF;
+
+  v := api.update_shipment_status(v_sid, 'delivered', '{}'::jsonb, 'webhook');
+  SELECT status INTO v_status FROM public.orders WHERE id = v_oid;
+  IF v_status <> 'delivered' THEN
+    RAISE EXCEPTION 'FAIL: delivered after shipped expected delivered, got %', v_status;
+  END IF;
+END $$;
+
+-- §courier-3 — returned_to_merchant does NOT auto-transition the order
+DO $$
+DECLARE v_owner uuid := '00000000-0000-0000-0000-0000000000a1';
+        v_oid uuid; v_sid uuid; v jsonb; v_status text;
+BEGIN
+  SELECT id INTO v_oid FROM public.orders WHERE order_no = 'NGR-TEST-RET1';
+  v := api.create_shipment_attempt(p_actor := v_owner, p_order_id := v_oid,
+        p_provider := 'steadfast', p_collection_mode := 'cod', p_cod_amount := 1000,
+        p_request_hash := 'h-ret1');
+  v_sid := (v->>'shipment_id')::uuid;
+  PERFORM api.mark_shipment_booking_success(v_sid, 'CID-3', 'TRK-3', '{}'::jsonb);
+
+  v := api.update_shipment_status(v_sid, 'returned_to_merchant', '{}'::jsonb, 'webhook');
+  IF (v->>'order_transitioned')::boolean IS NOT FALSE THEN
+    RAISE EXCEPTION 'FAIL: returned_to_merchant should not auto-transition';
+  END IF;
+  SELECT status INTO v_status FROM public.orders WHERE id = v_oid;
+  IF v_status <> 'courier_booked' THEN
+    RAISE EXCEPTION 'FAIL: returned_to_merchant changed order to %, expected courier_booked', v_status;
+  END IF;
+END $$;
+
+-- §courier-4 — failed delivery from shipped → delivery_failed
+DO $$
+DECLARE v_owner uuid := '00000000-0000-0000-0000-0000000000a1';
+        v_oid uuid; v_sid uuid; v jsonb; v_status text;
+BEGIN
+  SELECT id INTO v_oid FROM public.orders WHERE order_no = 'NGR-TEST-STF2';
+  v := api.create_shipment_attempt(p_actor := v_owner, p_order_id := v_oid,
+        p_provider := 'steadfast', p_collection_mode := 'cod', p_cod_amount := 1000,
+        p_request_hash := 'h-stf2');
+  v_sid := (v->>'shipment_id')::uuid;
+  PERFORM api.mark_shipment_booking_success(v_sid, 'CID-4', 'TRK-4', '{}'::jsonb);
+
+  PERFORM api.update_shipment_status(v_sid, 'in_transit', '{}'::jsonb, 'webhook');
+  v := api.update_shipment_status(v_sid, 'failed', '{}'::jsonb, 'webhook');
+  SELECT status INTO v_status FROM public.orders WHERE id = v_oid;
+  IF v_status <> 'delivery_failed' THEN
+    RAISE EXCEPTION 'FAIL: failed expected delivery_failed, got %', v_status;
+  END IF;
+END $$;
+
+-- §courier-5 — grant posture: courier lifecycle RPCs are service-role only
+DO $$
+DECLARE r text;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['anon','authenticated'] LOOP
+    IF has_function_privilege(r, 'api.create_shipment_attempt(uuid,uuid,text,text,numeric,text)', 'EXECUTE')
+       OR has_function_privilege(r, 'api.update_shipment_status(uuid,text,jsonb,text)', 'EXECUTE')
+       OR has_function_privilege(r, 'api.mark_shipment_booking_success(uuid,text,text,jsonb)', 'EXECUTE') THEN
+      RAISE EXCEPTION 'FAIL: % should not hold EXECUTE on courier lifecycle RPCs', r;
+    END IF;
+  END LOOP;
+END $$;
+
 ROLLBACK;

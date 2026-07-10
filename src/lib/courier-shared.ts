@@ -55,27 +55,63 @@ export const PATHAO_STATUS_LABELS: Record<string, string> = {
   Cancelled: "Cancelled",
 };
 
-/** Map raw provider status to internal shipment status. */
+/** Friendly labels for our canonical INTERNAL shipment statuses (what we store). */
+export const INTERNAL_STATUS_LABELS: Record<string, string> = {
+  booked: "Booked",
+  picked_up: "Picked up",
+  in_transit: "In transit",
+  out_for_delivery: "Out for delivery",
+  delivered: "Delivered",
+  failed: "Delivery failed",
+  delivery_failed: "Delivery failed",
+  returned_to_merchant: "Returned to merchant",
+  on_hold: "On hold",
+  in_review: "In review",
+  pending: "Pending",
+};
+
+/**
+ * Map a raw provider status to our canonical INTERNAL shipment status.
+ *
+ * Returns null only for truly unknown statuses (logged, no state change). Known
+ * but non-transitioning statuses (on_hold / in_review / pending) are returned so
+ * they get RECORDED as shipment events; api.update_shipment_status decides which
+ * ones move the order (picked_up / in_transit / out_for_delivery → shipped;
+ * delivered; failed → delivery_failed; returned_to_merchant → admin decides).
+ *
+ * SteadFast has no pickup signal — its parcels go courier_booked → delivered
+ * directly (the RPC permits that), which is why callers must never assume a
+ * "shipped" event will precede "delivered".
+ */
 export function mapCourierStatusToInternal(provider: string, rawStatus: string): string | null {
   const normalized = rawStatus.toLowerCase().replace(/[\s_-]+/g, "_");
 
   if (provider === "steadfast") {
     switch (normalized) {
       case "delivered":
+      case "partial_delivered":
         return "delivered";
       case "in_transit":
         return "in_transit";
       case "cancelled":
       case "returned":
         return "returned_to_merchant";
+      case "hold":
+      case "on_hold":
+        return "on_hold";
+      case "in_review":
+        return "in_review";
+      case "pending":
+        return "pending";
       default:
-        return null; // unknown — logged, no order transition
+        return null; // unknown / *_approval_pending — logged, no transition
     }
   }
 
   if (provider === "pathao") {
     switch (normalized) {
       case "picked_up":
+      case "picked":
         return "picked_up";
       case "in_transit":
       case "at_the_sorting_hub":
@@ -83,22 +119,31 @@ export function mapCourierStatusToInternal(provider: string, rawStatus: string):
       case "out_for_delivery":
         return "out_for_delivery";
       case "delivered":
+      case "partial_delivery":
         return "delivered";
       case "return":
       case "returned_to_merchant":
-        return "returned_to_merchant";
       case "cancelled":
         return "returned_to_merchant";
+      case "hold":
+      case "on_hold":
+        return "on_hold";
+      case "pending":
+      case "pickup_assigned":
+      case "pickup_requested":
+        return "pending";
       default:
         return null;
     }
   }
 
+  // manual (and any other) provider: no automatic status feed
   return null;
 }
 
-/** Get a friendly label for any courier status. */
+/** Get a friendly label for a shipment status (internal canonical or raw provider). */
 export function courierStatusLabel(provider: string, rawStatus: string): string {
+  if (INTERNAL_STATUS_LABELS[rawStatus]) return INTERNAL_STATUS_LABELS[rawStatus];
   if (provider === "steadfast") return STEADFAST_STATUS_LABELS[rawStatus] ?? rawStatus;
   if (provider === "pathao") return PATHAO_STATUS_LABELS[rawStatus] ?? rawStatus;
   return rawStatus;
