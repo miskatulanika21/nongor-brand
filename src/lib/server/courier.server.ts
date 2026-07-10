@@ -301,6 +301,30 @@ export async function recordWebhookEvent(
   return { isNew: result.is_new };
 }
 
+/**
+ * Finalize a recorded webhook event (#9): mark processed on success, or record
+ * the error (leaving processed=false) so a failed event is visible/retriable.
+ * Best-effort — never throws into the webhook handler's response path.
+ */
+export async function markWebhookEventProcessed(
+  provider: string,
+  eventId: string,
+  error: string | null,
+): Promise<void> {
+  try {
+    await rpc<void>("set_webhook_event_processed", {
+      p_provider: provider,
+      p_event_id: eventId,
+      p_error: error,
+    });
+  } catch (err) {
+    safeServerLog("error", "Failed to mark webhook event processed", {
+      provider,
+      error: err instanceof Error ? err.message : "unknown",
+    });
+  }
+}
+
 // ── Reconciliation ───────────────────────────────────────────────────────────
 
 export async function updateReconciliation(

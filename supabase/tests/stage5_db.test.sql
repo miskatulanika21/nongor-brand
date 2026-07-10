@@ -304,4 +304,73 @@ BEGIN
   END LOOP;
 END $$;
 
+-- ============================================================
+-- §webhook — event idempotency, processed/error, empty-reference guard
+-- ============================================================
+DO $$
+DECLARE v jsonb;
+BEGIN
+  -- record_webhook_event idempotency (#2 dedup relies on this)
+  v := api.record_webhook_event('steadfast', 'evt-1', '{"a":1}'::jsonb);
+  IF (v->>'is_new')::boolean IS NOT TRUE THEN RAISE EXCEPTION 'FAIL: first record not new'; END IF;
+  v := api.record_webhook_event('steadfast', 'evt-1', '{"a":1}'::jsonb);
+  IF (v->>'is_new')::boolean IS NOT FALSE THEN RAISE EXCEPTION 'FAIL: duplicate record marked new'; END IF;
+
+  -- set_webhook_event_processed: success clears error; error leaves processed=false (#9)
+  PERFORM api.set_webhook_event_processed('steadfast', 'evt-1', NULL);
+  IF NOT (SELECT processed FROM public.webhook_events WHERE provider='steadfast' AND event_id='evt-1') THEN
+    RAISE EXCEPTION 'FAIL: processed not set true'; END IF;
+  IF (SELECT error FROM public.webhook_events WHERE provider='steadfast' AND event_id='evt-1') IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL: error should be null on success'; END IF;
+  PERFORM api.set_webhook_event_processed('steadfast', 'evt-1', 'boom');
+  IF (SELECT processed FROM public.webhook_events WHERE provider='steadfast' AND event_id='evt-1') THEN
+    RAISE EXCEPTION 'FAIL: processed should be false on recorded error'; END IF;
+  IF (SELECT error FROM public.webhook_events WHERE provider='steadfast' AND event_id='evt-1') <> 'boom' THEN
+    RAISE EXCEPTION 'FAIL: error not recorded'; END IF;
+END $$;
+
+-- empty-reference guard (#8): automated provider must carry a reference; manual exempt
+INSERT INTO public.orders (order_no, guest_token_hash, customer_name, customer_phone,
+  ship_district, ship_zone, ship_address, subtotal, discount, shipping_fee, total,
+  payment_method, status, idempotency_key) VALUES
+  ('NGR-TEST-EMP1', repeat('e',64), 'C', '01700000000', 'Dhaka','dhaka','Rd', 1000,0,0,1000,'cod','ready_to_ship','idem-emp1'),
+  ('NGR-TEST-MAN1', repeat('f',64), 'C', '01700000000', 'Dhaka','dhaka','Rd', 1000,0,0,1000,'cod','ready_to_ship','idem-man1');
+
+DO $$
+DECLARE v_owner uuid := '00000000-0000-0000-0000-0000000000a1';
+        oid uuid; sid uuid; v jsonb; v_raised boolean := false; st text;
+BEGIN
+  -- automated provider (steadfast) with empty reference → rejected, order unchanged
+  SELECT id INTO oid FROM public.orders WHERE order_no='NGR-TEST-EMP1';
+  v := api.create_shipment_attempt(v_owner, oid, 'steadfast', 'cod', 1000, 'he1'); sid := (v->>'shipment_id')::uuid;
+  BEGIN
+    PERFORM api.mark_shipment_booking_success(sid, '', '', '{}'::jsonb);
+  EXCEPTION WHEN OTHERS THEN
+    v_raised := true;
+    IF SQLERRM <> 'empty_courier_reference' THEN RAISE EXCEPTION 'FAIL: wrong code %', SQLERRM; END IF;
+  END;
+  IF NOT v_raised THEN RAISE EXCEPTION 'FAIL: empty steadfast reference accepted'; END IF;
+  SELECT status INTO st FROM public.orders WHERE id=oid;
+  IF st <> 'ready_to_ship' THEN RAISE EXCEPTION 'FAIL: order moved on empty ref: %', st; END IF;
+
+  -- manual provider with a tracking code (empty consignment) → allowed
+  SELECT id INTO oid FROM public.orders WHERE order_no='NGR-TEST-MAN1';
+  v := api.create_shipment_attempt(v_owner, oid, 'manual', 'cod', 1000, 'hm1'); sid := (v->>'shipment_id')::uuid;
+  PERFORM api.mark_shipment_booking_success(sid, '', 'MANUAL-TRK-1', '{}'::jsonb);
+  SELECT status INTO st FROM public.orders WHERE id=oid;
+  IF st <> 'courier_booked' THEN RAISE EXCEPTION 'FAIL: manual booking did not book: %', st; END IF;
+END $$;
+
+-- grant posture: webhook RPCs are service-role only
+DO $$
+DECLARE r text;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['anon','authenticated'] LOOP
+    IF has_function_privilege(r, 'api.record_webhook_event(text,text,jsonb)', 'EXECUTE')
+       OR has_function_privilege(r, 'api.set_webhook_event_processed(text,text,text)', 'EXECUTE') THEN
+      RAISE EXCEPTION 'FAIL: % should not hold EXECUTE on webhook RPCs', r;
+    END IF;
+  END LOOP;
+END $$;
+
 ROLLBACK;

@@ -130,6 +130,43 @@ describe("courier-shared", () => {
     });
   });
 
+  // ── webhookEventId (idempotency key) ───────────────────────────────────
+
+  describe("webhookEventId", () => {
+    it("is deterministic for the same provider + raw body", async () => {
+      const { webhookEventId } = await load();
+      const body = '{"consignment_id":"CID1","status":"delivered"}';
+      const a = await webhookEventId("steadfast", body);
+      const b = await webhookEventId("steadfast", body);
+      expect(a).toBe(b);
+      expect(a.startsWith("steadfast:")).toBe(true);
+    });
+
+    it("differs when the body differs (distinct real events process)", async () => {
+      const { webhookEventId } = await load();
+      const a = await webhookEventId("steadfast", '{"status":"delivered"}');
+      const b = await webhookEventId("steadfast", '{"status":"in_transit"}');
+      expect(a).not.toBe(b);
+    });
+
+    it("differs by provider even for identical bodies", async () => {
+      const { webhookEventId } = await load();
+      const body = '{"consignment_id":"CID1"}';
+      expect(await webhookEventId("steadfast", body)).not.toBe(
+        await webhookEventId("pathao", body),
+      );
+    });
+
+    it("does not embed a clock (two calls far apart still match)", async () => {
+      const { webhookEventId } = await load();
+      const body = '{"x":1}';
+      const a = await webhookEventId("pathao", body);
+      await new Promise((r) => setTimeout(r, 5));
+      const b = await webhookEventId("pathao", body);
+      expect(a).toBe(b);
+    });
+  });
+
   // ── computeCodAmount ───────────────────────────────────────────────────
 
   describe("computeCodAmount", () => {

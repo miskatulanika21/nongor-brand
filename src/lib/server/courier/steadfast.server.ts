@@ -82,14 +82,22 @@ export const steadfastAdapter: CourierAdapter = {
       const body = await resp.json();
 
       if (resp.ok && body?.status === 200) {
-        return {
-          success: true,
-          consignmentId: String(body.consignment?.consignment_id ?? ""),
-          trackingCode: String(
-            body.consignment?.tracking_code ?? body.consignment?.consignment_id ?? "",
-          ),
-          rawResponse: body,
-        };
+        const consignmentId = String(body.consignment?.consignment_id ?? "");
+        const trackingCode = String(
+          body.consignment?.tracking_code ?? body.consignment?.consignment_id ?? "",
+        );
+        // Guard against a "success" response that carries no usable reference —
+        // booking it would flip the order to courier_booked with nothing to track.
+        if (!consignmentId && !trackingCode) {
+          return {
+            success: false,
+            consignmentId: null,
+            trackingCode: null,
+            rawResponse: body,
+            error: "SteadFast returned success but no consignment id / tracking code",
+          };
+        }
+        return { success: true, consignmentId, trackingCode, rawResponse: body };
       }
 
       return {
