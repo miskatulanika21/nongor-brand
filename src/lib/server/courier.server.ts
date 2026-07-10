@@ -30,7 +30,11 @@ export class CourierError extends Error {
 
 async function rpc<T>(fn: string, params: Record<string, unknown>): Promise<T> {
   const admin = createAdminSupabaseClient();
-  const { data, error } = await admin.rpc(fn, params);
+  // Courier RPCs live in the `api` schema (REVOKE-d from anon/authenticated).
+  // The admin client defaults to `public`, so this MUST be schema("api") — the
+  // same convention orders.server.ts uses. (Without it every courier call fails
+  // with "function public.<fn> not found".)
+  const { data, error } = await admin.schema("api").rpc(fn, params);
   if (error) {
     safeServerLog("error", `RPC ${fn} failed`, { code: error.code, message: error.message });
     // Try to extract our stable error code from the message
