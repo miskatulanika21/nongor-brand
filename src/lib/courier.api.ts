@@ -1,10 +1,12 @@
 /**
  * Courier admin API — createServerFn handlers for courier booking/tracking.
  *
- * Reads require `orders.view`; writes go through guardAdminWrite with
- * `orders.manage` permission (CSRF + permission + MFA step-up + rate limit +
- * denial audit). Delegates to the service-role repository (courier.server.ts),
- * which calls the REVOKE-d api.* courier RPCs.
+ * Reads require `courier.view`; writes go through guardAdminWrite with
+ * `courier.manage` permission (CSRF + permission + MFA step-up + rate limit +
+ * denial audit). Using the granular courier permissions (not orders.*) keeps the
+ * API in lockstep with the nav link (also courier.view) and lets courier work be
+ * delegated without granting full order management. Delegates to the service-role
+ * repository (courier.server.ts), which calls the REVOKE-d api.* courier RPCs.
  *
  * Server-only modules are imported INSIDE handler closures so they never enter
  * the client bundle (same pattern as orders.api.ts / catalog-admin.api.ts).
@@ -41,7 +43,7 @@ export const listShipmentsFn = createServerFn({ method: "GET" })
     const { setNoStore } = await import("@/lib/server/admin-guard.server");
     await setNoStore();
     const { requirePermission } = await import("@/lib/server/rbac.server");
-    const authz = await requirePermission("orders.view");
+    const authz = await requirePermission("courier.view");
     if (!authz.ok) return { success: false as const, error: "Not authorized.", shipments: [] };
 
     const { listShipments } = await import("@/lib/server/courier.server");
@@ -57,7 +59,7 @@ export const listCourierProvidersFn = createServerFn({ method: "GET" }).handler(
   const { setNoStore } = await import("@/lib/server/admin-guard.server");
   await setNoStore();
   const { requirePermission } = await import("@/lib/server/rbac.server");
-  const authz = await requirePermission("orders.view");
+  const authz = await requirePermission("courier.view");
   if (!authz.ok) return { success: false as const, error: "Not authorized.", providers: [] };
 
   const { listCourierProviders } = await import("@/lib/server/courier.server");
@@ -75,7 +77,7 @@ export const bookCourierFn = createServerFn({ method: "POST" })
   .validator(bookCourierSchema)
   .handler(async ({ data }) => {
     const { guardAdminWrite } = await import("@/lib/server/admin-guard.server");
-    const g = await guardAdminWrite("orders.manage", "bookCourier");
+    const g = await guardAdminWrite("courier.manage", "bookCourier");
     if (!g.ok) return { success: false as const, error: g.error };
 
     // Fetch the order to get booking data
@@ -114,7 +116,7 @@ export const cancelShipmentFn = createServerFn({ method: "POST" })
   .validator(cancelShipmentSchema)
   .handler(async ({ data }) => {
     const { guardAdminWrite } = await import("@/lib/server/admin-guard.server");
-    const g = await guardAdminWrite("orders.manage", "cancelShipment");
+    const g = await guardAdminWrite("courier.manage", "cancelShipment");
     if (!g.ok) return { success: false as const, error: g.error };
 
     const { cancelShipment } = await import("@/lib/server/courier.server");
@@ -132,7 +134,7 @@ export const resolveStaleAttemptFn = createServerFn({ method: "POST" })
   .validator(resolveStaleSchema)
   .handler(async ({ data }) => {
     const { guardAdminWrite } = await import("@/lib/server/admin-guard.server");
-    const g = await guardAdminWrite("orders.manage", "resolveStaleAttempt");
+    const g = await guardAdminWrite("courier.manage", "resolveStaleAttempt");
     if (!g.ok) return { success: false as const, error: g.error };
 
     const { resolveStaleAttempt } = await import("@/lib/server/courier.server");
@@ -150,7 +152,7 @@ export const pollShipmentStatusFn = createServerFn({ method: "POST" })
   .validator(pollStatusSchema)
   .handler(async ({ data }) => {
     const { guardAdminWrite } = await import("@/lib/server/admin-guard.server");
-    const g = await guardAdminWrite("orders.manage", "pollShipmentStatus");
+    const g = await guardAdminWrite("courier.manage", "pollShipmentStatus");
     if (!g.ok) return { success: false as const, error: g.error };
 
     const { pollShipmentStatus } = await import("@/lib/server/courier.server");
@@ -168,7 +170,7 @@ export const updateReconciliationFn = createServerFn({ method: "POST" })
   .validator(reconciliationSchema)
   .handler(async ({ data }) => {
     const { guardAdminWrite } = await import("@/lib/server/admin-guard.server");
-    const g = await guardAdminWrite("orders.manage", "updateReconciliation");
+    const g = await guardAdminWrite("courier.manage", "updateReconciliation");
     if (!g.ok) return { success: false as const, error: g.error };
 
     const { updateReconciliation } = await import("@/lib/server/courier.server");

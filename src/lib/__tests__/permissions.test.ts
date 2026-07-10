@@ -24,6 +24,7 @@ describe("permission registry", () => {
   it("staff has operational permissions only", () => {
     expect(roleHasPermission("staff", "orders.view")).toBe(true);
     expect(roleHasPermission("staff", "orders.manage")).toBe(true);
+    expect(roleHasPermission("staff", "courier.view")).toBe(true);
     expect(roleHasPermission("staff", "courier.manage")).toBe(true);
     expect(roleHasPermission("staff", "inventory.manage")).toBe(true);
     // Not allowed for staff
