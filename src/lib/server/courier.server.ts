@@ -267,13 +267,21 @@ export async function pollShipmentStatus(
   const adapter = getCourierAdapter(ship.provider);
   const result = await adapter.checkStatus(ship.consignment_id);
 
-  // Record the polled status
-  await rpc<unknown>("update_shipment_status", {
-    p_shipment_id: shipmentId,
-    p_status: result.status,
-    p_raw_payload: result.rawResponse ?? null,
-    p_source: "poll",
-  });
+  // Normalize the raw provider status to our canonical internal status BEFORE
+  // recording — identical to the webhook path. Passing the raw status (as the
+  // old code did) meant update_shipment_status never matched its CASE arms, so a
+  // polled 'Delivered'/'In Transit' recorded an inconsistent courier_status and
+  // never advanced the order. Unknown statuses are skipped (logged upstream).
+  const { mapCourierStatusToInternal } = await import("@/lib/courier-shared");
+  const internalStatus = mapCourierStatusToInternal(ship.provider, result.status);
+  if (internalStatus) {
+    await rpc<unknown>("update_shipment_status", {
+      p_shipment_id: shipmentId,
+      p_status: internalStatus,
+      p_raw_payload: result.rawResponse ?? null,
+      p_source: "poll",
+    });
+  }
 
   return { status: result.status };
 }

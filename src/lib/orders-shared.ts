@@ -190,7 +190,9 @@ export const ALLOWED_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = 
   confirmed: ["processing", "cancelled"],
   processing: ["ready_to_ship", "cancelled"],
   ready_to_ship: ["courier_booked", "shipped", "cancelled"],
-  courier_booked: ["shipped", "cancelled"],
+  // A courier that skips the pickup signal (e.g. SteadFast) may report delivered
+  // straight from courier_booked; admins can also complete a manual-courier order.
+  courier_booked: ["shipped", "delivered", "delivery_failed", "cancelled"],
   shipped: ["delivered", "delivery_failed"],
   delivered: ["completed", "returned"],
   completed: ["returned"],
@@ -306,8 +308,12 @@ export function nextActions(status: OrderStatus): OrderAction[] {
         CANCEL_ACTION,
       ];
     case "courier_booked":
+      // "Mark delivered" lets an admin complete an order whose courier never sent
+      // a shipped/delivered webhook (manual courier, or SteadFast which skips the
+      // pickup signal). "Mark shipped" remains for couriers that do report pickup.
       return [
         { key: "to_shipped", label: "Mark shipped", rpc: "transition", toStatus: "shipped" },
+        { key: "to_delivered", label: "Mark delivered", rpc: "transition", toStatus: "delivered" },
         CANCEL_ACTION,
       ];
     case "shipped":
