@@ -27,6 +27,9 @@ describe("permission registry", () => {
     expect(roleHasPermission("staff", "courier.view")).toBe(true);
     expect(roleHasPermission("staff", "courier.manage")).toBe(true);
     expect(roleHasPermission("staff", "inventory.manage")).toBe(true);
+    // Staff can read the contact inbox but not triage it.
+    expect(roleHasPermission("staff", "messages.view")).toBe(true);
+    expect(roleHasPermission("staff", "messages.manage")).toBe(false);
     // Not allowed for staff
     expect(roleHasPermission("staff", "staff.view")).toBe(false);
     expect(roleHasPermission("staff", "settings.manage")).toBe(false);
@@ -40,6 +43,7 @@ describe("permission registry", () => {
     expect(roleHasPermission("admin", "settings.manage")).toBe(true);
     expect(roleHasPermission("admin", "staff.view")).toBe(true);
     expect(roleHasPermission("admin", "staff.manage")).toBe(true);
+    expect(roleHasPermission("admin", "messages.manage")).toBe(true);
     // Owner-only
     expect(roleHasPermission("admin", "audit.view")).toBe(false);
     expect(roleHasPermission("admin", "security.manage")).toBe(false);

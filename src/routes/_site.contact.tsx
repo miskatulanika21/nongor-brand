@@ -1,6 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { BRAND } from "@/lib/brand";
+import { submitContactFn } from "@/lib/contact.api";
+import { contactSubmitSchema, CONTACT_REASONS } from "@/lib/contact-shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,9 +29,6 @@ import {
   Sparkles,
   ArrowRight,
 } from "lucide-react";
-
-// TODO(backend): wire this form to a contact API / Supabase table.
-// Currently the submit handler is a client-only placeholder.
 
 export const Route = createFileRoute("/_site/contact")({
   head: () => ({
@@ -71,7 +70,7 @@ const whatsappHref = `https://wa.me/${BRAND.whatsapp}?text=${encodeURIComponent(
   "Hi Nongorr Studio! I need some help.",
 )}`;
 
-const reasons = ["Order Help", "Size Help", "Payment Help", "Return Help", "Collaboration"];
+const reasons = CONTACT_REASONS;
 
 const trustBadges = [
   "Size guidance",
@@ -220,30 +219,50 @@ function ContactForm() {
   const [reason, setReason] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [sent, setSent] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (submitting) return;
+    setServerError(null);
+
     const fd = new FormData(e.currentTarget);
-    const name = (fd.get("name") as string)?.trim() ?? "";
-    const phone = (fd.get("phone") as string)?.trim() ?? "";
-    const email = (fd.get("email") as string)?.trim() ?? "";
-    const message = (fd.get("message") as string)?.trim() ?? "";
+    const input = {
+      name: ((fd.get("name") as string) ?? "").trim(),
+      phone: ((fd.get("phone") as string) ?? "").trim(),
+      email: ((fd.get("email") as string) ?? "").trim(),
+      reason,
+      orderNumber: ((fd.get("orderNumber") as string) ?? "").trim(),
+      message: ((fd.get("message") as string) ?? "").trim(),
+    };
 
-    const next: Record<string, string> = {};
-    if (!name) next.name = "Please enter your full name.";
-    if (!phone) next.phone = "Phone number is required.";
-    else if (!/^01[3-9]\d{8}$/.test(phone.replace(/[\s-]/g, "")))
-      next.phone = "Enter a valid Bangladesh number (e.g. 01XXXXXXXXX).";
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-      next.email = "Enter a valid email address.";
-    if (!reason) next.reason = "Please choose a contact reason.";
-    if (!message) next.message = "Please write a short message.";
+    // Client-side validation via the shared schema (server re-validates).
+    const parsed = contactSubmitSchema.safeParse(input);
+    if (!parsed.success) {
+      const next: Record<string, string> = {};
+      for (const issue of parsed.error.issues) {
+        const key = String(issue.path[0] ?? "");
+        if (key && !next[key]) next[key] = issue.message;
+      }
+      setErrors(next);
+      return;
+    }
+    setErrors({});
 
-    setErrors(next);
-    if (Object.keys(next).length > 0) return;
-
-    // TODO(backend): send { name, phone, email, reason, orderNumber, message } to API.
-    setSent(true);
+    setSubmitting(true);
+    try {
+      const res = await submitContactFn({ data: parsed.data });
+      if (res.success) {
+        setSent(true);
+      } else {
+        setServerError(res.error ?? "Could not send your message. Please try again.");
+      }
+    } catch {
+      setServerError("Could not send your message. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   if (sent) {
@@ -252,10 +271,10 @@ function ContactForm() {
         <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-primary/10 text-primary">
           <CheckCircle2 className="h-8 w-8" />
         </div>
-        <h2 className="mt-5 font-display text-2xl text-foreground">Support request prepared</h2>
+        <h2 className="mt-5 font-display text-2xl text-foreground">Message sent</h2>
         <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-          This demo form did not send your message. Contact Nongorr through WhatsApp or email to
-          submit your request.
+          Thank you for reaching out. Our boutique team will review your message and reply soon. For
+          anything urgent, message us on WhatsApp.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           <Button asChild variant="secondary">
@@ -263,16 +282,12 @@ function ContactForm() {
               <MessageCircle className="mr-2 h-4 w-4" /> Chat on WhatsApp
             </a>
           </Button>
-          <Button asChild variant="outline">
-            <a href={`mailto:${BRAND.email}`}>
-              <Mail className="mr-2 h-4 w-4" /> Email us
-            </a>
-          </Button>
           <Button
             variant="ghost"
             onClick={() => {
               setSent(false);
               setErrors({});
+              setReason("");
             }}
           >
             Send another message
@@ -331,15 +346,18 @@ function ContactForm() {
         <Textarea name="message" rows={5} placeholder="Write your message here…" maxLength={1000} />
       </Field>
 
+      {serverError && <p className="text-sm text-destructive">{serverError}</p>}
+
       <Button
         type="submit"
         size="lg"
+        disabled={submitting}
         className="w-full bg-gradient-to-r from-primary to-primary/80 transition-all hover:shadow-card"
       >
-        <Send className="mr-2 h-4 w-4" /> Prepare Support Request
+        <Send className="mr-2 h-4 w-4" /> {submitting ? "Sending…" : "Send Message"}
       </Button>
       <p className="text-center text-xs text-muted-foreground">
-        This demo form does not send your message to a server. Use WhatsApp or email to reach us.
+        We reply during working hours. For urgent help, reach us on WhatsApp or email.
       </p>
     </form>
   );
