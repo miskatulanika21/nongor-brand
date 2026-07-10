@@ -55,72 +55,77 @@ export const Route = createFileRoute("/api/webhook/steadfast")({
           });
         }
 
-        // ── Body limit ──────────────────────────────────────────────────
-        const contentLength = Number(request.headers.get("content-length") ?? "0");
-        if (contentLength > 65536) {
-          return new Response(JSON.stringify({ message: "OK" }), {
+        const okResponse = () =>
+          new Response(JSON.stringify({ message: "OK" }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           });
+
+        // ── Body limit ──────────────────────────────────────────────────
+        // content-length is only a cheap fast-path reject (it can be absent or
+        // spoofed); the real cap is enforced on the actually-read body text.
+        if (Number(request.headers.get("content-length") ?? "0") > 65536) {
+          return okResponse();
+        }
+        const rawText = await request.text();
+        if (rawText.length > 65536) {
+          return okResponse();
         }
 
         // ── Parse body ──────────────────────────────────────────────────
         let body: Record<string, unknown>;
         try {
-          body = (await request.json()) as Record<string, unknown>;
+          body = JSON.parse(rawText) as Record<string, unknown>;
         } catch {
-          return new Response(JSON.stringify({ message: "OK" }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          });
+          return okResponse();
         }
 
-        // ── Process ─────────────────────────────────────────────────────
+        // ── Idempotent processing ───────────────────────────────────────
         try {
-          const { recordWebhookEvent, findShipmentByConsignment, updateShipmentStatus } =
-            await import("@/lib/server/courier.server");
-          const { mapCourierStatusToInternal } = await import("@/lib/courier-shared");
+          const { webhookEventId, mapCourierStatusToInternal } =
+            await import("@/lib/courier-shared");
+          const {
+            recordWebhookEvent,
+            markWebhookEventProcessed,
+            findShipmentByConsignment,
+            updateShipmentStatus,
+          } = await import("@/lib/server/courier.server");
 
-          // SteadFast sends: { consignment_id, status, invoice, ... }
-          const consignmentId = String(body.consignment_id ?? "");
-          const rawStatus = String(body.status ?? "");
-          const eventId = `steadfast-${consignmentId}-${rawStatus}-${Date.now()}`;
-
-          // Idempotent event recording
+          // Stable idempotency key = SHA-256 of the raw body (no clock), so a
+          // byte-identical provider retry is deduped instead of reprocessed.
+          const eventId = await webhookEventId("steadfast", rawText);
           const { isNew } = await recordWebhookEvent("steadfast", eventId, body);
-          if (!isNew) {
-            return new Response(JSON.stringify({ message: "OK" }), {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
+          if (isNew) {
+            let procError: string | null = null;
+            try {
+              // SteadFast sends: { consignment_id, status, invoice, ... }
+              const consignmentId = String(body.consignment_id ?? "");
+              const rawStatus = String(body.status ?? "");
+              if (consignmentId) {
+                const shipment = await findShipmentByConsignment("steadfast", consignmentId);
+                if (shipment) {
+                  const internalStatus = mapCourierStatusToInternal("steadfast", rawStatus);
+                  if (internalStatus) {
+                    await updateShipmentStatus(shipment.id, internalStatus, body, "webhook");
+                  }
+                }
+              }
+            } catch (err) {
+              procError = err instanceof Error ? err.message : "unknown";
+            }
+            await markWebhookEventProcessed("steadfast", eventId, procError);
+            safeServerLog(procError ? "error" : "info", "SteadFast webhook processed", {
+              error: procError ?? "none",
             });
           }
-
-          // Find the shipment
-          if (consignmentId) {
-            const shipment = await findShipmentByConsignment("steadfast", consignmentId);
-            if (shipment) {
-              const internalStatus = mapCourierStatusToInternal("steadfast", rawStatus);
-              if (internalStatus) {
-                await updateShipmentStatus(shipment.id, internalStatus, body, "webhook");
-              }
-            }
-          }
-
-          safeServerLog("info", "SteadFast webhook processed", {
-            consignmentId,
-            status: rawStatus,
-          });
         } catch (err) {
-          safeServerLog("error", "SteadFast webhook processing error", {
+          safeServerLog("error", "SteadFast webhook error", {
             error: err instanceof Error ? err.message : "unknown",
           });
         }
 
         // Always return 200 (never leak state)
-        return new Response(JSON.stringify({ message: "OK" }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
+        return okResponse();
       },
     },
   },

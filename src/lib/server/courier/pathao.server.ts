@@ -186,6 +186,17 @@ export const pathaoAdapter: CourierAdapter = {
 
       if (resp.ok && body?.type === "success") {
         const consignmentId = String(body.data?.consignment_id ?? "");
+        // A success without a consignment id is unusable — treat it as a failure
+        // so the order is not flipped to courier_booked with nothing to track.
+        if (!consignmentId) {
+          return {
+            success: false,
+            consignmentId: null,
+            trackingCode: null,
+            rawResponse: body,
+            error: "Pathao returned success but no consignment id",
+          };
+        }
         return {
           success: true,
           consignmentId,

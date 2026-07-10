@@ -71,6 +71,23 @@ export const INTERNAL_STATUS_LABELS: Record<string, string> = {
 };
 
 /**
+ * Stable idempotency key for an inbound webhook: SHA-256 of the RAW request body.
+ *
+ * A provider retry sends a byte-identical body → identical id → deduped by the
+ * webhook_events UNIQUE(provider, event_id). A genuinely different event has a
+ * different body → new id → processed. Replaces the old
+ * `${provider}-${cid}-${status}-${Date.now()}` scheme, whose clock made every
+ * retry look unique and defeated dedup entirely.
+ */
+export async function webhookEventId(provider: string, rawBody: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(rawBody));
+  const hex = Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return `${provider}:${hex}`;
+}
+
+/**
  * Map a raw provider status to our canonical INTERNAL shipment status.
  *
  * Returns null only for truly unknown statuses (logged, no state change). Known
@@ -316,6 +333,8 @@ export const COURIER_ERROR_MESSAGES: Record<string, string> = {
   double_booking: "An active forward shipment already exists for this order.",
   payment_not_verified: "Payment must be verified before courier booking.",
   manual_tracking_required: "Manual shipments require a tracking code or reference.",
+  empty_courier_reference:
+    "The courier accepted the booking but returned no tracking reference. Please retry.",
   actor_not_authorized: "You are not authorized to perform this action.",
 };
 
