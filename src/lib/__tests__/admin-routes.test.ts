@@ -22,6 +22,13 @@ describe("requiredPermissionForAdminPath", () => {
   it("unmapped admin sub-route still requires at least dashboard.view", () => {
     expect(requiredPermissionForAdminPath("/admin/unknown")).toBe("dashboard.view");
   });
+  it("keeps the permission guard for hidden (coming-soon) routes", () => {
+    // Hidden from the sidebar, but the route must still be permission-mapped so
+    // a deep-link can't bypass the guard.
+    expect(requiredPermissionForAdminPath("/admin/reports")).toBe("reports.view");
+    expect(requiredPermissionForAdminPath("/admin/banners")).toBe("content.manage");
+    expect(requiredPermissionForAdminPath("/admin/size-settings")).toBe("sizes.manage");
+  });
   it("returns null for non-admin paths", () => {
     expect(requiredPermissionForAdminPath("/account")).toBeNull();
     expect(requiredPermissionForAdminPath("/")).toBeNull();
@@ -67,6 +74,13 @@ describe("navForRole", () => {
     expect(labels).toContain("Audit Logs");
     expect(labels).toContain("Staff Roles");
     expect(labels).toContain("Settings");
+  });
+  it("excludes hidden (coming-soon) items from the sidebar", () => {
+    const ownerNav = navForRole("owner");
+    const labels = ownerNav.flatMap((g) => g.items.map((i) => i.label));
+    expect(labels).not.toContain("Banners");
+    expect(labels).not.toContain("Reports");
+    expect(labels).not.toContain("Size Settings");
   });
   it("empty groups are dropped", () => {
     const staffNav = navForRole("staff");

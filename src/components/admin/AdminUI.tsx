@@ -331,6 +331,40 @@ export function ViewToggle<T extends string>({
   );
 }
 
+/**
+ * "Coming soon" placeholder for a not-yet-built admin screen. Replaces mock/demo
+ * page bodies so an operator can never mistake simulated data for real data. The
+ * route stays permission-guarded; the nav link is hidden (see admin-routes).
+ */
+export function ComingSoon({
+  title,
+  description,
+  icon,
+}: {
+  title: string;
+  description?: string;
+  icon?: ReactNode;
+}) {
+  return (
+    <div>
+      <AdminHeader title={title} />
+      <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-card/50 px-6 py-20 text-center">
+        <div className="grid h-16 w-16 place-items-center rounded-full bg-gold/15 text-primary">
+          {icon ?? <PackageOpen className="h-7 w-7" />}
+        </div>
+        <span className="rounded-full border border-gold/40 bg-gold/10 px-3 py-1 text-xs font-medium uppercase tracking-wider text-primary">
+          Coming soon
+        </span>
+        <h2 className="font-display text-2xl text-foreground">Not available yet</h2>
+        <p className="max-w-md text-sm text-muted-foreground">
+          {description ??
+            "This screen isn't built yet. It's parked here so nothing shows fake data — it will light up in a later stage."}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 /** Helper used across routes for temporary local-only record IDs. */
 export function createPreviewId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {

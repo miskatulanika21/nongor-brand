@@ -35,6 +35,8 @@ export const ADMIN_PERMISSIONS = [
   "payments.verify",
   "coupons.manage",
   "reviews.manage",
+  "messages.view",
+  "messages.manage",
   "content.manage",
   "media.manage",
   "policies.manage",
@@ -67,6 +69,8 @@ const STAFF_PERMISSIONS: readonly AdminPermission[] = [
   "products.view",
   "inventory.view",
   "inventory.manage",
+  // Read the customer contact inbox (triage/mark-handled is admin+).
+  "messages.view",
 ];
 
 /**
@@ -92,6 +96,8 @@ const ADMIN_ROLE_PERMISSIONS: readonly AdminPermission[] = [
   "payments.verify",
   "coupons.manage",
   "reviews.manage",
+  "messages.view",
+  "messages.manage",
   "content.manage",
   "media.manage",
   "policies.manage",

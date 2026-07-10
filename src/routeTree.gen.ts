@@ -28,6 +28,7 @@ import { Route as AdminPoliciesRouteImport } from './routes/admin.policies'
 import { Route as AdminPaymentsRouteImport } from './routes/admin.payments'
 import { Route as AdminOrdersRouteImport } from './routes/admin.orders'
 import { Route as AdminMfaRouteImport } from './routes/admin.mfa'
+import { Route as AdminMessagesRouteImport } from './routes/admin.messages'
 import { Route as AdminMediaLibraryRouteImport } from './routes/admin.media-library'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as AdminInventoryRouteImport } from './routes/admin.inventory'
@@ -162,6 +163,11 @@ const AdminOrdersRoute = AdminOrdersRouteImport.update({
 const AdminMfaRoute = AdminMfaRouteImport.update({
   id: '/mfa',
   path: '/mfa',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminMessagesRoute = AdminMessagesRouteImport.update({
+  id: '/messages',
+  path: '/messages',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminMediaLibraryRoute = AdminMediaLibraryRouteImport.update({
@@ -407,6 +413,7 @@ export interface FileRoutesByFullPath {
   '/admin/inventory': typeof AdminInventoryRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/media-library': typeof AdminMediaLibraryRoute
+  '/admin/messages': typeof AdminMessagesRoute
   '/admin/mfa': typeof AdminMfaRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/payments': typeof AdminPaymentsRoute
@@ -465,6 +472,7 @@ export interface FileRoutesByTo {
   '/admin/inventory': typeof AdminInventoryRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/media-library': typeof AdminMediaLibraryRoute
+  '/admin/messages': typeof AdminMessagesRoute
   '/admin/mfa': typeof AdminMfaRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/payments': typeof AdminPaymentsRoute
@@ -528,6 +536,7 @@ export interface FileRoutesById {
   '/admin/inventory': typeof AdminInventoryRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/media-library': typeof AdminMediaLibraryRoute
+  '/admin/messages': typeof AdminMessagesRoute
   '/admin/mfa': typeof AdminMfaRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/payments': typeof AdminPaymentsRoute
@@ -592,6 +601,7 @@ export interface FileRouteTypes {
     | '/admin/inventory'
     | '/admin/login'
     | '/admin/media-library'
+    | '/admin/messages'
     | '/admin/mfa'
     | '/admin/orders'
     | '/admin/payments'
@@ -650,6 +660,7 @@ export interface FileRouteTypes {
     | '/admin/inventory'
     | '/admin/login'
     | '/admin/media-library'
+    | '/admin/messages'
     | '/admin/mfa'
     | '/admin/orders'
     | '/admin/payments'
@@ -712,6 +723,7 @@ export interface FileRouteTypes {
     | '/admin/inventory'
     | '/admin/login'
     | '/admin/media-library'
+    | '/admin/messages'
     | '/admin/mfa'
     | '/admin/orders'
     | '/admin/payments'
@@ -883,6 +895,13 @@ declare module '@tanstack/react-router' {
       path: '/mfa'
       fullPath: '/admin/mfa'
       preLoaderRoute: typeof AdminMfaRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/messages': {
+      id: '/admin/messages'
+      path: '/messages'
+      fullPath: '/admin/messages'
+      preLoaderRoute: typeof AdminMessagesRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/media-library': {
@@ -1275,6 +1294,7 @@ interface AdminRouteChildren {
   AdminInventoryRoute: typeof AdminInventoryRoute
   AdminLoginRoute: typeof AdminLoginRoute
   AdminMediaLibraryRoute: typeof AdminMediaLibraryRoute
+  AdminMessagesRoute: typeof AdminMessagesRoute
   AdminMfaRoute: typeof AdminMfaRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
   AdminPaymentsRoute: typeof AdminPaymentsRoute
@@ -1298,6 +1318,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminInventoryRoute: AdminInventoryRoute,
   AdminLoginRoute: AdminLoginRoute,
   AdminMediaLibraryRoute: AdminMediaLibraryRoute,
+  AdminMessagesRoute: AdminMessagesRoute,
   AdminMfaRoute: AdminMfaRoute,
   AdminOrdersRoute: AdminOrdersRoute,
   AdminPaymentsRoute: AdminPaymentsRoute,

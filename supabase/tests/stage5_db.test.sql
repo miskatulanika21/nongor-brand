@@ -373,4 +373,82 @@ BEGIN
   END LOOP;
 END $$;
 
+-- ============================================================
+-- §contact — contact form submit + staff inbox triage
+-- ============================================================
+DO $$
+DECLARE v_owner uuid := '00000000-0000-0000-0000-0000000000a1';
+        v jsonb; v_id uuid; v_raised boolean;
+BEGIN
+  -- submit inserts a 'new' row (signature: name, phone, message, reason, email, order_no)
+  v := api.submit_contact_message('Ayesha', '01712345678', 'Where is my order?', 'Order Help', NULL, 'NGR-1');
+  v_id := (v->>'id')::uuid;
+  IF v_id IS NULL THEN RAISE EXCEPTION 'FAIL: submit returned no id'; END IF;
+  IF (SELECT status FROM public.contact_messages WHERE id = v_id) <> 'new' THEN
+    RAISE EXCEPTION 'FAIL: submitted message not new'; END IF;
+  IF (SELECT order_number FROM public.contact_messages WHERE id = v_id) <> 'NGR-1' THEN
+    RAISE EXCEPTION 'FAIL: order_number not stored'; END IF;
+
+  -- list is staff-gated: non-staff (c1, seeded in §audit) rejected
+  v_raised := false;
+  BEGIN
+    PERFORM api.list_contact_messages('00000000-0000-0000-0000-0000000000c1');
+  EXCEPTION WHEN OTHERS THEN v_raised := true;
+    IF SQLERRM <> 'actor_not_authorized' THEN RAISE EXCEPTION 'FAIL: wrong list code %', SQLERRM; END IF;
+  END;
+  IF NOT v_raised THEN RAISE EXCEPTION 'FAIL: non-staff listed messages'; END IF;
+
+  -- owner list: search matches, status filter excludes
+  v := api.list_contact_messages(v_owner, p_search := 'Ayesha');
+  IF (v->>'total')::int < 1 THEN RAISE EXCEPTION 'FAIL: search total'; END IF;
+  v := api.list_contact_messages(v_owner, p_status := 'handled');
+  IF (v->>'total')::int <> 0 THEN RAISE EXCEPTION 'FAIL: handled filter should be 0'; END IF;
+
+  -- set handled → status + handled_by + audit
+  PERFORM api.set_contact_message_status(v_owner, v_id, 'handled');
+  IF (SELECT status FROM public.contact_messages WHERE id = v_id) <> 'handled' THEN
+    RAISE EXCEPTION 'FAIL: not handled'; END IF;
+  IF (SELECT handled_by FROM public.contact_messages WHERE id = v_id) <> v_owner THEN
+    RAISE EXCEPTION 'FAIL: handled_by not set'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.audit_logs
+        WHERE action = 'contact.status_changed' AND target_id = v_id::text) THEN
+    RAISE EXCEPTION 'FAIL: no contact audit row'; END IF;
+
+  -- reopen (new) clears handled_by
+  PERFORM api.set_contact_message_status(v_owner, v_id, 'new');
+  IF (SELECT handled_by FROM public.contact_messages WHERE id = v_id) IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL: reopen did not clear handled_by'; END IF;
+
+  -- invalid status rejected
+  v_raised := false;
+  BEGIN
+    PERFORM api.set_contact_message_status(v_owner, v_id, 'bogus');
+  EXCEPTION WHEN OTHERS THEN v_raised := true;
+    IF SQLERRM <> 'invalid_contact_status' THEN RAISE EXCEPTION 'FAIL: wrong status code %', SQLERRM; END IF;
+  END;
+  IF NOT v_raised THEN RAISE EXCEPTION 'FAIL: invalid status accepted'; END IF;
+
+  -- unknown id rejected
+  v_raised := false;
+  BEGIN
+    PERFORM api.set_contact_message_status(v_owner, '00000000-0000-0000-0000-0000000000ff', 'handled');
+  EXCEPTION WHEN OTHERS THEN v_raised := true;
+    IF SQLERRM <> 'contact_message_not_found' THEN RAISE EXCEPTION 'FAIL: wrong not-found code %', SQLERRM; END IF;
+  END;
+  IF NOT v_raised THEN RAISE EXCEPTION 'FAIL: not-found accepted'; END IF;
+END $$;
+
+-- grant posture: contact RPCs are service-role only
+DO $$
+DECLARE r text;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['anon','authenticated'] LOOP
+    IF has_function_privilege(r, 'api.submit_contact_message(text,text,text,text,text,text)', 'EXECUTE')
+       OR has_function_privilege(r, 'api.list_contact_messages(uuid,text,text,integer,integer)', 'EXECUTE')
+       OR has_function_privilege(r, 'api.set_contact_message_status(uuid,uuid,text)', 'EXECUTE') THEN
+      RAISE EXCEPTION 'FAIL: % should not hold EXECUTE on contact RPCs', r;
+    END IF;
+  END LOOP;
+END $$;
+
 ROLLBACK;

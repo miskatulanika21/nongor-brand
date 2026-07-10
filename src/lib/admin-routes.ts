@@ -26,6 +26,7 @@ export type AdminIconKey =
   | "courier"
   | "customers"
   | "coupons"
+  | "messages"
   | "reviews"
   | "banners"
   | "media"
@@ -41,6 +42,13 @@ export interface AdminNavItem {
   icon: AdminIconKey;
   /** Permission required to see the link AND to load the page. */
   permission: AdminPermission;
+  /**
+   * Hidden from the rendered sidebar but still permission-mapped, so the server
+   * route guard (requiredPermissionForAdminPath) keeps protecting the path. Used
+   * for not-yet-built screens that are parked behind a "Coming soon" placeholder
+   * so operators never act on mock data.
+   */
+  hidden?: boolean;
 }
 
 export interface AdminNavGroup {
@@ -78,6 +86,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         to: "/admin/size-settings",
         icon: "sizes",
         permission: "sizes.manage",
+        hidden: true, // Coming soon — not yet persisted (Stage 6)
       },
     ],
   },
@@ -93,6 +102,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         icon: "customers",
         permission: "customers.view",
       },
+      { label: "Messages", to: "/admin/messages", icon: "messages", permission: "messages.view" },
       { label: "Coupons", to: "/admin/coupons", icon: "coupons", permission: "coupons.manage" },
     ],
   },
@@ -100,7 +110,13 @@ export const ADMIN_NAV: AdminNavGroup[] = [
     group: "Content",
     items: [
       { label: "Reviews", to: "/admin/reviews", icon: "reviews", permission: "reviews.manage" },
-      { label: "Banners", to: "/admin/banners", icon: "banners", permission: "content.manage" },
+      {
+        label: "Banners",
+        to: "/admin/banners",
+        icon: "banners",
+        permission: "content.manage",
+        hidden: true, // Coming soon — not yet persisted (Stage 6)
+      },
       {
         label: "Media Library",
         to: "/admin/media-library",
@@ -118,7 +134,13 @@ export const ADMIN_NAV: AdminNavGroup[] = [
   {
     group: "System",
     items: [
-      { label: "Reports", to: "/admin/reports", icon: "reports", permission: "reports.view" },
+      {
+        label: "Reports",
+        to: "/admin/reports",
+        icon: "reports",
+        permission: "reports.view",
+        hidden: true, // Coming soon — demo data only (Stage 6)
+      },
       { label: "Settings", to: "/admin/settings", icon: "settings", permission: "settings.manage" },
       { label: "Staff Roles", to: "/admin/staff", icon: "staff", permission: "staff.view" },
       { label: "Audit Logs", to: "/admin/audit", icon: "audit", permission: "audit.view" },
@@ -160,11 +182,13 @@ export function roleCanAccessAdminPath(
   return roleHasPermission(role, permission);
 }
 
-/** Build the role-filtered navigation (used by the admin layout). */
+/** Build the role-filtered navigation (used by the admin layout). Hidden items
+ * (not-yet-built screens) are excluded from the sidebar but remain permission-
+ * mapped for the route guard. */
 export function navForRole(role: StaffRole | null | undefined): AdminNavGroup[] {
   if (!role) return [];
   return ADMIN_NAV.map((group) => ({
     group: group.group,
-    items: group.items.filter((item) => roleHasPermission(role, item.permission)),
+    items: group.items.filter((item) => !item.hidden && roleHasPermission(role, item.permission)),
   })).filter((group) => group.items.length > 0);
 }
