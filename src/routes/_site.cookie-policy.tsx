@@ -1,5 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { PageHero, Prose } from "@/components/PageHero";
+import { CmsPolicyPage } from "@/components/CmsPolicyPage";
+import { getSitePage } from "@/lib/pages.api";
 
 // TODO: Final legal/business review required before production launch.
 
@@ -23,7 +25,18 @@ export const Route = createFileRoute("/_site/cookie-policy")({
     ],
     links: [{ rel: "canonical", href: "/cookie-policy" }],
   }),
-  component: () => (
+  // CMS-published content (Stage 6 P4); the JSX below stays as the fallback.
+  loader: () => getSitePage({ data: { slug: "cookie-policy" } }),
+  component: CookiePolicy,
+});
+
+function CookiePolicy() {
+  const page = Route.useLoaderData();
+  return <CmsPolicyPage page={page} fallback={<StaticCookiePolicy />} />;
+}
+
+function StaticCookiePolicy() {
+  return (
     <div>
       <PageHero
         eyebrow="Privacy"
@@ -87,5 +100,5 @@ export const Route = createFileRoute("/_site/cookie-policy")({
         </p>
       </Prose>
     </div>
-  ),
-});
+  );
+}

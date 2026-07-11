@@ -80,6 +80,9 @@ export const AUDIT_ACTIONS = [
   "banner.updated",
   "banner.status_changed",
   "banner.deleted",
+  "page.draft_saved",
+  "page.published",
+  "page.draft_discarded",
   // shipments (Stage 5)
   "shipment.booked",
   "shipment.cancelled",
@@ -210,6 +213,9 @@ export const AUDIT_ACTION_META: Record<AuditAction, AuditActionMeta> = {
   "banner.updated": { label: "Banner updated", category: "content", tone: "info" },
   "banner.status_changed": { label: "Banner status changed", category: "content", tone: "info" },
   "banner.deleted": { label: "Banner deleted", category: "content", tone: "danger" },
+  "page.draft_saved": { label: "Page draft saved", category: "content", tone: "neutral" },
+  "page.published": { label: "Page published", category: "content", tone: "success" },
+  "page.draft_discarded": { label: "Page draft discarded", category: "content", tone: "warning" },
   "shipment.booked": { label: "Courier booked", category: "shipments", tone: "success" },
   "shipment.cancelled": { label: "Shipment cancelled", category: "shipments", tone: "warning" },
   "shipment.status_updated": {
