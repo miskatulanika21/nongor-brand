@@ -303,16 +303,57 @@ customers. **STAGE 4 COMPLETE** (P1–P9, 2026-07-03).
 
 ## Stage 5 — Admin sales ops & integrations
 
-`CourierAdapter` interface; `SteadFastAdapter` then `PathaoAdapter` (only with
-rotated credentials); verified, idempotent webhooks. Tables: courier_providers,
-shipments, shipment_events, webhook_events, notification_outbox. Notifications
-via outbox, never in the checkout transaction.
+`CourierAdapter` interface; SteadFast + Pathao + Manual adapters; verified,
+idempotent webhooks. Tables: courier_providers, shipments, shipment_events,
+webhook_events, notification_events (outbox). Notifications via outbox, never
+in the checkout transaction.
+
+- [x] **Courier integration** (2026-07-07, `17dab60`) — migration
+      `20260707150000`: shipment schema (RPC-only deny-all), order statuses
+      15→17 (`courier_booked`, `delivery_failed`), 3-phase booking (no DB
+      locks during external API calls), double-booking partial unique index,
+      SteadFast (API-key) / Pathao (OAuth2 + token cache) / Manual adapters,
+      secret-gated webhook endpoints, DB-backed `admin.courier.tsx`, COD
+      computation + reconciliation fields; mock `orders.ts` / `admin-ops.ts`
+      deleted. Hotfix `20260707162039` restored the `transition_order` restock
+      branch the Stage-5 migration had broken.
+- [x] **Review remediation pass** (2026-07-10/11) — a senior review verified 17
+      external-audit findings against the code, then fixed everything
+      launch-blocking in five parts (details in `CURRENT_STATUS.md`):
+  - [x] **P1** — real owner-only Audit Logs viewer (`api.list_audit_logs`,
+        migration `20260710190825`; was a hardcoded mock);
+        `audit-shared.ts` single-source action taxonomy.
+  - [x] **P2** — courier lifecycle actually progresses (migration
+        `20260710193507`): `IF FOUND` record-NULL fix (no webhook had EVER
+        transitioned an order), `courier_booked→delivered` direct (SteadFast
+        has no pickup signal), transit statuses → shipped, poll maps
+        raw→internal, "Mark delivered" admin action.
+  - [x] **P3** — booking/webhook integrity (migration `20260710195925`):
+        empty-consignment "success" rejected, SHA-256 raw-body webhook
+        idempotency (was `Date.now()`), `processed`/`error` maintained, body
+        cap on read bytes; **runtime P0**: courier RPCs called without
+        `.schema("api")` — all courier ops had failed at runtime.
+  - [x] **P4** — courier fns gate on `courier.view`/`courier.manage`.
+  - [x] **P5** — real contact form + staff Messages inbox (migration
+        `20260710204703`; `messages.view`/`messages.manage`); Banners/Reports/
+        Size-Settings hidden behind "Coming soon" (no more mock-that-looks-
+        real); client-bundle fix (server ops out of `staff.api`/`mfa.api`).
+- [ ] Deferred (P3 polish): booking `request_hash` enforcement, constant-time
+      webhook-secret compare, newsletter form, `courierWrite` bucket for
+      courier mutations, notification-outbox sender, dead `PRODUCTS` deletion.
+
+**Exit:** courier booking/tracking live end-to-end with idempotent, observable
+webhooks; every admin surface either real or honestly labeled; audit trail
+visible to the owner; customer contact persists to an inbox. **STAGE 5
+IMPLEMENTED + REMEDIATED** (2026-07-11; 62 migrations; 539 Vitest;
+`stage5_db.test.sql` in CI).
 
 ## Stage 6 — Content & operational modules
 
-Reviews moderation, banners, CMS/policies, contact storage, newsletter
-consent/unsubscribe, reports + CSV, owner-only audit viewer, site_settings
-(move `brand.ts` values to DB).
+Banners, CMS/policies, newsletter consent/unsubscribe, reports + CSV, size
+settings (persisted), notification-outbox sender. (Contact storage and the
+owner-only audit viewer were delivered early in the Stage-5 remediation pass;
+reviews moderation and site_settings landed in Stage 2.)
 
 ## Stage 7 — Hardening & launch
 

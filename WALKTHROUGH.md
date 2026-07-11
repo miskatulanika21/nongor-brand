@@ -67,11 +67,21 @@ now takes `pg_advisory_xact_lock(...)` BEFORE counting other active owners, so
 concurrent owner-removing transactions are serialized and the last owner cannot
 be removed even under a race.
 
-## Audit-log visibility (Bug 4) — applied
+## Audit-log visibility (Bug 4) — applied; viewer live
 
 `admin_read_audit_logs` RLS allows SELECT only when
 `private.current_staff_role() = 'owner'`, matching `audit.view` being owner-only
 in `permissions.ts`. Admins can no longer read `audit_logs` directly.
+
+The trail is now also **visible**: `/admin/audit` is a real owner-only viewer —
+URL-as-state loader → `listAuditLogsFn` (`requirePermission("audit.view")`) →
+`audit-read.server.ts` → service-role `api.list_audit_logs` (re-checks
+`role='owner'`, resolves actor id → email/display-name/role SQL-side, filters
+by action/actor/date/search, clamped pagination). `audit-shared.ts` is the
+single source of the action taxonomy: the writer (`audit.server.ts`) imports
+its `AuditAction` type and the viewer renders from its
+`Record<AuditAction, meta>`, so an action can never lack a label at compile
+time. (It replaced a hardcoded mock list — found in the Stage-5 review.)
 
 ## Storefront catalog (Stage 2 Pass 1) — live
 
@@ -250,6 +260,55 @@ server fns backed by `SECURITY DEFINER` service-role RPCs.
   `e2e/account.spec.ts` drives sign-in → profile edit → address/measurement
   CRUD → checkout prefill in a real browser (env-gated).
 
+## Courier & shipments (Stage 5) — live
+
+Booking: `admin.courier.tsx` lists `ready_to_ship` orders → `bookCourierFn`
+(`guardAdminWrite("courier.manage")`) → `courier.server.ts#bookShipment`, a
+**3-phase** flow so no DB transaction is ever open across network I/O:
+(1) `api.create_shipment_attempt` commits a `pending` row (active-staff +
+enabled-provider + bookable-status checks; a partial unique index blocks a
+second active forward shipment per order); (2) the provider adapter calls the
+external API — SteadFast (`Api-Key`/`Secret-Key` headers), Pathao (OAuth2
+client-credentials with an in-memory token cache + one 401 retry), or Manual
+(admin-supplied tracking code); (3) `api.mark_shipment_booking_success` (order
+→ `courier_booked`, `shipment.booked` audit, `shipment_booked` outbox row) or
+`api.fail_shipment_booking` (order untouched, retry allowed). An automated
+provider returning "success" with no consignment id is treated as a FAILURE
+(`empty_courier_reference`) — never an untrackable booked order. Stale pending
+attempts (crash between phases) expire after 10 min and are resolved via
+`resolveStaleAttemptFn`. COD amount comes from `computeCodAmount`
+(prepaid/cod/partial_cod from payment method + verified status); bKash/Nagad
+orders must be payment-verified before booking.
+
+Status flow: webhooks (`/api/webhook/steadfast`, `/api/webhook/pathao`) are
+POST-only, rate-limited per IP, disabled (503) until their
+`*_WEBHOOK_SECRET` env is set, and always answer a generic 200. The raw body
+is capped at 64 KB (on the actual read bytes), parsed, and recorded via
+`api.record_webhook_event` with an idempotency key = SHA-256 of the raw body —
+a byte-identical provider retry dedups, a distinct event processes. New events
+map the provider vocabulary to internal statuses
+(`courier-shared.ts#mapCourierStatusToInternal`) and call
+`api.update_shipment_status`: every event is appended to `shipment_events`,
+and significant ones transition the order — `picked_up`/`in_transit`/
+`out_for_delivery` → `shipped`, `delivered` → `delivered` (allowed straight
+from `courier_booked`, because SteadFast never sends a pickup signal),
+`failed` → `delivery_failed`; `returned_to_merchant` records but leaves the
+decision to the admin (return + restock). The handler then marks the event
+`processed` or records its `error` (`api.set_webhook_event_processed`), so
+failed webhooks are visible. The admin "poll status" button runs the SAME
+raw→internal mapping before recording, and each transition writes a
+`notification_events` outbox row (no sender consumes them yet).
+
+Customer contact (delivered early from the Stage-6 scope): `/contact` submits
+via `submitContactFn` (CSRF origin + per-IP `contactSubmit` rate limit; the
+`api.submit_contact_message` RPC is service-role-only so REST can't be
+spammed) into `contact_messages` (RPC-only deny-all). Staff read it at
+`/admin/messages` (`messages.view`; search/filter/pagination) and triage
+new/handled/archived (`messages.manage`, `contact.status_changed` audit,
+reply-on-WhatsApp deep link). Banners / Reports / Size Settings are hidden
+from the admin nav (`hidden` flag in `admin-routes.ts` — route guards intact)
+behind "Coming soon" placeholders until Stage 6 builds them for real.
+
 ## CI
 
 `.github/workflows/ci.yml` runs on push to `main` and all PRs: Bun (pinned
@@ -257,8 +316,11 @@ server fns backed by `SECURITY DEFINER` service-role RPCs.
 mandatory). A `migrations-local` job applies every migration to a fresh LOCAL
 Supabase DB (Docker, no creds) — the authoritative migrate-from-empty check —
 then runs the DB integration tests (`pass2_db.test.sql`, `pass3_db.test.sql`,
-`pass4_db.test.sql`) and the two-connection concurrency test
-(`concurrency.test.sh`). A separate job runs `supabase db lint --linked` against
+`pass4_db.test.sql`, `stage4_db.test.sql`, `stage5_db.test.sql` — the last
+covering the owner-only audit reader, the courier lifecycle incl. the
+courier_booked→delivered regression, webhook idempotency/processed marking,
+the empty-reference booking guard, and the contact RPCs) and the
+two-connection concurrency test (`concurrency.test.sh`). A separate job runs `supabase db lint --linked` against
 the DEPLOYED DB using the `SUPABASE_ACCESS_TOKEN` + `SUPABASE_PROJECT_ID` +
 `SUPABASE_DB_PASSWORD` repository secrets (now configured); it skips with a
 visible notice only if a secret is missing. Note it lints the deployed DB and
@@ -267,8 +329,10 @@ does not validate pending migrations — that is the `migrations-local` job's ro
 ## Still mock / localStorage (later stages)
 
 Cart holds item IDs in `localStorage` only (no server-side cart; the signed-in
-wishlist is server-synced as of Stage 4). Courier adapters +
-`orders.ts`/`PRODUCTS` retirement (Stage 5), CMS/banners/newsletter (Stage 6),
-reports (Stage 6). (Reviews moderation, site settings, checkout, the full order
-lifecycle, coupons, and customer accounts are DB-backed.) See
-`CURRENT_STATUS.md`.
+wishlist is server-synced as of Stage 4). Footer newsletter form (demo);
+Banners / Reports / Size Settings (hidden behind "Coming soon" until Stage 6);
+notification-outbox sender (rows written, nothing consumes them); dead
+`PRODUCTS` export in `src/lib/products.ts` awaiting deletion. (Reviews
+moderation, site settings, checkout, the full order lifecycle, coupons,
+customer accounts, courier & shipments, the audit viewer, and the contact
+inbox are all DB-backed.) See `CURRENT_STATUS.md`.
