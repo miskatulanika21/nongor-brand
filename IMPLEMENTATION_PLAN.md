@@ -338,15 +338,18 @@ in the checkout transaction.
         `20260710204703`; `messages.view`/`messages.manage`); Banners/Reports/
         Size-Settings hidden behind "Coming soon" (no more mock-that-looks-
         real); client-bundle fix (server ops out of `staff.api`/`mfa.api`).
-- [ ] Deferred (P3 polish): booking `request_hash` enforcement, constant-time
-      webhook-secret compare, newsletter form, `courierWrite` bucket for
-      courier mutations, notification-outbox sender, dead `PRODUCTS` deletion.
+- [x] **P3 polish batch** (`462c42b`, migration `20260711083958`): booking
+      `request_hash` enforcement (`booking_in_progress` vs `double_booking`),
+      constant-time webhook-secret compare, real footer newsletter
+      (`newsletter_subscribers` + `subscribe_newsletter`), `courierWrite`
+      bucket for courier mutations, dead `PRODUCTS` deletion. The
+      notification-outbox sender moved to **Stage 6 P1** (channel decision).
 
 **Exit:** courier booking/tracking live end-to-end with idempotent, observable
 webhooks; every admin surface either real or honestly labeled; audit trail
 visible to the owner; customer contact persists to an inbox. **STAGE 5
-IMPLEMENTED + REMEDIATED** (2026-07-11; 62 migrations; 539 Vitest;
-`stage5_db.test.sql` in CI).
+IMPLEMENTED + REMEDIATED + POLISHED** (2026-07-11; 63 migrations; 543 Vitest;
+`stage5_db.test.sql` incl. §polish in CI).
 
 ## Stage 6 — Content & operational modules
 
@@ -354,6 +357,51 @@ Banners, CMS/policies, newsletter consent/unsubscribe, reports + CSV, size
 settings (persisted), notification-outbox sender. (Contact storage and the
 owner-only audit viewer were delivered early in the Stage-5 remediation pass;
 reviews moderation and site_settings landed in Stage 2.)
+
+**Master plan:** `docs/stage-6-content-ops-plan.md` (2026-07-11). Same
+posture as every prior stage: RPC-only deny-all tables, guarded server fns,
+zod mirrors, audited staff writes, static fallbacks for every storefront
+consumer. Sub-passes:
+
+- [ ] **P0 — decision gate** (user): notification channel/provider
+      (recommended SMS-first via a BD aggregator — `customer_phone` is
+      NOT NULL, `customer_email` nullable — email via Resend second,
+      WhatsApp deferred); whether to add `order_placed`/`payment_verified`/
+      `order_cancelled` events; policy CMS body format (markdown
+      recommended); size-settings shape (structured charts recommended).
+- [ ] **P1 — notification-outbox sender**: extend `notification_events`
+      (status/attempts/backoff/`dedupe_key`/recipient snapshot),
+      `claim_notification_batch` (FOR UPDATE SKIP LOCKED) +
+      `mark_notification_result` (backoff + dead-letter),
+      `NotificationChannelAdapter` seam (mirror of `CourierAdapter`),
+      secret-gated drain endpoint driven by pg_cron + pg_net every minute
+      (+ opportunistic post-enqueue drains), Settings kill switch, admin
+      visibility tab with manual retry.
+- [ ] **P2 — newsletter consent management**: `unsubscribe_token` +
+      one-click `/newsletter/unsubscribe` route + `List-Unsubscribe`
+      header, admin subscriber list + CSV export.
+- [ ] **P3 — banners**: `banners` table (schedule window, sort, media-library
+      image) + cached public read + admin CRUD (`content.manage`);
+      `HeroSection` consumes published banners with the current hardcoded
+      hero as fallback; un-hide the nav item.
+- [ ] **P4 — policies CMS**: `site_pages` + `site_page_revisions`
+      (markdown, draft/publish/restore, seeded from today's static copy);
+      storefront policy routes render from DB with static JSX fallback;
+      real editor replaces the dead Edit button (`policies.manage`).
+- [ ] **P5 — size settings**: `size_charts`/`size_chart_rows` (jsonb
+      measurements) + admin grid editor (`sizes.manage`); size-guide + PDP
+      render structured charts, images kept as illustration; un-hide.
+- [ ] **P6 — reports + CSV**: date-ranged aggregate RPCs (sales summary,
+      top products, coupon usage, courier performance, COD reconciliation) + recharts UI (`reports.view`, new `reportsRead` bucket) + shared
+      server-side CSV helper (also backfills P2's export); un-hide.
+- [ ] **P7 — closure**: nav/RBAC sanity for the un-hidden screens,
+      live-drive verification (incl. one real notification send), visual
+      pass on the new admin screens, single status-doc sync.
+
+**Exit:** every hidden admin screen real and visible; storefront content
+(banners/policies/size charts) DB-backed with static fallbacks; customers
+notified on shipment events via at least one real channel; newsletter
+consent round-trip complete; reports run off live data with CSV export.
 
 ## Stage 7 — Hardening & launch
 
