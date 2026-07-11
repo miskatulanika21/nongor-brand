@@ -397,9 +397,17 @@ consumer. Sub-passes:
       tabs, draft→publish→revision→restore) replaces the dead Edit button;
       `stage6_db.test.sql` §pages in CI; visually verified end-to-end in a
       real browser (edit → publish → storefront swap → restore).
-- [ ] **P5 — size settings**: `size_charts`/`size_chart_rows` (jsonb
-      measurements) + admin grid editor (`sizes.manage`); size-guide + PDP
-      render structured charts, images kept as illustration; un-hide.
+- [x] **P5 — size settings** (2026-07-12, migration `20260711215507`):
+      `size_charts` single table (ordered `columns` + aligned `rows` jsonb,
+      deep RPC validation, `label_header`/`helper_column`/unit/popular flag),
+      seeded byte-identical with the three hardcoded charts; size-guide fixed
+      tab + its starting-point helper render from the DB with the static
+      arrays as fallback (measurement ILLUSTRATION stays a static image);
+      `admin.size-settings.tsx` rebuilt as a real grid editor (add/remove
+      rows+columns, ★ Most Selected, live toggle, `sizes.manage`, audited
+      `size_chart.*`); nav un-hidden (staff lack `sizes.manage` — tested);
+      `stage6_db.test.sql` §sizes in CI; visually verified end-to-end (grid
+      cell edit → storefront table + helper → reverted via audited RPC).
 - [x] **P6 — reports + CSV** (2026-07-12, migration `20260711211537`): five
       read-only aggregate RPCs (sales summary with confirmed/delivered
       definitions, top products, coupon ledger, courier performance with

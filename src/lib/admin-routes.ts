@@ -86,7 +86,6 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         to: "/admin/size-settings",
         icon: "sizes",
         permission: "sizes.manage",
-        hidden: true, // Coming soon — not yet persisted (Stage 6)
       },
     ],
   },

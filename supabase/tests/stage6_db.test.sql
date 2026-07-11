@@ -13,6 +13,15 @@
 --   * bounds (invalid_page), unknown slug (page_not_found), publish without a
 --     draft (no_draft_to_publish), non-staff rejection, page.* audit rows
 --
+-- §sizes covers the P5 size charts (api.get_size_charts / list_size_charts /
+-- upsert_size_chart / set_size_chart_active / delete_size_chart):
+--   * grant posture: public read anon-callable; CRUD service-role only;
+--     deny-all table
+--   * migration seed (kurti/three-piece/girls, popular flags, helper columns)
+--   * deep validation (ragged rows, bogus helper column, duplicate slug →
+--     invalid_size_chart), create/update/toggle/delete + size_chart.* audits,
+--     inactive charts hidden from the public read, non-staff rejection
+--
 -- §reports covers the P6 read-only aggregates (api.report_sales_summary /
 -- report_top_products / report_coupon_usage / report_courier_performance /
 -- report_cod_reconciliation):
@@ -629,6 +638,156 @@ BEGIN
     IF SQLERRM <> 'actor_not_authorized' THEN RAISE; END IF;
   END;
   IF NOT v_raised THEN RAISE EXCEPTION 'FAIL: non-staff report read allowed'; END IF;
+END $$;
+
+-- ============================================================
+-- §sizes-1 — grant posture + migration seed
+-- ============================================================
+DO $$
+DECLARE r text; v jsonb;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+    IF NOT has_function_privilege(r, 'api.get_size_charts()', 'EXECUTE') THEN
+      RAISE EXCEPTION 'FAIL: % must hold EXECUTE on api.get_size_charts', r;
+    END IF;
+  END LOOP;
+  FOREACH r IN ARRAY ARRAY['anon','authenticated'] LOOP
+    IF has_function_privilege(r, 'api.list_size_charts(uuid)', 'EXECUTE')
+       OR has_function_privilege(r, 'api.upsert_size_chart(uuid,jsonb)', 'EXECUTE')
+       OR has_function_privilege(r, 'api.set_size_chart_active(uuid,uuid,boolean)', 'EXECUTE')
+       OR has_function_privilege(r, 'api.delete_size_chart(uuid,uuid)', 'EXECUTE') THEN
+      RAISE EXCEPTION 'FAIL: % should not hold EXECUTE on size-chart CRUD', r;
+    END IF;
+    IF has_table_privilege(r, 'public.size_charts', 'SELECT') THEN
+      RAISE EXCEPTION 'FAIL: % should hold no direct privilege on size_charts', r;
+    END IF;
+  END LOOP;
+  IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.size_charts'::regclass) THEN
+    RAISE EXCEPTION 'FAIL: RLS must be enabled on size_charts';
+  END IF;
+
+  -- migration seed: 3 active charts, kurti first with helper + popular rows
+  v := api.get_size_charts();
+  IF jsonb_array_length(v) <> 3 THEN
+    RAISE EXCEPTION 'FAIL: expected 3 seeded charts, got %', jsonb_array_length(v);
+  END IF;
+  IF v->0->>'slug' <> 'kurti' OR v->0->>'helper_column' <> 'Bust'
+     OR jsonb_array_length(v->0->'columns') <> 6
+     OR jsonb_array_length(v->0->'rows') <> 7
+     OR (v->0->'rows'->2->>'popular')::boolean IS NOT TRUE THEN
+    RAISE EXCEPTION 'FAIL: kurti seed shape wrong';
+  END IF;
+  IF v->2->>'label_header' <> 'Age' THEN
+    RAISE EXCEPTION 'FAIL: girls chart label_header should be Age';
+  END IF;
+  IF (SELECT bool_or(e ? 'updated_by') FROM jsonb_array_elements(v) e) THEN
+    RAISE EXCEPTION 'FAIL: public read leaks updated_by';
+  END IF;
+END $$;
+
+-- ============================================================
+-- §sizes-2 — CRUD lifecycle, deep validation, audits, authorization
+-- ============================================================
+DO $$
+DECLARE v jsonb; v_id uuid; v_count int; v_raised boolean;
+BEGIN
+  -- create
+  v := api.upsert_size_chart('00000000-0000-0000-0000-0000000000b1', jsonb_build_object(
+    'slug', 'test-chart', 'name', 'Test Chart', 'helper_column', 'Bust',
+    'columns', jsonb_build_array('Bust','Waist'),
+    'rows', jsonb_build_array(jsonb_build_object('label','S','values',jsonb_build_array('34','30'))),
+    'is_active', true));
+  IF NOT (v->>'created')::boolean THEN RAISE EXCEPTION 'FAIL: created flag'; END IF;
+  v_id := (v->'chart'->>'id')::uuid;
+  IF (v->'chart'->'rows'->0->>'popular')::boolean IS NOT FALSE THEN
+    RAISE EXCEPTION 'FAIL: popular not normalized';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.audit_logs
+                 WHERE action = 'size_chart.created' AND target_id = v_id::text) THEN
+    RAISE EXCEPTION 'FAIL: size_chart.created audit missing';
+  END IF;
+
+  -- ragged row rejected
+  v_raised := false;
+  BEGIN
+    PERFORM api.upsert_size_chart('00000000-0000-0000-0000-0000000000b1', jsonb_build_object(
+      'slug', 'bad1', 'name', 'x', 'columns', jsonb_build_array('Bust','Waist'),
+      'rows', jsonb_build_array(jsonb_build_object('label','S','values',jsonb_build_array('34')))));
+  EXCEPTION WHEN OTHERS THEN
+    v_raised := true;
+    IF SQLERRM <> 'invalid_size_chart' THEN RAISE; END IF;
+  END;
+  IF NOT v_raised THEN RAISE EXCEPTION 'FAIL: ragged row accepted'; END IF;
+
+  -- helper column outside columns rejected
+  v_raised := false;
+  BEGIN
+    PERFORM api.upsert_size_chart('00000000-0000-0000-0000-0000000000b1', jsonb_build_object(
+      'slug', 'bad2', 'name', 'x', 'helper_column', 'Hip',
+      'columns', jsonb_build_array('Bust'), 'rows', '[]'::jsonb));
+  EXCEPTION WHEN OTHERS THEN
+    v_raised := true;
+    IF SQLERRM <> 'invalid_size_chart' THEN RAISE; END IF;
+  END;
+  IF NOT v_raised THEN RAISE EXCEPTION 'FAIL: bogus helper column accepted'; END IF;
+
+  -- duplicate slug rejected
+  v_raised := false;
+  BEGIN
+    PERFORM api.upsert_size_chart('00000000-0000-0000-0000-0000000000b1', jsonb_build_object(
+      'slug', 'kurti', 'name', 'x', 'columns', jsonb_build_array('Bust'), 'rows', '[]'::jsonb));
+  EXCEPTION WHEN OTHERS THEN
+    v_raised := true;
+    IF SQLERRM <> 'invalid_size_chart' THEN RAISE; END IF;
+  END;
+  IF NOT v_raised THEN RAISE EXCEPTION 'FAIL: duplicate slug accepted'; END IF;
+
+  -- update a cell by id
+  v := api.upsert_size_chart('00000000-0000-0000-0000-0000000000b1', (v->'chart') || jsonb_build_object(
+    'id', v_id::text,
+    'slug', 'test-chart', 'name', 'Test Chart', 'columns', jsonb_build_array('Bust','Waist'),
+    'rows', jsonb_build_array(jsonb_build_object('label','S','values',jsonb_build_array('35','31')))));
+  IF (v->>'created')::boolean THEN RAISE EXCEPTION 'FAIL: update flagged created'; END IF;
+  IF v->'chart'->'rows'->0->'values'->>0 <> '35' THEN RAISE EXCEPTION 'FAIL: cell edit lost'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.audit_logs
+                 WHERE action = 'size_chart.updated' AND target_id = v_id::text) THEN
+    RAISE EXCEPTION 'FAIL: size_chart.updated audit missing';
+  END IF;
+
+  -- toggle inactive → hidden from the public read (+ audit)
+  PERFORM api.set_size_chart_active('00000000-0000-0000-0000-0000000000b1', v_id, false);
+  SELECT count(*) INTO v_count FROM jsonb_array_elements(api.get_size_charts()) e
+  WHERE (e->>'id')::uuid = v_id;
+  IF v_count <> 0 THEN RAISE EXCEPTION 'FAIL: inactive chart publicly visible'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.audit_logs
+                 WHERE action = 'size_chart.status_changed' AND target_id = v_id::text) THEN
+    RAISE EXCEPTION 'FAIL: size_chart.status_changed audit missing';
+  END IF;
+
+  -- delete (+ audit), double delete → size_chart_not_found
+  PERFORM api.delete_size_chart('00000000-0000-0000-0000-0000000000b1', v_id);
+  IF NOT EXISTS (SELECT 1 FROM public.audit_logs
+                 WHERE action = 'size_chart.deleted' AND target_id = v_id::text) THEN
+    RAISE EXCEPTION 'FAIL: size_chart.deleted audit missing';
+  END IF;
+  v_raised := false;
+  BEGIN
+    PERFORM api.delete_size_chart('00000000-0000-0000-0000-0000000000b1', v_id);
+  EXCEPTION WHEN OTHERS THEN
+    v_raised := true;
+    IF SQLERRM <> 'size_chart_not_found' THEN RAISE; END IF;
+  END;
+  IF NOT v_raised THEN RAISE EXCEPTION 'FAIL: double delete did not raise'; END IF;
+
+  -- non-staff rejected
+  v_raised := false;
+  BEGIN
+    PERFORM api.list_size_charts('00000000-0000-0000-0000-0000000000c6');
+  EXCEPTION WHEN OTHERS THEN
+    v_raised := true;
+    IF SQLERRM <> 'actor_not_authorized' THEN RAISE; END IF;
+  END;
+  IF NOT v_raised THEN RAISE EXCEPTION 'FAIL: non-staff size read allowed'; END IF;
 END $$;
 
 ROLLBACK;

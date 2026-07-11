@@ -25,10 +25,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BRAND } from "@/lib/brand";
+import { getSizeCharts } from "@/lib/sizes.api";
+import { toGuideChart, type PublicSizeChart } from "@/lib/sizes-shared";
 
-// TODO: Final content/measurement review required before production launch.
-// Size charts below are static reference data. Confirm exact garment
-// measurements with the production team before going live.
+// Fixed-size charts are CMS-managed since Stage 6 P5 (admin → Size Settings);
+// the arrays below are the static FALLBACK used only when no chart is live.
 
 export const Route = createFileRoute("/_site/size-guide")({
   head: () => ({
@@ -84,6 +85,8 @@ export const Route = createFileRoute("/_site/size-guide")({
       },
     ],
   }),
+  // CMS charts (Stage 6 P5); the hardcoded arrays below stay as the fallback.
+  loader: () => getSizeCharts(),
   component: SizeGuide,
 });
 
@@ -158,18 +161,53 @@ const girlsChart = {
   ],
 };
 
-type Chart = { cols: string[]; rows: string[][] };
+type Chart = { cols: string[]; rows: (string[] | readonly string[])[] };
 
-const categories = [
-  { id: "kurti", label: "Kurti", chart: kurtiChart },
-  { id: "three-piece", label: "Three Piece", chart: threePieceChart },
-  { id: "girls", label: "Girls Dress", chart: girlsChart },
-  { id: "saree", label: "Saree", chart: null },
-] as const;
+type CategoryEntry = {
+  id: string;
+  label: string;
+  chart: Chart | null;
+  measureLabel: string;
+  unit: "in" | "cm";
+  note?: string | null;
+};
+
+/** Static fallback — used only when no CMS chart is live. */
+const FALLBACK_CATEGORIES: CategoryEntry[] = [
+  { id: "kurti", label: "Kurti", chart: kurtiChart, measureLabel: "Bust", unit: "in" },
+  {
+    id: "three-piece",
+    label: "Three Piece",
+    chart: threePieceChart,
+    measureLabel: "Bust",
+    unit: "in",
+  },
+  { id: "girls", label: "Girls Dress", chart: girlsChart, measureLabel: "Chest", unit: "in" },
+  { id: "saree", label: "Saree", chart: null, measureLabel: "", unit: "in" },
+];
+
+/** CMS charts → category entries; saree keeps its prose section as a chip. */
+function chartCategoriesFrom(db: PublicSizeChart[]): CategoryEntry[] {
+  if (db.length === 0) return FALLBACK_CATEGORIES;
+  const list: CategoryEntry[] = db.map((c) => ({
+    id: c.slug,
+    label: c.name,
+    chart: toGuideChart(c),
+    measureLabel: c.helper_column ?? "",
+    unit: c.unit,
+    note: c.note,
+  }));
+  if (!list.some((c) => c.id === "saree")) {
+    list.push({ id: "saree", label: "Saree", chart: null, measureLabel: "", unit: "in" });
+  }
+  return list;
+}
 
 function SizeGuide() {
+  const dbCharts = Route.useLoaderData();
+  const categories = chartCategoriesFrom(dbCharts);
   const [tab, setTab] = useState<"custom" | "fixed">("custom");
-  const [activeCat, setActiveCat] = useState<string>("kurti");
+  const [activeCat, setActiveCat] = useState<string>(categories[0]?.id ?? "kurti");
 
   return (
     <div className="bg-secondary/30">
@@ -255,11 +293,11 @@ function SizeGuide() {
         {tab === "custom" ? (
           <CustomSection />
         ) : (
-          <FixedSection activeCat={activeCat} setActiveCat={setActiveCat} />
+          <FixedSection activeCat={activeCat} setActiveCat={setActiveCat} categories={categories} />
         )}
 
         {/* SIZE HELPER + FIT RECOMMENDATION + FAQ shared */}
-        <SizeStartingPointHelper />
+        <SizeStartingPointHelper categories={categories} />
         <FitRecommendation />
         <FaqSection />
       </div>
@@ -434,11 +472,13 @@ function MeasurementModalButton() {
 function FixedSection({
   activeCat,
   setActiveCat,
+  categories,
 }: {
   activeCat: string;
   setActiveCat: (c: string) => void;
+  categories: CategoryEntry[];
 }) {
-  const current = categories.find((c) => c.id === activeCat);
+  const current = categories.find((c) => c.id === activeCat) ?? categories[0];
 
   return (
     <div className="animate-fade-in space-y-8">
@@ -446,7 +486,7 @@ function FixedSection({
         <span className="eyebrow">Fixed Size Chart</span>
         <h2 className="mt-2 font-display text-3xl text-foreground">Fixed Size Measurements</h2>
         <p className="mx-auto mt-3 max-w-2xl text-sm text-muted-foreground">
-          All measurements are shown in inches.
+          All measurements are shown in {current?.unit === "cm" ? "centimetres" : "inches"}.
         </p>
       </div>
 
@@ -479,7 +519,12 @@ function FixedSection({
       </div>
 
       {current?.chart ? (
-        <ChartTable chart={current.chart} title={current.label} />
+        <>
+          <ChartTable chart={current.chart} title={current.label} />
+          {current.note && (
+            <p className="text-center text-xs text-muted-foreground">{current.note}</p>
+          )}
+        </>
       ) : (
         <SareeSection />
       )}
@@ -595,27 +640,20 @@ function CosmeticsNote() {
 
 /* ----------------------- SIZE STARTING-POINT HELPER ---------------------- */
 
-const helperCategories = [
-  { id: "kurti", label: "Kurti", chart: kurtiChart, measureLabel: "Bust" },
-  { id: "three-piece", label: "Three Piece", chart: threePieceChart, measureLabel: "Bust" },
-  { id: "girls", label: "Girls Dress", chart: girlsChart, measureLabel: "Chest" },
-  { id: "saree", label: "Saree", chart: null, measureLabel: "Bust" },
-] as const;
-
 type FitPref = "fitted" | "regular" | "relaxed";
 
-function SizeStartingPointHelper() {
-  const [catId, setCatId] = useState<string>("kurti");
+function SizeStartingPointHelper({ categories }: { categories: CategoryEntry[] }) {
+  const [catId, setCatId] = useState<string>(categories[0]?.id ?? "kurti");
   const [basis, setBasis] = useState<"body" | "garment">("garment");
   const [value, setValue] = useState("");
   const [fit, setFit] = useState<FitPref>("regular");
 
-  const cat = helperCategories.find((c) => c.id === catId)!;
+  const cat = categories.find((c) => c.id === catId) ?? categories[0];
   const measure = Number(value);
   const hasValue = value.trim() !== "" && Number.isFinite(measure) && measure > 0;
 
   let result: { size: string; note: string; reviewNext?: string } | null = null;
-  if (hasValue && cat.chart) {
+  if (hasValue && cat.chart && cat.measureLabel) {
     const colIndex = cat.chart.cols.findIndex(
       (c) => c.toLowerCase() === cat.measureLabel.toLowerCase(),
     );
@@ -661,7 +699,7 @@ function SizeStartingPointHelper() {
             onChange={(e) => setCatId(e.target.value)}
             className="mt-1.5 w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground"
           >
-            {helperCategories.map((c) => (
+            {categories.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.label}
               </option>
@@ -684,7 +722,9 @@ function SizeStartingPointHelper() {
 
         {/* Value */}
         <label className="text-sm">
-          <span className="font-medium text-foreground">{cat.measureLabel} (inches)</span>
+          <span className="font-medium text-foreground">
+            {cat.measureLabel || "Measurement"} ({cat.unit === "cm" ? "cm" : "inches"})
+          </span>
           <input
             type="number"
             min={1}
@@ -727,10 +767,15 @@ function SizeStartingPointHelper() {
             </a>
             .
           </p>
+        ) : !cat.measureLabel ? (
+          <p className="text-muted-foreground">
+            This chart doesn't use the automatic helper — compare the fixed size chart with a
+            well-fitting garment you already own.
+          </p>
         ) : !hasValue ? (
           <p className="text-muted-foreground">
-            Enter your {cat.measureLabel.toLowerCase()} measurement in inches to see a suggested
-            starting size.
+            Enter your {cat.measureLabel.toLowerCase()} measurement in{" "}
+            {cat.unit === "cm" ? "centimetres" : "inches"} to see a suggested starting size.
           </p>
         ) : result ? (
           <div className="space-y-1.5">
