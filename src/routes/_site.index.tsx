@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { listProductCards } from "@/lib/catalog.api";
+import { getActiveBanners } from "@/lib/banners.api";
 import { ProductGrid } from "@/components/ProductGrid";
 import { SectionHeading } from "@/components/SectionHeading";
 import { HeroSection } from "@/components/site/HeroSection";
@@ -60,7 +61,10 @@ export const Route = createFileRoute("/_site/")({
       },
     ],
   }),
-  loader: () => listProductCards(),
+  loader: async () => {
+    const [products, banners] = await Promise.all([listProductCards(), getActiveBanners()]);
+    return { products, banners };
+  },
   component: Home,
 });
 
@@ -111,7 +115,7 @@ function ViewAll({
 }
 
 function Home() {
-  const products = Route.useLoaderData();
+  const { products, banners } = Route.useLoaderData();
   const newArrivals = products.filter((p) => p.isNew).slice(0, 4);
   const bestSellers = products.filter((p) => p.isBestSeller).slice(0, 4);
   const customFitFavourites = products
@@ -126,7 +130,7 @@ function Home() {
 
   return (
     <div>
-      <HeroSection />
+      <HeroSection banner={banners[0] ?? null} />
 
       <TrustMarquee />
 

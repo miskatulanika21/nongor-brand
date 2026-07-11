@@ -190,6 +190,18 @@ jobs:
           [ -z "$DB_URL" ] && DB_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
           psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/stage5_db.test.sql
 
+      # Stage-6 banners: grant posture (public read anon-callable, CRUD service-
+      # role only, deny-all table), upsert create/update/not-found, media-library-
+      # only images, CHECK coherence (invalid_banner), public window filtering +
+      # sort ordering + no updated_by leak, live flag, delete_media in-use guard
+      # for banner references, and banner.* audit rows.
+      - name: DB integration tests (stage-6 banners)
+        run: |
+          command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
+          DB_URL=$(supabase status -o env 2>/dev/null | sed -n 's/^DB_URL=//p' | tr -d '"')
+          [ -z "$DB_URL" ] && DB_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/stage6_db.test.sql
+
       # Two-connection concurrency test: launches parallel psql sessions to verify
       # that advisory-lock serialization in api.bulk_set_inventory actually works
       # across genuine concurrent database connections (not single-session sequential).

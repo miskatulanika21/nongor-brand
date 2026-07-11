@@ -380,10 +380,13 @@ consumer. Sub-passes:
 - [ ] **P2 — newsletter consent management**: `unsubscribe_token` +
       one-click `/newsletter/unsubscribe` route + `List-Unsubscribe`
       header, admin subscriber list + CSV export.
-- [ ] **P3 — banners**: `banners` table (schedule window, sort, media-library
-      image) + cached public read + admin CRUD (`content.manage`);
-      `HeroSection` consumes published banners with the current hardcoded
-      hero as fallback; un-hide the nav item.
+- [x] **P3 — banners** (2026-07-11, migration `20260711162017`): `banners`
+      table (schedule window, sort, media-library-only image, RPC-only
+      deny-all) + cached public read + admin CRUD (`content.manage`, audited
+      `banner.*`); `delete_media` in-use guard extended to banner images;
+      `HeroSection` consumes the lowest-sorted live banner with the built-in
+      hero as fallback; nav un-hidden; `stage6_db.test.sql` §banners in CI;
+      live-drive verified end-to-end (publish → hero swap → cleanup).
 - [ ] **P4 — policies CMS**: `site_pages` + `site_page_revisions`
       (markdown, draft/publish/restore, seeded from today's static copy);
       storefront policy routes render from DB with static JSX fallback;
