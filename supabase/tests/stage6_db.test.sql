@@ -1,6 +1,18 @@
 -- Stage 6 DB integration test — runs against the EPHEMERAL local Supabase DB in
 -- CI (all migrations applied from empty).
 --
+-- §pages covers the P4 policies CMS (api.get_site_page / list_site_pages /
+-- get_site_page_admin / save_site_page_draft / publish_site_page /
+-- discard_site_page_draft / list_site_page_revisions /
+-- restore_site_page_revision):
+--   * grant posture: public read anon-callable; staff RPCs service-role only;
+--     both tables deny-all
+--   * seed integrity: the 4 pages + initial revisions exist from the migration
+--   * draft lifecycle: draft invisible publicly, publish goes live + revision,
+--     prune to 20, restore loads a revision into the draft, discard clears it
+--   * bounds (invalid_page), unknown slug (page_not_found), publish without a
+--     draft (no_draft_to_publish), non-staff rejection, page.* audit rows
+--
 -- §banners covers the P3 banner schema + RPCs (api.get_active_banners /
 -- list_banners / upsert_banner / set_banner_active / delete_banner) and the
 -- extended api.delete_media in-use guard:
@@ -300,6 +312,178 @@ BEGIN
     END IF;
   END;
   IF NOT v_raised THEN RAISE EXCEPTION 'FAIL: non-staff write allowed'; END IF;
+END $$;
+
+-- ============================================================
+-- §pages-1 — grant posture + seed integrity
+-- ============================================================
+DO $$
+DECLARE r text; v jsonb; v_count int;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+    IF NOT has_function_privilege(r, 'api.get_site_page(text)', 'EXECUTE') THEN
+      RAISE EXCEPTION 'FAIL: % must hold EXECUTE on api.get_site_page', r;
+    END IF;
+  END LOOP;
+  FOREACH r IN ARRAY ARRAY['anon','authenticated'] LOOP
+    IF has_function_privilege(r, 'api.list_site_pages(uuid)', 'EXECUTE')
+       OR has_function_privilege(r, 'api.save_site_page_draft(uuid,text,jsonb)', 'EXECUTE')
+       OR has_function_privilege(r, 'api.publish_site_page(uuid,text)', 'EXECUTE')
+       OR has_function_privilege(r, 'api.discard_site_page_draft(uuid,text)', 'EXECUTE')
+       OR has_function_privilege(r, 'api.list_site_page_revisions(uuid,text)', 'EXECUTE')
+       OR has_function_privilege(r, 'api.restore_site_page_revision(uuid,text,bigint)', 'EXECUTE') THEN
+      RAISE EXCEPTION 'FAIL: % should not hold EXECUTE on staff page RPCs', r;
+    END IF;
+    IF has_table_privilege(r, 'public.site_pages', 'SELECT')
+       OR has_table_privilege(r, 'public.site_page_revisions', 'SELECT') THEN
+      RAISE EXCEPTION 'FAIL: % should hold no direct privilege on page tables', r;
+    END IF;
+  END LOOP;
+  IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.site_pages'::regclass)
+     OR NOT (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.site_page_revisions'::regclass) THEN
+    RAISE EXCEPTION 'FAIL: RLS must be enabled on both page tables';
+  END IF;
+
+  -- migration seed: 4 pages, each with an initial revision
+  SELECT count(*) INTO v_count FROM public.site_pages;
+  IF v_count <> 4 THEN RAISE EXCEPTION 'FAIL: expected 4 seeded pages, got %', v_count; END IF;
+  SELECT count(*) INTO v_count FROM public.site_page_revisions;
+  IF v_count <> 4 THEN RAISE EXCEPTION 'FAIL: expected 4 initial revisions, got %', v_count; END IF;
+
+  v := api.get_site_page('delivery-policy');
+  IF v->>'title' <> 'Delivery Policy' OR v->>'body_md' NOT LIKE '%## Delivery charges%' THEN
+    RAISE EXCEPTION 'FAIL: seeded public read wrong';
+  END IF;
+  IF v ? 'draft' OR v ? 'updated_by' THEN
+    RAISE EXCEPTION 'FAIL: public read leaks draft/updated_by';
+  END IF;
+  IF api.get_site_page('return-policy') IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL: non-CMS slug should return NULL';
+  END IF;
+END $$;
+
+-- ============================================================
+-- §pages-2 — draft → publish → revision → restore → discard (+ audits)
+-- ============================================================
+DO $$
+DECLARE v jsonb; v_count int; v_rev_id bigint; v_raised boolean;
+BEGIN
+  -- publish without a draft is refused
+  v_raised := false;
+  BEGIN
+    PERFORM api.publish_site_page('00000000-0000-0000-0000-0000000000b1', 'delivery-policy');
+  EXCEPTION WHEN OTHERS THEN
+    v_raised := true;
+    IF SQLERRM <> 'no_draft_to_publish' THEN RAISE; END IF;
+  END;
+  IF NOT v_raised THEN RAISE EXCEPTION 'FAIL: publish without draft allowed'; END IF;
+
+  -- save a draft; the public read must keep serving the published copy
+  PERFORM api.save_site_page_draft('00000000-0000-0000-0000-0000000000b1', 'delivery-policy',
+    jsonb_build_object('eyebrow', 'Shipping', 'title', 'Delivery Policy v2',
+                       'description', 'desc', 'body_md', '## New body'));
+  IF (api.get_site_page('delivery-policy'))->>'title' <> 'Delivery Policy' THEN
+    RAISE EXCEPTION 'FAIL: draft leaked to public read';
+  END IF;
+  SELECT (e->>'has_draft')::boolean INTO v_raised
+  FROM jsonb_array_elements(api.list_site_pages('00000000-0000-0000-0000-0000000000b1')) e
+  WHERE e->>'slug' = 'delivery-policy';
+  IF NOT v_raised THEN RAISE EXCEPTION 'FAIL: draft flag not set in list'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.audit_logs
+                 WHERE action = 'page.draft_saved' AND target_id = 'delivery-policy') THEN
+    RAISE EXCEPTION 'FAIL: page.draft_saved audit missing';
+  END IF;
+
+  -- publish: live + second revision + draft cleared + audit
+  PERFORM api.publish_site_page('00000000-0000-0000-0000-0000000000b1', 'delivery-policy');
+  IF (api.get_site_page('delivery-policy'))->>'title' <> 'Delivery Policy v2' THEN
+    RAISE EXCEPTION 'FAIL: publish did not go live';
+  END IF;
+  SELECT count(*) INTO v_count FROM public.site_page_revisions WHERE slug = 'delivery-policy';
+  IF v_count <> 2 THEN RAISE EXCEPTION 'FAIL: expected 2 revisions, got %', v_count; END IF;
+  IF (SELECT draft FROM public.site_pages WHERE slug = 'delivery-policy') IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL: draft not cleared on publish';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.audit_logs
+                 WHERE action = 'page.published' AND target_id = 'delivery-policy') THEN
+    RAISE EXCEPTION 'FAIL: page.published audit missing';
+  END IF;
+
+  -- restore revision 1 into the draft (not straight to live)
+  SELECT min(id) INTO v_rev_id FROM public.site_page_revisions WHERE slug = 'delivery-policy';
+  PERFORM api.restore_site_page_revision('00000000-0000-0000-0000-0000000000b1',
+                                         'delivery-policy', v_rev_id);
+  IF (SELECT draft->>'title' FROM public.site_pages WHERE slug = 'delivery-policy')
+     <> 'Delivery Policy' THEN
+    RAISE EXCEPTION 'FAIL: restore did not load revision into draft';
+  END IF;
+  IF (api.get_site_page('delivery-policy'))->>'title' <> 'Delivery Policy v2' THEN
+    RAISE EXCEPTION 'FAIL: restore must not change the live page';
+  END IF;
+
+  -- discard clears the draft + audit
+  PERFORM api.discard_site_page_draft('00000000-0000-0000-0000-0000000000b1', 'delivery-policy');
+  IF (SELECT draft FROM public.site_pages WHERE slug = 'delivery-policy') IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL: discard did not clear draft';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.audit_logs
+                 WHERE action = 'page.draft_discarded' AND target_id = 'delivery-policy') THEN
+    RAISE EXCEPTION 'FAIL: page.draft_discarded audit missing';
+  END IF;
+END $$;
+
+-- ============================================================
+-- §pages-3 — revision prune to 20 across many publishes
+-- ============================================================
+DO $$
+DECLARE v_count int;
+BEGIN
+  FOR i IN 1..21 LOOP
+    PERFORM api.save_site_page_draft('00000000-0000-0000-0000-0000000000b1', 'payment-policy',
+      jsonb_build_object('title', 'Payment Policy ' || i, 'body_md', '## body ' || i));
+    PERFORM api.publish_site_page('00000000-0000-0000-0000-0000000000b1', 'payment-policy');
+  END LOOP;
+  SELECT count(*) INTO v_count FROM public.site_page_revisions WHERE slug = 'payment-policy';
+  IF v_count <> 20 THEN RAISE EXCEPTION 'FAIL: prune expected 20 revisions, got %', v_count; END IF;
+END $$;
+
+-- ============================================================
+-- §pages-4 — bounds + unknown slug + authorization
+-- ============================================================
+DO $$
+DECLARE v_raised boolean;
+BEGIN
+  -- empty body rejected
+  v_raised := false;
+  BEGIN
+    PERFORM api.save_site_page_draft('00000000-0000-0000-0000-0000000000b1', 'delivery-policy',
+      jsonb_build_object('title', 'x', 'body_md', ''));
+  EXCEPTION WHEN OTHERS THEN
+    v_raised := true;
+    IF SQLERRM <> 'invalid_page' THEN RAISE; END IF;
+  END;
+  IF NOT v_raised THEN RAISE EXCEPTION 'FAIL: empty body accepted'; END IF;
+
+  -- unknown slug rejected
+  v_raised := false;
+  BEGIN
+    PERFORM api.save_site_page_draft('00000000-0000-0000-0000-0000000000b1', 'not-a-page',
+      jsonb_build_object('title', 'x', 'body_md', 'y'));
+  EXCEPTION WHEN OTHERS THEN
+    v_raised := true;
+    IF SQLERRM <> 'page_not_found' THEN RAISE; END IF;
+  END;
+  IF NOT v_raised THEN RAISE EXCEPTION 'FAIL: unknown slug accepted'; END IF;
+
+  -- non-staff rejected
+  v_raised := false;
+  BEGIN
+    PERFORM api.list_site_pages('00000000-0000-0000-0000-0000000000c6');
+  EXCEPTION WHEN OTHERS THEN
+    v_raised := true;
+    IF SQLERRM <> 'actor_not_authorized' THEN RAISE; END IF;
+  END;
+  IF NOT v_raised THEN RAISE EXCEPTION 'FAIL: non-staff page read allowed'; END IF;
 END $$;
 
 ROLLBACK;

@@ -1,5 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { PageHero, Prose } from "@/components/PageHero";
+import { CmsPolicyPage } from "@/components/CmsPolicyPage";
+import { getSitePage } from "@/lib/pages.api";
 
 // TODO: Final legal/business review required before production launch.
 
@@ -23,7 +25,18 @@ export const Route = createFileRoute("/_site/delivery-policy")({
     ],
     links: [{ rel: "canonical", href: "/delivery-policy" }],
   }),
-  component: () => (
+  // CMS-published content (Stage 6 P4); the JSX below stays as the fallback.
+  loader: () => getSitePage({ data: { slug: "delivery-policy" } }),
+  component: DeliveryPolicy,
+});
+
+function DeliveryPolicy() {
+  const page = Route.useLoaderData();
+  return <CmsPolicyPage page={page} fallback={<StaticDeliveryPolicy />} />;
+}
+
+function StaticDeliveryPolicy() {
+  return (
     <div>
       <PageHero
         eyebrow="Shipping"
@@ -65,5 +78,5 @@ export const Route = createFileRoute("/_site/delivery-policy")({
         </p>
       </Prose>
     </div>
-  ),
-});
+  );
+}

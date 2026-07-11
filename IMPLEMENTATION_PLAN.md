@@ -387,10 +387,16 @@ consumer. Sub-passes:
       `HeroSection` consumes the lowest-sorted live banner with the built-in
       hero as fallback; nav un-hidden; `stage6_db.test.sql` §banners in CI;
       live-drive verified end-to-end (publish → hero swap → cleanup).
-- [ ] **P4 — policies CMS**: `site_pages` + `site_page_revisions`
-      (markdown, draft/publish/restore, seeded from today's static copy);
-      storefront policy routes render from DB with static JSX fallback;
-      real editor replaces the dead Edit button (`policies.manage`).
+- [x] **P4 — policies CMS** (2026-07-11, migration `20260711165114`):
+      `site_pages` (fixed slugs, draft jsonb) + `site_page_revisions`
+      (pruned to 20), seeded byte-identical from today's static copy; the 4
+      Prose pages (delivery/payment/cookie/authenticity) render from the DB
+      through a dependency-free React markdown renderer with static JSX
+      fallback; designed pages (return/terms/privacy/custom-size) stay in
+      code and the admin says so honestly; real editor (Edit/Preview/History
+      tabs, draft→publish→revision→restore) replaces the dead Edit button;
+      `stage6_db.test.sql` §pages in CI; visually verified end-to-end in a
+      real browser (edit → publish → storefront swap → restore).
 - [ ] **P5 — size settings**: `size_charts`/`size_chart_rows` (jsonb
       measurements) + admin grid editor (`sizes.manage`); size-guide + PDP
       render structured charts, images kept as illustration; un-hide.
