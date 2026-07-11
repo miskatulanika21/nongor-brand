@@ -13,6 +13,17 @@
 --   * bounds (invalid_page), unknown slug (page_not_found), publish without a
 --     draft (no_draft_to_publish), non-staff rejection, page.* audit rows
 --
+-- §reports covers the P6 read-only aggregates (api.report_sales_summary /
+-- report_top_products / report_coupon_usage / report_courier_performance /
+-- report_cod_reconciliation):
+--   * grant posture: service-role only
+--   * fixture orders across statuses → totals/series/status breakdown honour
+--     the confirmed/delivered definitions and the [from, to) range
+--   * top products exclude non-confirmed orders; coupon ledger aggregates;
+--     courier delivered counts + avg time-to-deliver from the history log;
+--     COD expected/collected/settled/outstanding + fees
+--   * non-staff rejection
+--
 -- §banners covers the P3 banner schema + RPCs (api.get_active_banners /
 -- list_banners / upsert_banner / set_banner_active / delete_banner) and the
 -- extended api.delete_media in-use guard:
@@ -484,6 +495,140 @@ BEGIN
     IF SQLERRM <> 'actor_not_authorized' THEN RAISE; END IF;
   END;
   IF NOT v_raised THEN RAISE EXCEPTION 'FAIL: non-staff page read allowed'; END IF;
+END $$;
+
+-- ============================================================
+-- §reports-0 — fixtures (category/product, orders across statuses,
+--              coupon redemption, COD shipment + delivery history)
+-- ============================================================
+INSERT INTO public.product_categories (slug, name, sort_order) VALUES ('rpt-cat', 'Report Cat', 90);
+INSERT INTO public.products (code, slug, name, category_id, price, stock)
+  SELECT 'rpt-prod', 'rpt-prod', 'Report Product', id, 1000, 50
+  FROM public.product_categories WHERE slug = 'rpt-cat';
+
+INSERT INTO public.orders (order_no, guest_token_hash, customer_name, customer_phone,
+  ship_district, ship_zone, ship_address, subtotal, discount, shipping_fee, total,
+  payment_method, status, idempotency_key) VALUES
+  ('NGR-RPT-1', repeat('1',64), 'C', '01700000001', 'Dhaka','dhaka','Rd', 2000, 200, 80, 1880, 'bkash', 'delivered', 'idem-rpt1'),
+  ('NGR-RPT-2', repeat('2',64), 'C', '01700000002', 'Dhaka','dhaka','Rd', 1000, 0, 80, 1080, 'cod', 'confirmed', 'idem-rpt2'),
+  ('NGR-RPT-3', repeat('3',64), 'C', '01700000003', 'Dhaka','dhaka','Rd', 500, 0, 80, 580, 'cod', 'cancelled', 'idem-rpt3'),
+  ('NGR-RPT-4', repeat('4',64), 'C', '01700000004', 'Dhaka','dhaka','Rd', 700, 0, 80, 780, 'bkash', 'pending_payment', 'idem-rpt4');
+
+INSERT INTO public.order_items (order_id, product_id, name, unit_price, qty, line_total)
+SELECT o.id, p.id, 'Report Product', v.unit_price, v.qty, v.unit_price * v.qty
+FROM (VALUES ('NGR-RPT-1', 1000, 2), ('NGR-RPT-2', 1000, 1), ('NGR-RPT-3', 500, 1))
+  AS v(order_no, unit_price, qty)
+JOIN public.orders o ON o.order_no = v.order_no
+JOIN public.products p ON p.code = 'rpt-prod';
+
+INSERT INTO public.coupons (code, type, value, min_subtotal, active) VALUES ('RPTTEST', 'fixed', 200, 0, false);
+INSERT INTO public.coupon_usages (coupon_code, order_id, scope, amount)
+SELECT 'RPTTEST', id, repeat('1',64), 200 FROM public.orders WHERE order_no = 'NGR-RPT-1';
+
+-- successful COD shipment, delivered 5h after booking, collected but unsettled
+INSERT INTO public.shipments (order_id, provider, booking_status, payment_collection_mode,
+  cod_amount, courier_fee, booked_at, cod_collected_at)
+SELECT id, 'steadfast', 'success', 'cod', 1880, 120, now() - interval '6 hours', now() - interval '30 minutes'
+FROM public.orders WHERE order_no = 'NGR-RPT-1';
+INSERT INTO public.order_status_history (order_id, from_status, to_status, reason, created_at)
+SELECT id, 'shipped', 'delivered', 'report test', now() - interval '1 hour'
+FROM public.orders WHERE order_no = 'NGR-RPT-1';
+
+-- ============================================================
+-- §reports-1 — grant posture: service-role only
+-- ============================================================
+DO $$
+DECLARE r text;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['anon','authenticated'] LOOP
+    IF has_function_privilege(r, 'api.report_sales_summary(uuid,timestamptz,timestamptz)', 'EXECUTE')
+       OR has_function_privilege(r, 'api.report_top_products(uuid,timestamptz,timestamptz,integer)', 'EXECUTE')
+       OR has_function_privilege(r, 'api.report_coupon_usage(uuid,timestamptz,timestamptz)', 'EXECUTE')
+       OR has_function_privilege(r, 'api.report_courier_performance(uuid,timestamptz,timestamptz)', 'EXECUTE')
+       OR has_function_privilege(r, 'api.report_cod_reconciliation(uuid,timestamptz,timestamptz)', 'EXECUTE') THEN
+      RAISE EXCEPTION 'FAIL: % should not hold EXECUTE on report RPCs', r;
+    END IF;
+  END LOOP;
+  IF NOT has_function_privilege('service_role', 'api.report_sales_summary(uuid,timestamptz,timestamptz)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL: service_role must hold EXECUTE on report RPCs';
+  END IF;
+END $$;
+
+-- ============================================================
+-- §reports-2 — aggregates honour the definitions and the range
+-- ============================================================
+DO $$
+DECLARE v jsonb; v_raised boolean;
+BEGIN
+  v := api.report_sales_summary('00000000-0000-0000-0000-0000000000b1',
+        now() - interval '1 day', now() + interval '1 day');
+  IF (v->'totals'->>'orders_count')::int <> 4 THEN
+    RAISE EXCEPTION 'FAIL: orders_count %', v->'totals'->>'orders_count'; END IF;
+  IF (v->'totals'->>'confirmed_count')::int <> 2
+     OR (v->'totals'->>'confirmed_revenue')::int <> 2960 THEN
+    RAISE EXCEPTION 'FAIL: confirmed %/% ', v->'totals'->>'confirmed_count', v->'totals'->>'confirmed_revenue'; END IF;
+  IF (v->'totals'->>'delivered_revenue')::int <> 1880
+     OR (v->'totals'->>'cancelled_count')::int <> 1 THEN
+    RAISE EXCEPTION 'FAIL: delivered/cancelled totals'; END IF;
+  IF (v->'totals'->>'aov')::int <> 1480 THEN
+    RAISE EXCEPTION 'FAIL: aov %', v->'totals'->>'aov'; END IF;
+  IF jsonb_array_length(v->'by_day') < 1 OR jsonb_array_length(v->'by_status') <> 4 THEN
+    RAISE EXCEPTION 'FAIL: by_day/by_status shape'; END IF;
+
+  -- an empty range returns zeros, not NULLs
+  v := api.report_sales_summary('00000000-0000-0000-0000-0000000000b1',
+        now() - interval '10 years', now() - interval '9 years');
+  IF (v->'totals'->>'orders_count')::int <> 0 OR (v->'totals'->>'confirmed_revenue')::int <> 0 THEN
+    RAISE EXCEPTION 'FAIL: empty range not zeroed'; END IF;
+
+  -- top products: confirmed set only (2000 + 1000; the cancelled 500 excluded)
+  v := api.report_top_products('00000000-0000-0000-0000-0000000000b1',
+        now() - interval '1 day', now() + interval '1 day', 10);
+  IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v) e
+    WHERE e->>'name' = 'Report Product' AND (e->>'revenue')::int = 3000
+      AND (e->>'units')::int = 3 AND (e->>'orders')::int = 2) THEN
+    RAISE EXCEPTION 'FAIL: top products: %', v; END IF;
+
+  -- coupon ledger
+  v := api.report_coupon_usage('00000000-0000-0000-0000-0000000000b1',
+        now() - interval '1 day', now() + interval '1 day');
+  IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v) e
+    WHERE e->>'coupon_code' = 'RPTTEST' AND (e->>'uses')::int = 1
+      AND (e->>'discount_total')::int = 200 AND (e->>'live_uses')::int = 1) THEN
+    RAISE EXCEPTION 'FAIL: coupon usage: %', v; END IF;
+
+  -- courier performance: 1 booked+delivered on steadfast, ~5h to deliver
+  v := api.report_courier_performance('00000000-0000-0000-0000-0000000000b1',
+        now() - interval '1 day', now() + interval '1 day');
+  IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v) e
+    WHERE e->>'provider' = 'steadfast' AND (e->>'booked')::int = 1
+      AND (e->>'delivered')::int = 1
+      AND (e->>'avg_hours_to_deliver')::int BETWEEN 4 AND 6) THEN
+    RAISE EXCEPTION 'FAIL: courier performance: %', v; END IF;
+
+  -- COD reconciliation: expected=collected=outstanding=1880, fee 120, settled 0
+  v := api.report_cod_reconciliation('00000000-0000-0000-0000-0000000000b1',
+        now() - interval '1 day', now() + interval '1 day');
+  IF (v->'totals'->>'cod_expected')::numeric <> 1880
+     OR (v->'totals'->>'cod_collected')::numeric <> 1880
+     OR (v->'totals'->>'cod_settled')::numeric <> 0
+     OR (v->'totals'->>'cod_outstanding')::numeric <> 1880
+     OR (v->'totals'->>'courier_fees')::numeric <> 120 THEN
+    RAISE EXCEPTION 'FAIL: cod totals: %', v->'totals'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v->'by_provider') e
+    WHERE e->>'provider' = 'steadfast' AND (e->>'cod_shipments')::int = 1) THEN
+    RAISE EXCEPTION 'FAIL: cod by_provider'; END IF;
+
+  -- non-staff rejected
+  v_raised := false;
+  BEGIN
+    PERFORM api.report_sales_summary('00000000-0000-0000-0000-0000000000c6',
+      now() - interval '1 day', now());
+  EXCEPTION WHEN OTHERS THEN
+    v_raised := true;
+    IF SQLERRM <> 'actor_not_authorized' THEN RAISE; END IF;
+  END;
+  IF NOT v_raised THEN RAISE EXCEPTION 'FAIL: non-staff report read allowed'; END IF;
 END $$;
 
 ROLLBACK;
