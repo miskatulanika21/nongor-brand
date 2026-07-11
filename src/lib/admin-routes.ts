@@ -138,7 +138,6 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         to: "/admin/reports",
         icon: "reports",
         permission: "reports.view",
-        hidden: true, // Coming soon — demo data only (Stage 6)
       },
       { label: "Settings", to: "/admin/settings", icon: "settings", permission: "settings.manage" },
       { label: "Staff Roles", to: "/admin/staff", icon: "staff", permission: "staff.view" },

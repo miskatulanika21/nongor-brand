@@ -400,9 +400,15 @@ consumer. Sub-passes:
 - [ ] **P5 — size settings**: `size_charts`/`size_chart_rows` (jsonb
       measurements) + admin grid editor (`sizes.manage`); size-guide + PDP
       render structured charts, images kept as illustration; un-hide.
-- [ ] **P6 — reports + CSV**: date-ranged aggregate RPCs (sales summary,
-      top products, coupon usage, courier performance, COD reconciliation) + recharts UI (`reports.view`, new `reportsRead` bucket) + shared
-      server-side CSV helper (also backfills P2's export); un-hide.
+- [x] **P6 — reports + CSV** (2026-07-12, migration `20260711211537`): five
+      read-only aggregate RPCs (sales summary with confirmed/delivered
+      definitions, top products, coupon ledger, courier performance with
+      avg-hours-to-deliver from the history log, COD reconciliation) —
+      service-role only, active-staff checks; `admin.reports.tsx` rebuilt
+      (URL-backed date range + presets, StatCards, recharts, per-section CSV + PII-free orders CSV via the shared BOM/quoting/formula-safe `toCsv`);
+      nav un-hidden (staff lack `reports.view` — verified in tests);
+      `stage6_db.test.sql` §reports in CI; visually verified in a real
+      browser against seeded fixtures with hand-checked figures.
 - [ ] **P7 — closure**: nav/RBAC sanity for the un-hidden screens,
       live-drive verification (incl. one real notification send), visual
       pass on the new admin screens, single status-doc sync.
