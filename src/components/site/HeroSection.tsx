@@ -3,6 +3,7 @@ import { ArrowRight, Ruler, HandHeart, Truck, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OptimizedImage } from "@/components/OptimizedImage";
 import { HIGH_IMAGE_QUALITY } from "@/lib/image-cdn";
+import type { PublicBanner } from "@/lib/banners-shared";
 import heroImg from "@/assets/products/kurti.webp";
 import logo from "@/assets/nongorr-logo-transparent.webp";
 
@@ -18,7 +19,33 @@ const floatingCards = [
   { icon: Sparkles, title: "New Arrivals", sub: "Festive 2026" },
 ];
 
-export function HeroSection() {
+/** The built-in hero content, used whenever no banner is live (CMS fallback). */
+const FALLBACK = {
+  eyebrow: "Handmade Clothing from Bangladesh",
+  subtitle:
+    "Discover premium Bangladeshi kurti, custom-size tailoring, saree, girls dress and beauty essentials — crafted with care, styled with elegance.",
+  imageAlt: "Nongorr handcrafted maroon kurti — signature edit",
+  cardEyebrow: "Signature Edit",
+  cardTitle: "Maroon Handloom Kurti",
+  cardSubtitle: "Embroidered · Custom-size ready",
+};
+
+/** Split a validated internal CTA path ("/shop?filter=x") into Link props. */
+function splitCta(to: string): { path: string; search: Record<string, string> | undefined } {
+  const qIndex = to.indexOf("?");
+  if (qIndex === -1) return { path: to, search: undefined };
+  const search: Record<string, string> = {};
+  for (const [k, v] of new URLSearchParams(to.slice(qIndex + 1))) search[k] = v;
+  return { path: to.slice(0, qIndex), search };
+}
+
+/**
+ * The homepage hero. When an admin-published banner is live (Stage 6 P3), its
+ * copy/CTA/image replace the built-in content; the layout, brand chrome (trust
+ * badges, floating cards, ornaments) and the static fallback are unchanged.
+ */
+export function HeroSection({ banner }: { banner?: PublicBanner | null }) {
+  const cta = banner?.ctaTo ? splitCta(banner.ctaTo) : null;
   return (
     <section className="relative bg-background">
       {/* Soft ivory watercolour texture */}
@@ -48,22 +75,35 @@ export function HeroSection() {
       <div className="relative mx-auto grid max-w-7xl items-center gap-10 px-4 py-14 sm:px-6 lg:grid-cols-2 lg:gap-12 lg:py-24">
         {/* LEFT — editorial copy */}
         <div className="order-1 max-w-xl space-y-6 text-center lg:text-left">
-          <span className="eyebrow animate-fade-in">Handmade Clothing from Bangladesh</span>
+          <span className="eyebrow animate-fade-in">{banner?.eyebrow ?? FALLBACK.eyebrow}</span>
           <h1 className="font-display text-4xl leading-[1.05] text-foreground animate-fade-in sm:text-5xl lg:text-6xl">
-            Handcrafted Kurti, <span className="text-primary">Tailored for Her</span>
+            {banner ? (
+              banner.title
+            ) : (
+              <>
+                Handcrafted Kurti, <span className="text-primary">Tailored for Her</span>
+              </>
+            )}
           </h1>
           <div className="ornament-divider mx-auto w-44 lg:mx-0" />
           <p className="mx-auto max-w-md text-base leading-relaxed text-muted-foreground animate-fade-in lg:mx-0">
-            Discover premium Bangladeshi kurti, custom-size tailoring, saree, girls dress and beauty
-            essentials — crafted with care, styled with elegance.
+            {banner ? (banner.subtitle ?? "") : FALLBACK.subtitle}
           </p>
 
           <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:flex-wrap sm:justify-center lg:justify-start">
-            <Button size="lg" className="w-full sm:w-auto" asChild>
-              <Link to="/shop" search={{ filter: "new-arrivals" } as never}>
-                Shop New Arrivals <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
+            {banner && cta && banner.ctaLabel ? (
+              <Button size="lg" className="w-full sm:w-auto" asChild>
+                <Link to={cta.path as never} search={cta.search as never}>
+                  {banner.ctaLabel} <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            ) : (
+              <Button size="lg" className="w-full sm:w-auto" asChild>
+                <Link to="/shop" search={{ filter: "new-arrivals" } as never}>
+                  Shop New Arrivals <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            )}
             <Button size="lg" variant="outline" className="w-full sm:w-auto" asChild>
               <Link to="/size-guide">Explore Custom Fit</Link>
             </Button>
@@ -94,8 +134,8 @@ export function HeroSection() {
           <div className="hero-tilt relative z-10 overflow-hidden rounded-[2rem] border border-gold/30 bg-card shadow-card animate-scale-in">
             <div className="relative aspect-[4/5] w-full">
               <OptimizedImage
-                src={heroImg}
-                alt="Nongorr handcrafted maroon kurti — signature edit"
+                src={banner?.imageUrl ?? heroImg}
+                alt={banner ? (banner.imageAlt ?? banner.title) : FALLBACK.imageAlt}
                 width={800}
                 height={1000}
                 loading="eager"
@@ -106,11 +146,19 @@ export function HeroSection() {
                 className="h-full w-full object-cover"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-primary/40 via-transparent to-transparent" />
-              <div className="absolute bottom-4 left-4 right-4 rounded-2xl bg-card/85 p-4 backdrop-blur">
-                <p className="eyebrow text-[0.6rem]">Signature Edit</p>
-                <p className="mt-1 font-display text-xl text-foreground">Maroon Handloom Kurti</p>
-                <p className="text-sm text-muted-foreground">Embroidered · Custom-size ready</p>
-              </div>
+              {(banner ? banner.cardTitle : true) && (
+                <div className="absolute bottom-4 left-4 right-4 rounded-2xl bg-card/85 p-4 backdrop-blur">
+                  {!banner && <p className="eyebrow text-[0.6rem]">{FALLBACK.cardEyebrow}</p>}
+                  <p className="mt-1 font-display text-xl text-foreground">
+                    {banner ? banner.cardTitle : FALLBACK.cardTitle}
+                  </p>
+                  {(banner ? banner.cardSubtitle : true) && (
+                    <p className="text-sm text-muted-foreground">
+                      {banner ? banner.cardSubtitle : FALLBACK.cardSubtitle}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

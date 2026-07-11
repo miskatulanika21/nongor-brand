@@ -115,7 +115,6 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         to: "/admin/banners",
         icon: "banners",
         permission: "content.manage",
-        hidden: true, // Coming soon — not yet persisted (Stage 6)
       },
       {
         label: "Media Library",

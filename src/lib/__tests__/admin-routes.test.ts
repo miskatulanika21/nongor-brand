@@ -26,8 +26,10 @@ describe("requiredPermissionForAdminPath", () => {
     // Hidden from the sidebar, but the route must still be permission-mapped so
     // a deep-link can't bypass the guard.
     expect(requiredPermissionForAdminPath("/admin/reports")).toBe("reports.view");
-    expect(requiredPermissionForAdminPath("/admin/banners")).toBe("content.manage");
     expect(requiredPermissionForAdminPath("/admin/size-settings")).toBe("sizes.manage");
+  });
+  it("maps the banners route (real since Stage 6 P3) to content.manage", () => {
+    expect(requiredPermissionForAdminPath("/admin/banners")).toBe("content.manage");
   });
   it("returns null for non-admin paths", () => {
     expect(requiredPermissionForAdminPath("/account")).toBeNull();
@@ -78,9 +80,13 @@ describe("navForRole", () => {
   it("excludes hidden (coming-soon) items from the sidebar", () => {
     const ownerNav = navForRole("owner");
     const labels = ownerNav.flatMap((g) => g.items.map((i) => i.label));
-    expect(labels).not.toContain("Banners");
     expect(labels).not.toContain("Reports");
     expect(labels).not.toContain("Size Settings");
+  });
+  it("shows Banners (real since Stage 6 P3) to content managers", () => {
+    const ownerNav = navForRole("owner");
+    const labels = ownerNav.flatMap((g) => g.items.map((i) => i.label));
+    expect(labels).toContain("Banners");
   });
   it("empty groups are dropped", () => {
     const staffNav = navForRole("staff");

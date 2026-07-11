@@ -75,6 +75,11 @@ export const AUDIT_ACTIONS = [
   "account.imported",
   // contact inbox
   "contact.status_changed",
+  // content (Stage 6)
+  "banner.created",
+  "banner.updated",
+  "banner.status_changed",
+  "banner.deleted",
   // shipments (Stage 5)
   "shipment.booked",
   "shipment.cancelled",
@@ -98,6 +103,7 @@ export const AUDIT_CATEGORIES = [
   "coupons",
   "shipments",
   "account",
+  "content",
 ] as const;
 
 export type AuditCategory = (typeof AUDIT_CATEGORIES)[number];
@@ -114,6 +120,7 @@ export const AUDIT_CATEGORY_LABEL: Record<AuditCategory, string> = {
   coupons: "Coupons",
   shipments: "Courier & shipments",
   account: "Customer accounts",
+  content: "Content & banners",
 };
 
 /** Visual tone — mirrors the admin badge tones used elsewhere. */
@@ -199,6 +206,10 @@ export const AUDIT_ACTION_META: Record<AuditAction, AuditActionMeta> = {
     category: "account",
     tone: "info",
   },
+  "banner.created": { label: "Banner created", category: "content", tone: "success" },
+  "banner.updated": { label: "Banner updated", category: "content", tone: "info" },
+  "banner.status_changed": { label: "Banner status changed", category: "content", tone: "info" },
+  "banner.deleted": { label: "Banner deleted", category: "content", tone: "danger" },
   "shipment.booked": { label: "Courier booked", category: "shipments", tone: "success" },
   "shipment.cancelled": { label: "Shipment cancelled", category: "shipments", tone: "warning" },
   "shipment.status_updated": {
