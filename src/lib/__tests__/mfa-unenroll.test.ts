@@ -42,7 +42,7 @@ vi.mock("@/lib/server/mfa.server", () => ({
 }));
 vi.mock("@/lib/server/audit.server", () => ({ writeAudit: writeAuditMock }));
 
-import { performUnenrollMfa } from "@/lib/mfa.api";
+import { performUnenrollMfa } from "@/lib/server/mfa-ops.server";
 
 type Factor = { id: string; factor_type: "totp"; status: "verified" | "unverified" };
 

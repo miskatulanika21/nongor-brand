@@ -43,7 +43,7 @@ vi.mock("@/lib/server/supabase-admin.server", () => ({
 }));
 vi.mock("@/lib/server/audit.server", () => ({ writeAudit: writeAuditMock }));
 
-import { performUpdateStaffRole, performSetStaffActive } from "@/lib/staff.api";
+import { performUpdateStaffRole, performSetStaffActive } from "@/lib/server/staff-ops.server";
 
 function staffIdentity(role: "staff" | "admin" | "owner", userId: string) {
   return {

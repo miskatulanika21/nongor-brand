@@ -36,6 +36,25 @@ export async function setNoStore(): Promise<void> {
 }
 
 /**
+ * Like setNoStore, but adds the HTTP/1.0 legacy no-cache headers too. Used by the
+ * auth/MFA endpoints. Lives here (a .server.ts) so `.api.ts` modules never import
+ * `@tanstack/react-start/server` directly — that specifier is denied in the client
+ * graph and breaks the dev import-protection when a route pulls the api module in.
+ */
+export async function setNoStoreStrict(): Promise<void> {
+  try {
+    const { setResponseHeaders } = await import("@tanstack/react-start/server");
+    setResponseHeaders({
+      "Cache-Control": "private, no-store",
+      Pragma: "no-cache",
+      Expires: "0",
+    } as unknown as Headers);
+  } catch {
+    /* no request context (e.g. unit test) */
+  }
+}
+
+/**
  * Authorize and rate-limit an admin write. `permission` is enforced against the
  * centralized RBAC registry; `op` is recorded in the denial audit for tracing.
  */

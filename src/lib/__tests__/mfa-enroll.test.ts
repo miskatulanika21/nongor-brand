@@ -45,7 +45,7 @@ vi.mock("@/lib/server/rate-limit.server", () => ({
 }));
 vi.mock("@/lib/server/audit.server", () => ({ writeAudit: writeAuditMock }));
 
-import { performStartMfaEnrollment } from "@/lib/mfa.api";
+import { performStartMfaEnrollment } from "@/lib/server/mfa-ops.server";
 
 type Factor = { id: string; factor_type: "totp" | "phone"; status: "verified" | "unverified" };
 
