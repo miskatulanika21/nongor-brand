@@ -83,6 +83,10 @@ export const AUDIT_ACTIONS = [
   "page.draft_saved",
   "page.published",
   "page.draft_discarded",
+  "size_chart.created",
+  "size_chart.updated",
+  "size_chart.status_changed",
+  "size_chart.deleted",
   // shipments (Stage 5)
   "shipment.booked",
   "shipment.cancelled",
@@ -216,6 +220,14 @@ export const AUDIT_ACTION_META: Record<AuditAction, AuditActionMeta> = {
   "page.draft_saved": { label: "Page draft saved", category: "content", tone: "neutral" },
   "page.published": { label: "Page published", category: "content", tone: "success" },
   "page.draft_discarded": { label: "Page draft discarded", category: "content", tone: "warning" },
+  "size_chart.created": { label: "Size chart created", category: "catalog", tone: "success" },
+  "size_chart.updated": { label: "Size chart updated", category: "catalog", tone: "info" },
+  "size_chart.status_changed": {
+    label: "Size chart status changed",
+    category: "catalog",
+    tone: "info",
+  },
+  "size_chart.deleted": { label: "Size chart deleted", category: "catalog", tone: "danger" },
   "shipment.booked": { label: "Courier booked", category: "shipments", tone: "success" },
   "shipment.cancelled": { label: "Shipment cancelled", category: "shipments", tone: "warning" },
   "shipment.status_updated": {
