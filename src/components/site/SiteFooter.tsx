@@ -7,6 +7,8 @@ import { BRAND } from "@/lib/brand";
 import type { PublicSettings } from "@/lib/settings.schema";
 import { availableMethods } from "@/lib/checkout-shared";
 import { PRODUCT_CATEGORIES } from "@/lib/categories";
+import { subscribeNewsletterFn } from "@/lib/newsletter.api";
+import { newsletterSubscribeSchema } from "@/lib/newsletter-shared";
 import {
   FacebookIcon,
   InstagramIcon,
@@ -34,11 +36,9 @@ import {
 
 /*
  * Nongorr premium customer-facing footer.
- * UI/UX only — all actions are frontend mock.
  * Contact/social links come from admin DB settings (with the static brand as a
- * fallback) — see the `settings` prop.
- * TODO: connect newsletter subscription to backend.
- * TODO: load real payment/courier configuration from admin.
+ * fallback) — see the `settings` prop. Newsletter opt-ins persist server-side
+ * (subscribeNewsletterFn → api.subscribe_newsletter; unsubscribe UI is Stage 6).
  */
 
 type FooterLink = {
@@ -183,42 +183,46 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
     },
   ];
 
-  // Newsletter mock state
+  // Newsletter state (real server-backed opt-in as of the Stage-5 polish pass)
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [waToggle, setWaToggle] = useState(false);
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
+  const [subscribing, setSubscribing] = useState(false);
+  const [subscribeError, setSubscribeError] = useState<string | null>(null);
 
   // Quick-track order number (prefills the /track page)
   const [orderId, setOrderId] = useState("");
 
-  const handleSubscribe = (e: React.FormEvent) => {
+  const handleSubscribe = async (e: React.FormEvent) => {
     e.preventDefault();
-    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
-    const phoneOk = /^[0-9+\-\s]{6,}$/.test(phone.trim());
-    if (!emailOk || (waToggle && !phoneOk)) {
+    if (subscribing) return;
+
+    const input = { email: email.trim(), whatsapp: waToggle ? phone.trim() : "" };
+    const parsed = newsletterSubscribeSchema.safeParse(input);
+    if (!parsed.success || (waToggle && !input.whatsapp)) {
+      setSubscribeError(null); // generic inline copy below covers validation
       setStatus("error");
       return;
     }
-    // Frontend-only demo: persist the validated preference to this browser only.
-    // Nothing is sent to a server. Disclosed in the Cookie Policy.
+
+    setSubscribing(true);
     try {
-      localStorage.setItem(
-        "nongorr_newsletter_demo",
-        JSON.stringify({
-          version: 1,
-          email: email.trim(),
-          whatsapp: waToggle ? phone.trim() : "",
-          savedAt: new Date().toISOString(),
-        }),
-      );
+      const res = await subscribeNewsletterFn({ data: parsed.data });
+      if (res.success) {
+        setStatus("success");
+        setEmail("");
+        setPhone("");
+      } else {
+        setSubscribeError(res.error ?? null);
+        setStatus("error");
+      }
     } catch {
+      setSubscribeError("Could not save your subscription. Please try again.");
       setStatus("error");
-      return;
+    } finally {
+      setSubscribing(false);
     }
-    setStatus("success");
-    setEmail("");
-    setPhone("");
   };
 
   const handleTrack = (e: React.FormEvent) => {
@@ -254,7 +258,7 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
             <div className="mx-auto mt-7 flex max-w-md animate-scale-in items-center justify-center gap-2 rounded-2xl border border-gold/40 bg-gold/15 px-5 py-4 text-gold">
               <CheckCircle2 className="size-5" />
               <span className="font-medium">
-                Demo saved on this device. No subscription was sent to a server.
+                You're in! We'll let you know about new drops and offers.
               </span>
             </div>
           ) : (
@@ -276,9 +280,10 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
                 />
                 <Button
                   type="submit"
+                  disabled={subscribing}
                   className="shrink-0 bg-gold text-gold-foreground hover:bg-gold/90"
                 >
-                  Join the Circle
+                  {subscribing ? "Joining…" : "Join the Circle"}
                 </Button>
               </div>
 
@@ -314,15 +319,15 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
               {status === "error" && (
                 <p className="flex items-center gap-1.5 text-xs text-gold">
                   <AlertCircle className="size-3.5" />
-                  Please enter a valid email{waToggle ? " and WhatsApp number" : ""}. If this keeps
-                  happening, your browser storage may be unavailable.
+                  {subscribeError ??
+                    `Please enter a valid email${waToggle ? " and WhatsApp number" : ""}.`}
                 </p>
               )}
             </form>
           )}
 
           <p className="mt-4 text-xs text-primary-foreground/55">
-            Demo only — saved on this device, nothing is sent to a server.
+            We only use this to share new drops and offers. Unsubscribe anytime by messaging us.
           </p>
         </div>
       </section>

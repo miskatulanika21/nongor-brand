@@ -20,7 +20,8 @@ export const Route = createFileRoute("/api/webhook/steadfast")({
       POST: async ({ request }: { request: Request }) => {
         // Dynamic imports to keep the bundle lean
         const process = (await import("node:process")).default;
-        const { safeServerLog } = await import("@/lib/server/security.server");
+        const { safeServerLog, timingSafeStringEqual } =
+          await import("@/lib/server/security.server");
         const { checkRateLimit, rateLimitMessage } = await import("@/lib/server/rate-limit.server");
 
         // ── Rate limit ──────────────────────────────────────────────────
@@ -47,7 +48,7 @@ export const Route = createFileRoute("/api/webhook/steadfast")({
         }
 
         const providedSecret = request.headers.get("x-webhook-secret") ?? "";
-        if (providedSecret !== secret) {
+        if (!timingSafeStringEqual(providedSecret, secret)) {
           safeServerLog("warn", "SteadFast webhook: invalid secret");
           return new Response(JSON.stringify({ message: "OK" }), {
             status: 200,

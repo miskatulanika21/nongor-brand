@@ -331,6 +331,8 @@ export const COURIER_ERROR_MESSAGES: Record<string, string> = {
   invalid_booking_state: "Shipment is not in the expected state for this action.",
   booking_not_stale: "This booking attempt has not expired yet.",
   double_booking: "An active forward shipment already exists for this order.",
+  booking_in_progress:
+    "This booking is already being processed. Refresh in a moment to see the result.",
   payment_not_verified: "Payment must be verified before courier booking.",
   manual_tracking_required: "Manual shipments require a tracking code or reference.",
   empty_courier_reference:

@@ -7,6 +7,7 @@
 
 import { getRequestHeader } from "@tanstack/react-start/server";
 import process from "node:process";
+import * as nodeCrypto from "node:crypto";
 
 // ---- Allowed origins --------------------------------------------------------
 
@@ -137,6 +138,23 @@ export function getClientIp(): string | null {
   if (real) return real.trim();
 
   return null;
+}
+
+// ---- Constant-time secret comparison -----------------------------------------
+
+/**
+ * Compare two secret strings in constant time (webhook secrets, tokens).
+ *
+ * Both inputs are SHA-256 hashed first so the buffers passed to
+ * `timingSafeEqual` always have equal length — a plain `a !== b` (or a naive
+ * timingSafeEqual on unequal-length buffers, which throws) leaks length and
+ * prefix-match timing. Hashing makes the comparison length-independent.
+ */
+export function timingSafeStringEqual(a: string, b: string): boolean {
+  const { createHash, timingSafeEqual } = nodeCrypto;
+  const ha = createHash("sha256").update(a, "utf8").digest();
+  const hb = createHash("sha256").update(b, "utf8").digest();
+  return timingSafeEqual(ha, hb);
 }
 
 // ---- Generic error responses ------------------------------------------------

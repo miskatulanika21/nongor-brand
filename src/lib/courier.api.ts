@@ -77,7 +77,9 @@ export const bookCourierFn = createServerFn({ method: "POST" })
   .validator(bookCourierSchema)
   .handler(async ({ data }) => {
     const { guardAdminWrite } = await import("@/lib/server/admin-guard.server");
-    const g = await guardAdminWrite("courier.manage", "bookCourier");
+    const g = await guardAdminWrite("courier.manage", "bookCourier", {
+      rateLimitAction: "courierWrite",
+    });
     if (!g.ok) return { success: false as const, error: g.error };
 
     // Fetch the order to get booking data
@@ -116,7 +118,9 @@ export const cancelShipmentFn = createServerFn({ method: "POST" })
   .validator(cancelShipmentSchema)
   .handler(async ({ data }) => {
     const { guardAdminWrite } = await import("@/lib/server/admin-guard.server");
-    const g = await guardAdminWrite("courier.manage", "cancelShipment");
+    const g = await guardAdminWrite("courier.manage", "cancelShipment", {
+      rateLimitAction: "courierWrite",
+    });
     if (!g.ok) return { success: false as const, error: g.error };
 
     const { cancelShipment } = await import("@/lib/server/courier.server");
@@ -134,7 +138,9 @@ export const resolveStaleAttemptFn = createServerFn({ method: "POST" })
   .validator(resolveStaleSchema)
   .handler(async ({ data }) => {
     const { guardAdminWrite } = await import("@/lib/server/admin-guard.server");
-    const g = await guardAdminWrite("courier.manage", "resolveStaleAttempt");
+    const g = await guardAdminWrite("courier.manage", "resolveStaleAttempt", {
+      rateLimitAction: "courierWrite",
+    });
     if (!g.ok) return { success: false as const, error: g.error };
 
     const { resolveStaleAttempt } = await import("@/lib/server/courier.server");
@@ -152,7 +158,9 @@ export const pollShipmentStatusFn = createServerFn({ method: "POST" })
   .validator(pollStatusSchema)
   .handler(async ({ data }) => {
     const { guardAdminWrite } = await import("@/lib/server/admin-guard.server");
-    const g = await guardAdminWrite("courier.manage", "pollShipmentStatus");
+    const g = await guardAdminWrite("courier.manage", "pollShipmentStatus", {
+      rateLimitAction: "courierWrite",
+    });
     if (!g.ok) return { success: false as const, error: g.error };
 
     const { pollShipmentStatus } = await import("@/lib/server/courier.server");
@@ -170,7 +178,9 @@ export const updateReconciliationFn = createServerFn({ method: "POST" })
   .validator(reconciliationSchema)
   .handler(async ({ data }) => {
     const { guardAdminWrite } = await import("@/lib/server/admin-guard.server");
-    const g = await guardAdminWrite("courier.manage", "updateReconciliation");
+    const g = await guardAdminWrite("courier.manage", "updateReconciliation", {
+      rateLimitAction: "courierWrite",
+    });
     if (!g.ok) return { success: false as const, error: g.error };
 
     const { updateReconciliation } = await import("@/lib/server/courier.server");

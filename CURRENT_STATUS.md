@@ -800,15 +800,19 @@ rating sync, customer submission → pending → approve → rating, catalog-fac
    `stage5_db.test.sql`); a genuine two-connection concurrency test
    (`concurrency.test.sh`) also runs in the `migrations-local` job. True
    multi-session advisory-lock races are verified.
-5. ~~Delete the mock `orders.ts` + `admin-ops.ts`~~ — **done in Stage 5** (both
-   deleted; the courier screen is DB-backed). Remaining crumb (P3): the now-dead
-   `PRODUCTS` export in `src/lib/products.ts` (no consumers) can be removed.
-6. Stage-5 review remediation deferred P3 items: enforce the stored booking
-   `request_hash` for true booking idempotency; constant-time webhook-secret
-   compare; wire the footer newsletter form (still demo); use the defined
-   `courierWrite` rate bucket for courier mutations (they currently share
-   `catalogWrite` via `guardAdminWrite`); build a notification-outbox sender
-   (`notification_events` rows are written but nothing consumes them yet).
+5. ~~Delete the mock `orders.ts` + `admin-ops.ts`~~ — **done in Stage 5**;
+   ~~dead `PRODUCTS` export~~ — **done in the polish pass** (`products.ts` is
+   now the pure isomorphic model: types + size constants + `requiresSelection`).
+6. ~~Stage-5 review remediation deferred P3 items~~ — **done in the polish pass**
+   (migration `20260711083958`): booking `request_hash` enforced
+   (`booking_in_progress` for a duplicate submit vs `double_booking` for a
+   second intent; the unique index stays the concurrency backstop);
+   constant-time webhook-secret compare (`timingSafeStringEqual`); footer
+   newsletter persists (`newsletter_subscribers` + rate-limited
+   `subscribe_newsletter`, idempotent re-consent; unsubscribe UI is Stage 6);
+   courier mutations use the `courierWrite` rate bucket. Still open: a
+   notification-outbox sender (`notification_events` rows are written but
+   nothing consumes them — needs a channel/provider decision, Stage 6).
 7. GPT-audit remediation status: done — F-02, F-03, F-04, F-05, F-06, F-07, F-08,
    F-10, F-11, F-13, F-15, F-16, F-17, F-19. **F-10** (MFA factor removal now
    requires an AAL2 step-up + a rate limit) and **F-11** (authenticated password
