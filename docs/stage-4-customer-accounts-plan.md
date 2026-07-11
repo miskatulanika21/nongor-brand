@@ -1,7 +1,9 @@
 # Stage 4 — Master Plan: Customer Accounts (server-backed, premium)
 
-**Status:** plan (created 2026-07-02). Stage 3 is CLOSED (P1–P5, CI-green,
-51 migrations, repo↔prod ledger parity verified). Each sub-pass below follows
+**Status:** **complete → STAGE 4 CLOSED** (P1–P9, 2026-07-03; plan created
+2026-07-02). All sub-passes shipped + CI-green; 56 migrations at closure;
+`stage4_db.test.sql` §1–§18 in CI; `e2e/account.spec.ts` validated 6/6 against
+a live dev server. Live detail in `CURRENT_STATUS.md`. Each sub-pass followed
 the project convention: **prod-proven migration (if any) + atomic commit +
 CI-green**, committed straight to `main`, pushed per part (multi-PC).
 
