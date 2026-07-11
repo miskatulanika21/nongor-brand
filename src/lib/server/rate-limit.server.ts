@@ -74,6 +74,8 @@ export const RATE_LIMITS = {
   wishlistWrite: { limit: 60, windowSec: 60 * 10 },
   /** Storefront contact-form submissions — per-IP; limit spam. */
   contactSubmit: { limit: 5, windowSec: 60 * 10 },
+  /** Footer newsletter opt-ins — per-IP; limit spam/enumeration. */
+  newsletterSubscribe: { limit: 5, windowSec: 60 * 10 },
   /** Courier admin writes (booking, cancel, reconciliation). */
   courierWrite: { limit: 30, windowSec: 60 * 5 },
   /** Inbound courier webhooks — higher volume, per-IP. */

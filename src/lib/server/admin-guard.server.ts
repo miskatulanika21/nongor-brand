@@ -57,10 +57,14 @@ export async function setNoStoreStrict(): Promise<void> {
 /**
  * Authorize and rate-limit an admin write. `permission` is enforced against the
  * centralized RBAC registry; `op` is recorded in the denial audit for tracing.
+ * `opts.rateLimitAction` selects the rate bucket (default `catalogWrite`) so
+ * high-volume areas can be isolated — e.g. courier mutations use `courierWrite`
+ * so a booking burst never starves catalog saves (and vice versa).
  */
 export async function guardAdminWrite(
   permission: AdminPermission,
   op: string,
+  opts?: { rateLimitAction?: import("./rate-limit.server").RateLimitAction },
 ): Promise<AdminWriteGuardResult> {
   await setNoStore();
 
@@ -101,7 +105,7 @@ export async function guardAdminWrite(
     }
   }
 
-  const rl = await checkIndependentRateLimit("catalogWrite", {
+  const rl = await checkIndependentRateLimit(opts?.rateLimitAction ?? "catalogWrite", {
     ip: getClientIp(),
     account: actor.userId,
   });

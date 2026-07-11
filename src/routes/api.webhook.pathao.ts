@@ -19,7 +19,8 @@ export const Route = createFileRoute("/api/webhook/pathao")({
     handlers: {
       POST: async ({ request }: { request: Request }) => {
         const process = (await import("node:process")).default;
-        const { safeServerLog } = await import("@/lib/server/security.server");
+        const { safeServerLog, timingSafeStringEqual } =
+          await import("@/lib/server/security.server");
         const { checkRateLimit, rateLimitMessage } = await import("@/lib/server/rate-limit.server");
 
         // ── Rate limit ──────────────────────────────────────────────────
@@ -46,7 +47,7 @@ export const Route = createFileRoute("/api/webhook/pathao")({
         }
 
         const providedSecret = request.headers.get("x-webhook-secret") ?? "";
-        if (providedSecret !== secret) {
+        if (!timingSafeStringEqual(providedSecret, secret)) {
           safeServerLog("warn", "Pathao webhook: invalid secret");
           return new Response(JSON.stringify({ message: "OK" }), {
             status: 200,

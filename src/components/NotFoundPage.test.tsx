@@ -1,19 +1,16 @@
 /**
- * Smoke tests for the branded 404 experience.
+ * Smoke test for the branded 404 experience.
  *
- * Two acceptance criteria are exercised here:
- *   1. The shared NotFoundPage that the root + /_site splat + product
- *      $slug not-found boundaries all render exposes the branded copy
- *      and the recovery links to Home and Shop.
- *   2. Looking up an invalid product slug returns undefined, which is
- *      exactly what triggers `throw notFound()` in the product loader
- *      and therefore the branded not-found page (rather than crashing
- *      or showing an empty product screen).
+ * The shared NotFoundPage that the root + /_site splat + product $slug
+ * not-found boundaries all render exposes the branded copy and the recovery
+ * links to Home and Shop. (The old "invalid slug → getProduct undefined" case
+ * was removed with the mock PRODUCTS seed — the PDP loader is DB-backed via
+ * getProductDetail, and its not-found behavior belongs to the route/e2e layer,
+ * not a mock lookup.)
  */
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { NotFoundPage } from "./NotFoundPage";
-import { getProduct } from "@/lib/products";
 
 // TanStack Router's <Link> needs a router context. For a smoke-test we
 // don't need real routing — replace it with a plain anchor.
@@ -46,12 +43,5 @@ describe("Branded 404", () => {
 
     const shop = screen.getByRole("link", { name: /explore the shop/i });
     expect(shop).toHaveAttribute("href", "/shop");
-  });
-
-  it("invalid product slug resolves to undefined (triggers notFound)", () => {
-    // The product route's loader is `if (!getProduct(params.slug)) throw notFound()`.
-    // Confirming this contract guarantees an invalid slug renders the branded
-    // 404 boundary instead of crashing or showing an empty product screen.
-    expect(getProduct("totally-not-a-real-product-slug-xyz")).toBeUndefined();
   });
 });

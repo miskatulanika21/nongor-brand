@@ -451,4 +451,93 @@ BEGIN
   END LOOP;
 END $$;
 
+-- ============================================================
+-- §polish — A2 booking request-hash + #12 newsletter subscribe
+-- ============================================================
+
+-- A2: same request hash on a pending attempt → booking_in_progress;
+--     different hash / no hash → double_booking. Failed attempts don't block.
+INSERT INTO public.orders (order_no, guest_token_hash, customer_name, customer_phone,
+  ship_district, ship_zone, ship_address, subtotal, discount, shipping_fee, total,
+  payment_method, status, idempotency_key) VALUES
+  ('NGR-TEST-HASH1', repeat('9',64), 'C', '01700000000', 'Dhaka','dhaka','Rd', 1000,0,0,1000,'cod','ready_to_ship','idem-hash1');
+
+DO $$
+DECLARE v_owner uuid := '00000000-0000-0000-0000-0000000000a1';
+        oid uuid; sid uuid; v jsonb; raised boolean;
+BEGIN
+  SELECT id INTO oid FROM public.orders WHERE order_no='NGR-TEST-HASH1';
+  v := api.create_shipment_attempt(v_owner, oid, 'steadfast', 'cod', 1000, 'hash-A');
+  sid := (v->>'shipment_id')::uuid;
+
+  -- duplicate submit (same hash, still pending) → booking_in_progress
+  raised := false;
+  BEGIN
+    PERFORM api.create_shipment_attempt(v_owner, oid, 'steadfast', 'cod', 1000, 'hash-A');
+  EXCEPTION WHEN OTHERS THEN raised := true;
+    IF SQLERRM <> 'booking_in_progress' THEN RAISE EXCEPTION 'FAIL: same-hash code %', SQLERRM; END IF;
+  END;
+  IF NOT raised THEN RAISE EXCEPTION 'FAIL: same-hash duplicate accepted'; END IF;
+
+  -- different intent (different hash) → double_booking
+  raised := false;
+  BEGIN
+    PERFORM api.create_shipment_attempt(v_owner, oid, 'pathao', 'cod', 1000, 'hash-B');
+  EXCEPTION WHEN OTHERS THEN raised := true;
+    IF SQLERRM <> 'double_booking' THEN RAISE EXCEPTION 'FAIL: diff-hash code %', SQLERRM; END IF;
+  END;
+  IF NOT raised THEN RAISE EXCEPTION 'FAIL: second attempt accepted'; END IF;
+
+  -- a FAILED attempt does not block a retry (fresh attempt allowed)
+  PERFORM api.fail_shipment_booking(sid, 'test failure');
+  v := api.create_shipment_attempt(v_owner, oid, 'steadfast', 'cod', 1000, 'hash-C');
+  IF (v->>'shipment_id') IS NULL THEN RAISE EXCEPTION 'FAIL: retry after failure blocked'; END IF;
+  IF (v->>'attempt_no')::int <> 2 THEN RAISE EXCEPTION 'FAIL: attempt_no expected 2, got %', v->>'attempt_no'; END IF;
+END $$;
+
+-- #12: newsletter subscribe — insert, idempotent re-consent, invalid rejected
+DO $$
+DECLARE v jsonb; v_id uuid; v_id2 uuid; raised boolean;
+BEGIN
+  v := api.subscribe_newsletter('  Buyer@Example.COM  ', NULL);
+  v_id := (v->>'id')::uuid;
+  IF (SELECT email FROM public.newsletter_subscribers WHERE id = v_id) <> 'buyer@example.com' THEN
+    RAISE EXCEPTION 'FAIL: email not normalized'; END IF;
+
+  -- re-subscribe: same row, whatsapp added, unsubscribed_at cleared
+  UPDATE public.newsletter_subscribers SET unsubscribed_at = now() WHERE id = v_id;
+  v := api.subscribe_newsletter('buyer@example.com', '01712345678');
+  v_id2 := (v->>'id')::uuid;
+  IF v_id2 <> v_id THEN RAISE EXCEPTION 'FAIL: re-subscribe created a new row'; END IF;
+  IF (SELECT unsubscribed_at FROM public.newsletter_subscribers WHERE id = v_id) IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL: re-subscribe did not clear unsubscribed_at'; END IF;
+  IF (SELECT whatsapp FROM public.newsletter_subscribers WHERE id = v_id) <> '01712345678' THEN
+    RAISE EXCEPTION 'FAIL: whatsapp not stored'; END IF;
+
+  -- re-subscribe WITHOUT whatsapp keeps the existing one
+  PERFORM api.subscribe_newsletter('buyer@example.com', NULL);
+  IF (SELECT whatsapp FROM public.newsletter_subscribers WHERE id = v_id) <> '01712345678' THEN
+    RAISE EXCEPTION 'FAIL: omitted whatsapp clobbered the stored one'; END IF;
+
+  -- invalid email → invalid_subscription
+  raised := false;
+  BEGIN
+    PERFORM api.subscribe_newsletter('no-at-sign', NULL);
+  EXCEPTION WHEN OTHERS THEN raised := true;
+    IF SQLERRM <> 'invalid_subscription' THEN RAISE EXCEPTION 'FAIL: invalid code %', SQLERRM; END IF;
+  END;
+  IF NOT raised THEN RAISE EXCEPTION 'FAIL: invalid email accepted'; END IF;
+END $$;
+
+-- grant posture: newsletter RPC is service-role only
+DO $$
+DECLARE r text;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['anon','authenticated'] LOOP
+    IF has_function_privilege(r, 'api.subscribe_newsletter(text,text)', 'EXECUTE') THEN
+      RAISE EXCEPTION 'FAIL: % should not hold EXECUTE on subscribe_newsletter', r;
+    END IF;
+  END LOOP;
+END $$;
+
 ROLLBACK;
