@@ -478,10 +478,19 @@ about them. Sub-passes:
       **passed in CI under real parallel connections** (logic also prod-proven
       sequentially via a rolled-back txn). *(Reservation-expiry race + a k6/
       autocannon throughput baseline deferred as optional — not launch-gating.)\_
-- [ ] **P3 — observability & error monitoring**: exception tracker (P0 vendor;
-      today only `@vercel/analytics`) client+server, structured request-id
-      logging with redaction, `/healthz` readiness endpoint, external uptime +
-      alerting, admin dead-letter/webhook-failure surface.
+- [x] **P3 — observability & error monitoring** (2026-07-13): `/api/health`
+      readiness probe (DB round-trip via `api.healthz()` migration
+      `20260712171719`; 200 ok / 503 degraded; verified) for uptime + P5 smoke;
+      **Sentry** error monitoring behind the DSN flag — client `@sentry/react`
+      (lazy) + server `@sentry/node` (`captureServerException` on both SSR error
+      paths, release=sha), CSP `connect-src` opens `*.sentry.io` only when
+      configured; server capture **verified end-to-end against the real DSN**.
+      Chose the lean SDK over `@sentry/tanstackstart-react` to preserve the
+      security-critical custom `server.ts`. `docs/stage-7-observability.md` has
+      owner setup. **Owner action:** add `SENTRY_DSN` + `VITE_SENTRY_DSN` to
+      Vercel + point an uptime monitor at `/api/health`. _(Source-map upload +
+      structured request-id logging + admin dead-letter tile deferred as
+      optional, non-launch-blocking.)_
 - [ ] **P3.5 — notification sender + newsletter consent** (reactivated from
       Stage 6 by the P0 decisions; built per `docs/stage-6-content-ops-plan.md`
       §P1/§P2): outbox `notification_events` extension (status/attempts/backoff/

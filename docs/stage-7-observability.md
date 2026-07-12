@@ -7,7 +7,7 @@
 1. **Health / readiness probe — `GET /api/health`.** Returns
    `{ status, db, region, sha, ts }`: `200 {status:"ok"}` when it can round-trip
    the database via `api.healthz()` (migration `20260712171719`), `503
-   {status:"degraded"}` otherwise (with a 3s DB timeout so it fails fast). No
+{status:"degraded"}` otherwise (with a 3s DB timeout so it fails fast). No
    auth, no cache. Used by external uptime monitoring + the P5 post-deploy smoke.
    Verified locally: `ok`/200 with env, `degraded`/503 without DB.
 
@@ -40,7 +40,7 @@
    both set to the Sentry project DSN:
    - `SENTRY_DSN` (server)
    - `VITE_SENTRY_DSN` (client — this is public by design; it ships to the browser)
-   Redeploy. Sentry is now live; nothing else is required.
+     Redeploy. Sentry is now live; nothing else is required.
 
 2. **Uptime monitoring (recommended):** point an external monitor
    (Sentry Crons/Uptime, BetterStack, UptimeRobot, or Vercel's own) at
@@ -55,7 +55,7 @@
 - **Source-map upload** (readable server stack traces instead of minified):
   `npm i -D @sentry/vite-plugin`, enable `build.sourcemap`, add the
   `sentryVitePlugin({ org:"nongorr", project:"…", authToken:
-  process.env.SENTRY_AUTH_TOKEN })` as the last Vite plugin, and set
+process.env.SENTRY_AUTH_TOKEN })` as the last Vite plugin, and set
   `SENTRY_AUTH_TOKEN` (a Sentry internal-integration token) in the build env.
   Gated on the token so it's a no-op without it. Deferred to keep the current
   green build untouched until it can be verified with the token.
