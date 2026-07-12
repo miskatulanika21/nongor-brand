@@ -286,6 +286,95 @@ export async function performPasswordUpdate(data: z.infer<typeof passwordUpdateW
   return { success: true as const, message: "Password updated successfully.", destination };
 }
 
+// ---- Account deletion (self-serve, destructive) -----------------------------
+
+/**
+ * Permanently delete the CURRENT customer's account.
+ *
+ * Destructive + irreversible, so it is gated like a password change: CSRF + a
+ * verified session + re-authentication. A password account must re-enter its
+ * current password (verified on a throwaway client, live session untouched); an
+ * OAuth-only account has no password to verify, so the active session + the
+ * explicit client confirmation are the proof. Staff accounts are refused here —
+ * staff removal goes through the guarded admin workflow (the DB RPC also rejects
+ * them, defense in depth).
+ *
+ * The heavy lifting is one atomic RPC (`api.delete_account`): it anonymizes the
+ * user's orders to guest ownership (business records survive), writes the
+ * canonical `account.deleted` audit, and deletes `auth.users` (cascading all
+ * personal data). We then clear this request's session cookies.
+ */
+export async function performAccountDeletion(data: { currentPassword?: string }) {
+  await setNoCacheHeaders();
+  const { createServerSupabaseClient } = await import("@/lib/server/supabase.server");
+  const { getPublicSupabaseEnv } = await import("@/lib/server/env.server");
+  const { checkCsrfOrigin, getClientIp, safeServerLog } =
+    await import("@/lib/server/security.server");
+  const { getAuthenticatedIdentity } = await import("@/lib/server/identity.server");
+  const { checkIndependentRateLimit, rateLimitMessage } =
+    await import("@/lib/server/rate-limit.server");
+
+  const env = getPublicSupabaseEnv();
+  if (!checkCsrfOrigin(env.siteUrl)) {
+    return { success: false as const, error: "Invalid request origin." };
+  }
+
+  const supabase = createServerSupabaseClient();
+  const result = await getAuthenticatedIdentity({ strict: true, client: supabase });
+  if (!result.ok) {
+    return { success: false as const, error: "Please sign in again." };
+  }
+  const identity = result.identity;
+
+  if (identity.kind === "staff") {
+    return {
+      success: false as const,
+      error: "Staff accounts can't be deleted here. Contact the store owner.",
+    };
+  }
+
+  const rl = await checkIndependentRateLimit("accountWrite", {
+    ip: getClientIp(),
+    account: identity.userId,
+  });
+  if (!rl.allowed) {
+    return { success: false as const, error: rateLimitMessage() };
+  }
+
+  // Password accounts must re-authenticate. Detect an email/password identity;
+  // an OAuth-only account (no password) is gated by the session + confirmation.
+  const { data: identData } = await supabase.auth.getUserIdentities();
+  const hasPassword = (identData?.identities ?? []).some((i) => i.provider === "email");
+  if (hasPassword) {
+    const current = data.currentPassword?.trim();
+    if (!current) {
+      return {
+        success: false as const,
+        error: "Enter your current password to delete your account.",
+      };
+    }
+    if (!identity.email) {
+      return { success: false as const, error: "Please sign in again." };
+    }
+    const ok = await verifyCurrentPassword(identity.email, current);
+    if (!ok) {
+      return { success: false as const, error: "Your current password is incorrect." };
+    }
+  }
+
+  const { createAdminSupabaseClient } = await import("@/lib/server/supabase-admin.server");
+  const admin = createAdminSupabaseClient();
+  const { error } = await admin.schema("api").rpc("delete_account", { p_user: identity.userId });
+  if (error) {
+    safeServerLog("warn", "Account deletion failed", { userId: identity.userId });
+    return { success: false as const, error: "Failed to delete your account. Please try again." };
+  }
+
+  // The auth user (and its sessions) are gone; clear this request's cookies too.
+  await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
+  return { success: true as const };
+}
+
 // ---- OAuth callback (PKCE code exchange) ------------------------------------
 
 export const oauthCallbackSchema = z.object({

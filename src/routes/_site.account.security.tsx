@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,6 +7,15 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { updatePassword } from "@/lib/auth.api";
+import {
+  deleteAccount,
+  getConnectedIdentities,
+  signOutEverywhere,
+  startIdentityLink,
+  unlinkIdentity,
+} from "@/lib/account-security.api";
+import type { ConnectedIdentitiesResult } from "@/lib/server/account-security.server";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { passwordUpdateSchema } from "@/lib/validation";
 import {
   KeyRound,
@@ -25,7 +34,25 @@ export const Route = createFileRoute("/_site/account/security")({
   component: SecurityPage,
 });
 
+const PROVIDER_LABEL: Record<string, string> = { google: "Google", facebook: "Facebook" };
+
 function SecurityPage() {
+  const [identities, setIdentities] = useState<ConnectedIdentitiesResult | null>(null);
+  const [loadingIdentities, setLoadingIdentities] = useState(true);
+
+  const refreshIdentities = useCallback(async () => {
+    try {
+      const res = await getConnectedIdentities();
+      if (res.success) setIdentities(res.data);
+    } finally {
+      setLoadingIdentities(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshIdentities();
+  }, [refreshIdentities]);
+
   return (
     <div className="space-y-5">
       <div>
@@ -35,56 +62,244 @@ function SecurityPage() {
         </p>
       </div>
 
-      {/* Change password — functional */}
       <ChangePasswordCard />
 
-      {/* Connected login methods — future feature */}
-      <Card icon={<Link2 className="h-5 w-5" />} title="Connected login methods">
-        <div className="space-y-3">
-          {["Google", "Facebook"].map((p) => (
-            <div
-              key={p}
-              className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3"
-            >
-              <div className="min-w-0">
-                <p className="font-medium text-foreground">{p}</p>
-                <p className="text-xs text-muted-foreground">Not connected</p>
-              </div>
-              <Button variant="outline" size="sm" disabled aria-disabled="true">
-                Coming soon
-              </Button>
-            </div>
-          ))}
-        </div>
-      </Card>
+      <ConnectedLoginMethodsCard
+        data={identities}
+        loading={loadingIdentities}
+        onChanged={refreshIdentities}
+      />
 
-      {/* Active sessions */}
-      <Card icon={<MonitorSmartphone className="h-5 w-5" />} title="Active sessions">
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3">
-          <div className="min-w-0">
-            <p className="font-medium text-foreground">Current session</p>
-            <p className="text-xs text-muted-foreground">You are signed in on this device.</p>
-          </div>
-          <Badge variant="outline">This device</Badge>
-        </div>
-        <Button variant="outline" className="mt-4" disabled aria-disabled="true">
-          <LogOut className="mr-2 h-4 w-4" /> Log out of all sessions
-        </Button>
-      </Card>
+      <ActiveSessionsCard />
 
-      {/* Delete account */}
-      <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-5">
-        <div className="flex items-center gap-2 text-destructive">
-          <Trash2 className="h-5 w-5" />
-          <h3 className="font-display text-lg">Delete account</h3>
+      <DeleteAccountCard hasPassword={identities?.hasPassword ?? true} />
+    </div>
+  );
+}
+
+// ---- Connected login methods (real: link / unlink) ----
+
+function ConnectedLoginMethodsCard({
+  data,
+  loading,
+  onChanged,
+}: {
+  data: ConnectedIdentitiesResult | null;
+  loading: boolean;
+  onChanged: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const configured = data?.configured ?? [];
+
+  async function onConnect(provider: "google" | "facebook") {
+    setBusy(provider);
+    try {
+      const res = await startIdentityLink({ data: { provider } });
+      if (res.success && res.url) {
+        window.location.href = res.url;
+        return;
+      }
+      toast.error(res.success ? "Couldn't start linking." : res.error);
+    } catch {
+      toast.error("Something went wrong. Please try again.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onDisconnect(identityId: string, label: string) {
+    setBusy(identityId);
+    try {
+      const res = await unlinkIdentity({ data: { identityId } });
+      if (res.success) {
+        toast.success(`${label} disconnected.`);
+        await onChanged();
+      } else {
+        toast.error(res.error);
+      }
+    } catch {
+      toast.error("Something went wrong. Please try again.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Card icon={<Link2 className="h-5 w-5" />} title="Connected login methods">
+      {loading ? (
+        <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading…
         </div>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Permanently delete your account and all associated data. This action cannot be undone.
+      ) : configured.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Social sign-in isn't enabled for this store yet.
         </p>
-        <Button variant="destructive" className="mt-4" disabled aria-disabled="true">
-          Delete account
-        </Button>
+      ) : (
+        <div className="space-y-3">
+          {configured.map((provider) => {
+            const label = PROVIDER_LABEL[provider] ?? provider;
+            const linked = (data?.identities ?? []).find((i) => i.provider === provider);
+            const isBusy = busy === provider || (linked && busy === linked.identityId);
+            return (
+              <div
+                key={provider}
+                className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium text-foreground">{label}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {linked ? (linked.email ?? "Connected") : "Not connected"}
+                  </p>
+                </div>
+                {linked ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!!isBusy}
+                    onClick={() => onDisconnect(linked.identityId, label)}
+                  >
+                    {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Disconnect"}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!!isBusy}
+                    onClick={() => onConnect(provider)}
+                  >
+                    {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Connect"}
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ---- Active sessions (real: global sign-out) ----
+
+function ActiveSessionsCard() {
+  const [loading, setLoading] = useState(false);
+
+  async function onSignOutEverywhere() {
+    setLoading(true);
+    try {
+      const res = await signOutEverywhere();
+      if (res.success) {
+        toast.success("Signed out of all sessions.");
+        window.location.assign("/login");
+      } else {
+        toast.error(res.error);
+        setLoading(false);
+      }
+    } catch {
+      toast.error("Something went wrong. Please try again.");
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Card icon={<MonitorSmartphone className="h-5 w-5" />} title="Active sessions">
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3">
+        <div className="min-w-0">
+          <p className="font-medium text-foreground">Current session</p>
+          <p className="text-xs text-muted-foreground">You are signed in on this device.</p>
+        </div>
+        <Badge variant="outline">This device</Badge>
       </div>
+      <Button variant="outline" className="mt-4" disabled={loading} onClick={onSignOutEverywhere}>
+        {loading ? (
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        ) : (
+          <LogOut className="mr-2 h-4 w-4" />
+        )}
+        Log out of all sessions
+      </Button>
+    </Card>
+  );
+}
+
+// ---- Delete account (real: re-auth + irreversible) ----
+
+function DeleteAccountCard({ hasPassword }: { hasPassword: boolean }) {
+  const confirm = useConfirm();
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onDelete() {
+    setError(null);
+    if (hasPassword && !password.trim()) {
+      setError("Enter your current password to delete your account.");
+      return;
+    }
+    const ok = await confirm({
+      tone: "danger",
+      title: "Delete your account?",
+      description:
+        "This permanently removes your profile, addresses, measurements and wishlist. Your past orders are kept as records but detached from your account. This cannot be undone.",
+      confirmText: "Delete account",
+    });
+    if (!ok) return;
+
+    setLoading(true);
+    try {
+      const res = await deleteAccount({
+        data: hasPassword ? { currentPassword: password } : {},
+      });
+      if (res.success) {
+        toast.success("Your account has been deleted.");
+        window.location.assign("/");
+      } else {
+        setError(res.error);
+        setLoading(false);
+      }
+    } catch {
+      setError("Something went wrong. Please try again.");
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-5">
+      <div className="flex items-center gap-2 text-destructive">
+        <Trash2 className="h-5 w-5" />
+        <h3 className="font-display text-lg">Delete account</h3>
+      </div>
+      <p className="mt-2 text-sm text-muted-foreground">
+        Permanently delete your account and personal data. Past orders are kept as records but
+        detached from your account. This action cannot be undone.
+      </p>
+      {hasPassword && (
+        <div className="mt-4 max-w-sm space-y-1.5">
+          <Label className="text-sm">Current password</Label>
+          <Input
+            type="password"
+            placeholder="Enter your current password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            className={cn(error && "border-destructive focus-visible:ring-destructive/30")}
+          />
+        </div>
+      )}
+      {error && (
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-destructive">
+          <AlertCircle className="h-3.5 w-3.5" /> {error}
+        </p>
+      )}
+      <Button variant="destructive" className="mt-4" disabled={loading} onClick={onDelete}>
+        {loading ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Deleting…
+          </>
+        ) : (
+          "Delete account"
+        )}
+      </Button>
     </div>
   );
 }
