@@ -53,3 +53,6 @@ e2e/.auth/
 # Local Supabase config
 supabase/config.toml
 supabase/.gitignore
+
+.vercel
+.env*
