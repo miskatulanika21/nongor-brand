@@ -116,23 +116,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
       { rel: "icon", href: "/favicon.ico", sizes: "48x48" },
       { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
-      // Self-hosted fonts (defined in styles.css) — no third-party font round-trip.
-      // Preload the two most-used above-the-fold faces so the swap is near-instant;
-      // fonts are always fetched in CORS mode, so crossOrigin is required.
-      {
-        rel: "preload",
-        href: "/fonts/cormorant-garamond.woff2",
-        as: "font",
-        type: "font/woff2",
-        crossOrigin: "anonymous",
-      },
-      {
-        rel: "preload",
-        href: "/fonts/jost.woff2",
-        as: "font",
-        type: "font/woff2",
-        crossOrigin: "anonymous",
-      },
+      // Self-hosted fonts are defined in styles.css with font-display: swap, so
+      // text paints immediately in a fallback and swaps in when the font arrives.
+      // We deliberately DO NOT preload them: on bandwidth-constrained mobile a
+      // font preload competes with the LCP hero image for the first bytes, which
+      // hurts LCP more than the (already-swapped) text benefits.
     ],
   }),
   shellComponent: RootShell,
