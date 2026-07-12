@@ -162,8 +162,9 @@ export function HeroSection({ banner }: { banner?: PublicBanner | null }) {
             </div>
           </div>
 
-          {/* Floating cards — normal grid up to lg; float outside only from xl where room exists */}
-          <div className="z-20 mt-4 grid grid-cols-3 gap-2.5 xl:absolute xl:-left-6 xl:bottom-10 xl:mt-0 xl:w-44 xl:grid-cols-1 xl:gap-3">
+          {/* Feature cards — a clean row beneath the image at every width. (A prior
+              xl:absolute float collided with the signature-edit caption on wide screens.) */}
+          <div className="z-20 mt-4 grid grid-cols-3 gap-2.5">
             {floatingCards.map((c) => (
               <div
                 key={c.title}
