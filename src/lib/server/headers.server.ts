@@ -42,9 +42,16 @@ function buildCsp(): string {
   // insights beacon can post here too — allow it so RUM isn't CSP-blocked.
   const vercelAnalytics = "https://va.vercel-scripts.com";
 
-  const connectSrc = ["'self'", supabaseOrigin, supabaseWs, upstashOrigin, vercelAnalytics].filter(
-    Boolean,
-  );
+  // Sentry ingest (only when error monitoring is configured).
+  const sentry = process.env.VITE_SENTRY_DSN ? "https://*.sentry.io" : null;
+  const connectSrc = [
+    "'self'",
+    supabaseOrigin,
+    supabaseWs,
+    upstashOrigin,
+    vercelAnalytics,
+    sentry,
+  ].filter(Boolean);
 
   return [
     "default-src 'self'",
@@ -76,9 +83,16 @@ function buildStrictCsp(nonce: string): string {
   const supabaseWs = supabaseOrigin ? supabaseOrigin.replace(/^http/, "ws") : null;
   const upstashOrigin = originOf(process.env.UPSTASH_REDIS_REST_URL);
   const vercelAnalytics = "https://va.vercel-scripts.com";
-  const connectSrc = ["'self'", supabaseOrigin, supabaseWs, upstashOrigin, vercelAnalytics].filter(
-    Boolean,
-  );
+  // Sentry ingest (only when error monitoring is configured).
+  const sentry = process.env.VITE_SENTRY_DSN ? "https://*.sentry.io" : null;
+  const connectSrc = [
+    "'self'",
+    supabaseOrigin,
+    supabaseWs,
+    upstashOrigin,
+    vercelAnalytics,
+    sentry,
+  ].filter(Boolean);
 
   return [
     "default-src 'self'",
