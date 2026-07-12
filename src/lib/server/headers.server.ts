@@ -62,8 +62,8 @@ function buildCsp(): string {
     // Hydration + ld+json inline scripts; Vercel analytics/speed-insights.
     `script-src 'self' 'unsafe-inline' ${vercelAnalytics}`,
     // Tailwind inline styles + Google Fonts stylesheet.
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
     "img-src 'self' data: blob: https:",
     `connect-src ${connectSrc.join(" ")}`,
     "upgrade-insecure-requests",
@@ -101,8 +101,8 @@ function buildStrictCsp(nonce: string): string {
     "frame-ancestors 'none'",
     "form-action 'self'",
     `script-src 'nonce-${nonce}' 'strict-dynamic' https: 'unsafe-inline'`,
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
     "img-src 'self' data: blob: https:",
     `connect-src ${connectSrc.join(" ")}`,
     "report-uri /api/csp-report",

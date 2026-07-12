@@ -4,6 +4,42 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Self-hosted fonts (Stage 7 P4) — served same-origin from /public/fonts so the
+ * render path no longer makes a blocking round-trip to fonts.googleapis.com +
+ * fonts.gstatic.com (faster FCP/LCP; also lets the CSP drop the Google hosts).
+ * Both families are variable on Google Fonts, so one file covers the 400–600
+ * weight range. Latin subset; font-display: swap. */
+@font-face {
+  font-family: "Cormorant Garamond";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url(/fonts/cormorant-garamond.woff2) format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Cormorant Garamond";
+  font-style: italic;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url(/fonts/cormorant-garamond-italic.woff2) format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Jost";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url(/fonts/jost.woff2) format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 /*
  * Nongorr design system — premium Bangladeshi women's boutique.
  * Palette: deep maroon, ivory/cream, antique gold, soft beige.
