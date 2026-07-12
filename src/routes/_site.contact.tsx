@@ -194,7 +194,7 @@ function ContactInfo() {
                   {l}
                 </p>
               ))}
-              {c.note && <p className="mt-1.5 text-xs italic text-muted-foreground/80">{c.note}</p>}
+              {c.note && <p className="mt-1.5 text-xs italic text-muted-foreground">{c.note}</p>}
               {c.action && (
                 <a
                   href={c.action.href}
@@ -325,7 +325,7 @@ function ContactForm() {
 
       <Field label="Contact Reason" error={errors.reason}>
         <Select value={reason} onValueChange={setReason}>
-          <SelectTrigger className="bg-background">
+          <SelectTrigger className="bg-background" aria-label="Contact reason">
             <SelectValue placeholder="Select a reason" />
           </SelectTrigger>
           <SelectContent>

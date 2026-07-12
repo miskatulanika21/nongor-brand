@@ -333,7 +333,14 @@ function Shop() {
         <AccordionItem value="price">
           <AccordionTrigger className="text-sm font-medium">Price</AccordionTrigger>
           <AccordionContent className="px-1 pt-3">
-            <Slider value={price} onValueChange={setPrice} min={500} max={PRICE_MAX} step={100} />
+            <Slider
+              value={price}
+              onValueChange={setPrice}
+              min={500}
+              max={PRICE_MAX}
+              step={100}
+              thumbLabel="Price"
+            />
             <div className="mt-3 flex items-center justify-between text-xs">
               <span className="text-muted-foreground">৳500</span>
               <span className="font-medium text-foreground">
@@ -550,7 +557,7 @@ function Shop() {
                 </SheetContent>
               </Sheet>
               <Select value={sort} onValueChange={setSort}>
-                <SelectTrigger className="w-40">
+                <SelectTrigger className="w-40" aria-label="Sort products">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

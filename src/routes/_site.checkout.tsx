@@ -667,7 +667,7 @@ function Checkout() {
 
               <Field label="District" required error={errors.district} fieldRef={refs.district}>
                 <Select value={district} onValueChange={selectDistrict}>
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="District">
                     <SelectValue placeholder="Select district" />
                   </SelectTrigger>
                   <SelectContent>
@@ -688,7 +688,7 @@ function Checkout() {
               >
                 {district === "Dhaka" ? (
                   <Select value={area} onValueChange={setArea}>
-                    <SelectTrigger>
+                    <SelectTrigger aria-label="Area">
                       <SelectValue placeholder="Select area" />
                     </SelectTrigger>
                     <SelectContent>
