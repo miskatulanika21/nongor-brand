@@ -9,6 +9,13 @@
 --   * a staff/owner account is rejected (staff_cannot_self_delete)
 --   * an unknown user is rejected (account_not_found)
 --   * grant posture: service-role only (revoked from anon/authenticated)
+--
+-- §promote_to_staff covers api.promote_to_staff (F-14 existing-customer→staff):
+--   * an existing account (resolved case-insensitively by email) gets a
+--     staff_profiles row + staff.promoted AND staff.provisioned audits; the
+--     customer profile is preserved
+--   * a second call returns already_staff; an unknown email returns not_found
+--   * grant posture: service-role only
 
 \set ON_ERROR_STOP on
 BEGIN;
@@ -132,6 +139,57 @@ BEGIN
     WHERE routine_schema='api' AND routine_name='delete_account' AND grantee='service_role';
   IF v_anon <> 0 OR v_auth <> 0 THEN RAISE EXCEPTION 'FAIL: delete_account executable by anon/authenticated'; END IF;
   IF v_svc <> 1 THEN RAISE EXCEPTION 'FAIL: delete_account not granted to service_role'; END IF;
+END $$;
+
+-- ── §promote_to_staff — F-14 promote / already_staff / not_found ─────────────
+INSERT INTO auth.users (id, email, aud, role, instance_id, created_at, updated_at) VALUES
+  ('00000000-0000-0000-0000-0000000007c2', 'Promote.Seven@test.local', 'authenticated', 'authenticated',
+   '00000000-0000-0000-0000-000000000000', now(), now());
+INSERT INTO public.customer_profiles (user_id, full_name) VALUES
+  ('00000000-0000-0000-0000-0000000007c2', 'Promote Seven');
+
+DO $$
+DECLARE
+  v_actor uuid := '00000000-0000-0000-0000-0000000007b1'; -- staff owner from §fixtures
+  v_uid uuid := '00000000-0000-0000-0000-0000000007c2';
+  r1 jsonb; r2 jsonb; r3 jsonb;
+BEGIN
+  -- case-insensitive promote of an existing customer
+  r1 := api.promote_to_staff('promote.seven@test.local', 'admin', 'Promoted Seven', v_actor);
+  IF r1->>'status' <> 'promoted' THEN RAISE EXCEPTION 'FAIL promote: %', r1; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.staff_profiles WHERE user_id=v_uid AND role='admin' AND is_active) THEN
+    RAISE EXCEPTION 'FAIL: staff row not created';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.audit_logs WHERE action='staff.promoted' AND target_id=v_uid::text) THEN
+    RAISE EXCEPTION 'FAIL: no staff.promoted audit';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.audit_logs WHERE action='staff.provisioned' AND target_id=v_uid::text) THEN
+    RAISE EXCEPTION 'FAIL: no staff.provisioned audit';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.customer_profiles WHERE user_id=v_uid) THEN
+    RAISE EXCEPTION 'FAIL: customer profile lost';
+  END IF;
+
+  -- second call → already_staff
+  r2 := api.promote_to_staff('promote.seven@test.local', 'staff', NULL, v_actor);
+  IF r2->>'status' <> 'already_staff' THEN RAISE EXCEPTION 'FAIL already_staff: %', r2; END IF;
+
+  -- unknown email → not_found
+  r3 := api.promote_to_staff('nobody-seven@test.local', 'staff', NULL, v_actor);
+  IF r3->>'status' <> 'not_found' THEN RAISE EXCEPTION 'FAIL not_found: %', r3; END IF;
+END $$;
+
+DO $$
+DECLARE v_anon int; v_auth int; v_svc int;
+BEGIN
+  SELECT count(*) INTO v_anon FROM information_schema.role_routine_grants
+    WHERE routine_schema='api' AND routine_name='promote_to_staff' AND grantee='anon';
+  SELECT count(*) INTO v_auth FROM information_schema.role_routine_grants
+    WHERE routine_schema='api' AND routine_name='promote_to_staff' AND grantee='authenticated';
+  SELECT count(*) INTO v_svc FROM information_schema.role_routine_grants
+    WHERE routine_schema='api' AND routine_name='promote_to_staff' AND grantee='service_role';
+  IF v_anon <> 0 OR v_auth <> 0 THEN RAISE EXCEPTION 'FAIL: promote_to_staff executable by anon/authenticated'; END IF;
+  IF v_svc <> 1 THEN RAISE EXCEPTION 'FAIL: promote_to_staff not granted to service_role'; END IF;
 END $$;
 
 ROLLBACK;

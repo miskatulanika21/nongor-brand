@@ -156,7 +156,37 @@ export const provisionStaff = createServerFn({ method: "POST" })
 
     const admin = createAdminSupabaseClient();
 
-    // Invite the user (Supabase emails a setup link; no password handled here).
+    // F-14 — if the email already belongs to an account (e.g. an existing
+    // customer), PROMOTE it in place instead of inviting (invite would fail for
+    // an existing email). The email→id resolution + the staff insert happen in
+    // one SECURITY DEFINER RPC (no auth.admin.listUsers paging blind spot).
+    const { data: promo, error: promoError } = await admin.schema("api").rpc("promote_to_staff", {
+      p_email: data.email,
+      p_role: data.role,
+      p_display_name: data.displayName ?? null,
+      p_actor_id: actorId,
+    });
+
+    if (!promoError && promo) {
+      const status = (promo as { status?: string }).status;
+      if (status === "promoted") {
+        return { success: true as const, message: "Existing account promoted to staff." };
+      }
+      if (status === "already_staff") {
+        return { success: false as const, error: "That person is already a staff member." };
+      }
+      // status === 'not_found' → fall through to the invite flow below.
+    } else if (promoError) {
+      safeServerLog("error", "Staff promote RPC failed", {
+        code: (promoError as { code?: string }).code ?? "unknown",
+      });
+      return {
+        success: false as const,
+        error: "Could not add this staff member. Please try again.",
+      };
+    }
+
+    // No existing account — invite the user (Supabase emails a setup link).
     const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(
       data.email,
       {
