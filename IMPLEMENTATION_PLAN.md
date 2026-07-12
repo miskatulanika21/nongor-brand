@@ -439,10 +439,66 @@ notifications/newsletter apply to that addendum, not to this closure.
 
 ## Stage 7 — Hardening & launch
 
-Security review, rate limiting extended to all public mutations, concurrency
-tests (oversell/coupon race/duplicate order), error monitoring, CI/CD deploy,
-backup/restore docs, perf (LCP < 2.5s mobile) and a11y audits, CSP tightening,
-legal review.
+**Master plan:** `docs/stage-7-hardening-launch-plan.md` (2026-07-12). The
+go-live stage — deliverable is **operational confidence, not features** (ships
+zero new customer-facing functionality). Hardens the unhappy paths (attack,
+load, provider outage, data loss, bad deploy) and proves what we can assert
+about them. Sub-passes:
+
+- [ ] **P0 — decision gate** (owner): error-monitoring vendor (rec. Sentry),
+      backup/PITR tier, legal-copy signoff, launch domain, and which
+      visual-audit items block launch (rec. only real photography). Only the
+      vendor + domain answers block a pass.
+- [ ] **P1 — security hardening & closure**: **CSP tightening** — remove
+      `'unsafe-inline'` from `script-src` via per-request nonce (Report-Only
+      shadow first) + `object-src`/`base-uri`/`frame-ancestors` + tight
+      `connect-src`; rate-limit coverage audit enforced as a test (every
+      server fn → bucket); **F-14** existing-customer→staff promotion RPC +
+      admin action; enable leaked-password protection; credential-rotation
+      runbook + secrets inventory; full `/security-review` pass; advisors
+      final sweep.
+- [ ] **P2 — concurrency & correctness suite**: prove oversell / coupon race /
+      duplicate-idempotency under **true parallel connections** (extend
+      `concurrency.test.sh` into CI) + reservation-expiry race; documented
+      throughput baseline. (Today these invariants are single-session in the
+      `*_db.test.sql` suites.)
+- [ ] **P3 — observability & error monitoring**: exception tracker (P0 vendor;
+      today only `@vercel/analytics`) client+server, structured request-id
+      logging with redaction, `/healthz` readiness endpoint, external uptime +
+      alerting, admin dead-letter/webhook-failure surface.
+- [ ] **P4 — performance & accessibility**: capture CWV baseline
+      (chrome-devtools Lighthouse), fix to **LCP < 2.5s mobile** / CLS < 0.1 /
+      INP < 200ms, admin-bundle split, bundle-size budget in CI; axe on key
+      routes + keyboard-only checkout/admin walkthrough, WCAG 2.1 AA
+      (maroon/gold contrast, labels, focus), reduced-motion sanity.
+- [ ] **P5 — CI/CD & release engineering**: post-deploy Playwright smoke on
+      the preview URL, gated preview→prod promotion, migration-parity guard,
+      rollback runbook (app = Vercel instant revert; DB = forward-only +
+      PITR break-glass) drilled once, release-notes convention.
+- [ ] **P6 — backup / restore / DR**: runbook + **a real restore drill** with
+      recorded RTO/RPO; Storage-bucket backup (`payment-evidence` is not
+      re-derivable); data-export/deletion path; DR decision tree (corrupt DB /
+      bad migration / wiped bucket / region outage).
+- [ ] **P7 — content, legal & launch cut-over**: visual-audit fix list (real
+      photography, badge clutter, star rounding, ৳ glyph, social buttons);
+      legal copy finalized via the P4 CMS `site_pages`; domain + TLS + HSTS
+      preload + OAuth redirect + cookie domain cut-over; **final credential
+      rotation**; **opens the deferred Stage-6 P1/P2 gate** (domain → SPF/DKIM
+      → notification sender + newsletter consent resume per
+      `docs/stage-6-content-ops-plan.md`); go-live checklist.
+- [ ] **P8 — stage closure**: full regression + smoke green; final advisors /
+      security-review / a11y / CWV numbers recorded; status docs synced once.
+
+**Exit:** CSP nonce-enforced with no `script-src 'unsafe-inline'`; every server
+fn rate-limited (test-enforced); F-14 shipped; the three money-path races
+proven under parallel connections; an unhandled server error is visible in the
+tracker within seconds; LCP < 2.5s mobile captured; a restore drill completed
+with recorded RTO/RPO; production promotion gated + reversible; domain live and
+secrets rotated. Stage-6 P1/P2 (notification sender + newsletter consent) are
+**not** built here — P7 only opens their gate.
+
+**Recommended order:** P0 → P1 → P2 → P3 → P4 → P5 → P6 → P7 → P8 (P2/P4/P6 are
+independent, good multi-PC parallel candidates).
 
 ## Working rules (every stage)
 
