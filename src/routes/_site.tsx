@@ -29,8 +29,15 @@ export const Route = createFileRoute("/_site")({
   notFoundComponent: NotFoundPage,
   head: () => ({
     meta: [
-      { title: "Page Not Found | Nongorr Studio" },
-      { name: "robots", content: "noindex,nofollow" },
+      { title: "Nongorr — Premium Bangladeshi Women's Boutique" },
+      // Site-wide indexing gate: keep the whole storefront OUT of search until
+      // launch on the real domain (avoids Google indexing the temporary
+      // vercel.app URL). Flip by setting VITE_ALLOW_INDEXING=true at go-live.
+      // Private sub-routes (admin/account/cart/checkout/404) still carry their
+      // own explicit noindex regardless of this flag.
+      ...(import.meta.env.VITE_ALLOW_INDEXING === "true"
+        ? []
+        : [{ name: "robots", content: "noindex,nofollow" } as const]),
     ],
   }),
   beforeLoad: async (): Promise<SiteContext> => {

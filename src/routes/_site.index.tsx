@@ -10,6 +10,7 @@ import { HowToOrder } from "@/components/site/HowToOrder";
 import { Button } from "@/components/ui/button";
 import { StarRating } from "@/components/StarRating";
 import { BRAND } from "@/lib/brand";
+import { absUrl } from "@/lib/site-config";
 import { Truck, ShieldCheck, Ruler, HandHeart, ArrowRight, Instagram, Quote } from "lucide-react";
 import founderPortrait from "@/assets/founder-portrait.webp";
 import founderLifestyle from "@/assets/founder-lifestyle.webp";
@@ -29,7 +30,7 @@ export const Route = createFileRoute("/_site/")({
         content:
           "Handcrafted kurti, custom-size tailoring, saree, girls dress and beauty essentials — premium boutique fashion from Bangladesh.",
       },
-      { property: "og:url", content: "/" },
+      { property: "og:url", content: absUrl("/") },
       { property: "og:type", content: "website" },
       { name: "twitter:title", content: "Nongorr — Premium Bangladeshi Women's Boutique" },
       {
@@ -38,7 +39,7 @@ export const Route = createFileRoute("/_site/")({
           "Handcrafted kurti, custom-size tailoring & beauty essentials, handmade in Bangladesh.",
       },
     ],
-    links: [{ rel: "canonical", href: "/" }],
+    links: [{ rel: "canonical", href: absUrl("/") }],
     scripts: [
       {
         type: "application/ld+json",
