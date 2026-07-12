@@ -28,10 +28,16 @@ export interface ConnectedIdentitiesResult {
   hasPassword: boolean;
 }
 
-async function sessionContext() {
+/**
+ * CSRF + verified session + (optional) independent per-IP / per-account rate
+ * limit. Every account-security op is authenticated; passing a bucket also
+ * throttles it (the mutating ops must be throttled — a hijacked session should
+ * not be able to spray sign-out / unlink / link-start calls).
+ */
+async function sessionContext(rateLimit?: import("./rate-limit.server").RateLimitAction) {
   const { createServerSupabaseClient } = await import("@/lib/server/supabase.server");
   const { getPublicSupabaseEnv } = await import("@/lib/server/env.server");
-  const { checkCsrfOrigin } = await import("@/lib/server/security.server");
+  const { checkCsrfOrigin, getClientIp } = await import("@/lib/server/security.server");
   const { getAuthenticatedIdentity } = await import("@/lib/server/identity.server");
 
   const env = getPublicSupabaseEnv();
@@ -43,6 +49,16 @@ async function sessionContext() {
   if (!result.ok) {
     return { ok: false as const, error: "Please sign in again." };
   }
+
+  if (rateLimit) {
+    const { checkIndependentRateLimit, rateLimitMessage } = await import("./rate-limit.server");
+    const rl = await checkIndependentRateLimit(rateLimit, {
+      ip: getClientIp(),
+      account: result.identity.userId,
+    });
+    if (!rl.allowed) return { ok: false as const, error: rateLimitMessage() };
+  }
+
   return { ok: true as const, supabase, identity: result.identity, env };
 }
 
@@ -50,7 +66,7 @@ async function sessionContext() {
 export async function performSignOutEverywhere() {
   const { setNoCacheHeaders } = await import("@/lib/server/auth.server");
   await setNoCacheHeaders();
-  const ctx = await sessionContext();
+  const ctx = await sessionContext("accountWrite");
   if (!ctx.ok) return { success: false as const, error: ctx.error };
 
   const { error } = await ctx.supabase.auth.signOut({ scope: "global" });
@@ -66,7 +82,7 @@ export async function listConnectedIdentities(): Promise<
 > {
   const { setNoCacheHeaders } = await import("@/lib/server/auth.server");
   await setNoCacheHeaders();
-  const ctx = await sessionContext();
+  const ctx = await sessionContext("accountRead");
   if (!ctx.ok) return { success: false as const, error: ctx.error };
 
   const { isProviderConfigured } = await import("@/lib/server/env.server");
@@ -92,6 +108,7 @@ export async function listConnectedIdentities(): Promise<
 export async function performStartIdentityLink(data: { provider: "google" | "facebook" }) {
   const { setNoCacheHeaders } = await import("@/lib/server/auth.server");
   await setNoCacheHeaders();
+  // oauthStart is the semantically-correct bucket for an OAuth initiation.
   const ctx = await sessionContext();
   if (!ctx.ok) return { success: false as const, error: ctx.error };
 
@@ -129,7 +146,7 @@ export async function performStartIdentityLink(data: { provider: "google" | "fac
 export async function performUnlinkIdentity(data: { identityId: string }) {
   const { setNoCacheHeaders } = await import("@/lib/server/auth.server");
   await setNoCacheHeaders();
-  const ctx = await sessionContext();
+  const ctx = await sessionContext("accountWrite");
   if (!ctx.ok) return { success: false as const, error: ctx.error };
 
   const { data: identData, error: listErr } = await ctx.supabase.auth.getUserIdentities();
