@@ -3,7 +3,54 @@
 Authoritative record of verified project state. Code and live-environment
 behavior are the source of truth; this file is updated after every stage.
 
-\_Last updated: 2026-07-11 — **Stage 5 courier: IMPLEMENTED + REMEDIATED
+\_Last updated: 2026-07-12 — **Stage 6 content & operational modules: CLOSED
+for the content scope (P3/P4/P5/P6 + P7 closure; P1/P2 owner-deferred).**
+Master plan `docs/stage-6-content-ops-plan.md` (`0882f0c`). Every
+formerly-hidden admin screen (Banners / Reports / Size Settings) is now real,
+plus a real policies editor. **P3 banners** (`96eac40`, migration
+`20260711162017`): RPC-only `banners` table (schedule window, sort,
+media-library-only image; the `delete_media` in-use guard now also covers
+banner images), anon `api.get_active_banners` behind a 60s `cachedPublic`,
+staff CRUD under `content.manage` with `banner.*` audit (new "content" audit
+category), admin screen rebuilt with a media picker, and `HeroSection` renders
+the lowest-sorted live banner with the built-in hero as fallback. **P4
+policies CMS** (`3425d5b`, migration `20260711165114`): `site_pages` (4 fixed
+slugs: delivery/payment/cookie/authenticity; draft jsonb) +
+`site_page_revisions` (pruned to 20), seeded byte-identical from the static
+copy; a dependency-free React markdown renderer (`Markdown.tsx`, XSS-inert) +
+`CmsPolicyPage` shell render the DB page with the static JSX as fallback; the
+admin editor is real (Edit/Preview/History, draft→publish→revision→restore —
+restore goes to draft, never straight to live); the four designed pages
+(return/terms/privacy/custom-size) stay in code and the admin labels them
+honestly. **P6 reports + CSV** (`bd84563`, migration `20260711211537`): five
+read-only aggregate RPCs (sales summary with documented confirmed/delivered
+revenue definitions, top products, coupon ledger, courier performance incl.
+avg-hours-to-deliver derived from `order_status_history`, COD reconciliation
+— service-role only, active-staff checks, `[from, to)` ranges);
+`admin.reports.tsx` rebuilt (URL-backed date range + presets, recharts,
+per-section CSV + a deliberately PII-free orders CSV) over a shared `toCsv`
+(UTF-8 BOM for Excel/Bangla/৳, RFC-4180 quoting, formula-injection guard, 50k
+cap). **P5 size charts** (`657802a`, migration `20260711215507`; owner chose
+structured charts over images): `size_charts` (ordered `columns` + aligned
+`rows` jsonb kept coherent by deep RPC validation; unit, helper column, "Most
+Selected" flags), seeded byte-identical with the three hardcoded charts; the
+size-guide fixed tab AND its starting-point helper now read the DB with the
+static arrays as fallback; `admin.size-settings.tsx` is a real grid editor
+(`sizes.manage`, audited `size_chart.*`). Every pass followed the Stage-5
+convention (prod-proven migration via rolled-back proof, ledger==repo,
+advisors check, per-job CI verify) **plus a real-browser Playwright visual
+test per pass** — which caught real bugs before each ship (a Radix
+TabsTrigger-onClick dead spot fixed with controlled Tabs, a leftover
+`useRouter` SSR crash, table/spacing polish). **67 prod migrations; 576
+Vitest; `stage6_db.test.sql` (§banners/§pages/§reports/§sizes) wired into CI;
+advisors clean (only the intentional RPC-only INFO items). P1
+(notification-outbox sender) + P2 (newsletter consent) are DEFERRED BY THE
+OWNER (2026-07-12) until they connect their own domain — the email provider
+needs their DNS (SPF/DKIM) — so `notification_events` rows keep accumulating
+with nothing consuming them yet; P1/P2 resume as a Stage-6 addendum when the
+domain lands.** Prior context:\_
+
+\_Earlier (2026-07-11) — **Stage 5 courier: IMPLEMENTED + REMEDIATED
 (CI-green).** Stage 5 landed as `17dab60` (2026-07-07): SteadFast (API-key) +
 Pathao (OAuth2) + Manual adapters behind a `CourierAdapter` interface; 3-phase
 booking orchestration (pending row committed → external API call with NO open
@@ -258,44 +305,44 @@ verification complete · (4) operator action pending.**
 
 ## Stage status
 
-| Stage        | Scope                                                                                                                                                                | Status                                                                                                                   |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| 1            | Auth, RBAC, CSRF, headers, rate limit, MFA scaffold, audit, owner-safety                                                                                             | Implemented                                                                                                              |
-| 1.5          | Security closure (4 bugs + A–E + follow-up hardening)                                                                                                                | **Operationally closed** (migrations applied; `api` exposed; proofs run)                                                 |
-| 2 (Pass 1)   | DB-backed **public catalog read** path                                                                                                                               | Implemented + live                                                                                                       |
-| 2 (Pass 2)   | Admin **product / category / inventory** writes (DB-backed + hardened)                                                                                               | **Implemented + live + CI-green**                                                                                        |
-| 2 (Pass 3a)  | **Reviews moderation + rating/review_count sync** (DB-backed)                                                                                                        | **Implemented + live + CI-green**                                                                                        |
-| 2 (Pass 3b)  | **Authenticated customer review submission** (persisted + moderated)                                                                                                 | **Implemented + live + CI-green**                                                                                        |
-| 2 (Pass 3c)  | **DB-backed catalog facets & counts** (shop filter sidebar)                                                                                                          | **Implemented + live + CI-green**                                                                                        |
-| 2 (Pass 3d)  | **DB-backed site settings** (announcement bar live; audited admin form)                                                                                              | **Implemented + live + CI-green**                                                                                        |
-| 2 (Pass 3e)  | **Storage-backed media library** (real uploads via signed URLs)                                                                                                      | **Implemented + live + CI-green**                                                                                        |
-| 2 (Pass 3f)  | **Product gallery management** (attach library media; atomic replace)                                                                                                | **Implemented + live + CI-green**                                                                                        |
-| 2 (Pass 3g)  | **Admin dashboard cut off mock `PRODUCTS`** (live catalog widgets)                                                                                                   | **Implemented + live + CI-green**                                                                                        |
-| 2 (Pass 3g+) | Delete the `PRODUCTS` constant itself                                                                                                                                | **Gated on Stage 5** (only `admin.courier.tsx` + `admin-ops.ts` still consume it; courier booking is Stage 5)            |
-| 3 (Pass 1)   | **Order schema, numbering & idempotency** (RPC-only tables, no behavior)                                                                                             | **Implemented + live**                                                                                                   |
-| 3 (Pass 1r)  | **Inventory reservations** (soft holds + lazy availability + cron sweep)                                                                                             | **Implemented + live**                                                                                                   |
-| 3 (Pass 3a)  | **Server-authoritative pricing/order RPCs** (`quote_order`/`place_order`)                                                                                            | **Implemented + live**                                                                                                   |
-| 3 (Pass 3b)  | **Checkout app integration** (payment settings + checkout-shared + server fns + checkout rewire + cart reconciliation + order-success)                               | **Implemented + live + CI-green**                                                                                        |
-| 3 (Pass 4)   | **Order-lifecycle / payment / read RPCs** (transition_order + verify/reject/confirm/cancel/return + submit_payment_evidence + admin & customer reads) — **DB layer** | **RPCs live + in repo (recovered `df207c9`)**                                                                            |
-| 3 (Pass 4a)  | **Shared 15-status model + admin order server fns** (`orders-shared` + `orders.server` + `orders.api`, guarded; unit tests)                                          | **Implemented + CI-green** (no UI)                                                                                       |
-| 3 (Pass 4b)  | **DB-backed admin orders board** (`admin.orders.tsx` on `listOrdersFn`: lanes, server search, pagination, summary sheet) — replaces mock                             | **Implemented + CI-green**                                                                                               |
-| 3 (Pass 4c)  | **Admin order detail sheet + lifecycle actions** (`getOrderDetailFn` + `nextActions` → guarded server fns, `expected_version`)                                       | **Implemented + CI-green**                                                                                               |
-| 3 (Pass 4d)  | **DB-backed payments review queue** + admin duplicate-TrxID warning (`admin_order_stats`, `get_order_detail.trx_id_duplicate`)                                       | **Implemented + live + CI-green**                                                                                        |
-| 3 (Pass 4e)  | **Payment evidence** (private Storage bucket; customer submit; admin signed-URL view)                                                                                | **Implemented + live + CI-green**                                                                                        |
-| 3 (Pass 4f)  | **Customer order history + capability tracking** (`listMyOrdersFn`/`getMyOrderFn`/`trackOrderFn`); mock `ORDERS` retired from customer + account + dashboard         | **Implemented + live + CI-green**                                                                                        |
-| 3 (Pass 4g)  | **Custom-order measurements** captured server-side (`order_items.custom_measurements`; all read RPCs project it)                                                     | **Implemented + live + CI-green**                                                                                        |
-| 3 (Pass 4h)  | **Order-lifecycle DB test** (`pass4_db.test.sql`) + confirm/restock `set_inventory` bug fix; doc refresh                                                             | **Implemented + live + CI-green**                                                                                        |
-| 5 (gated)    | Retire mock `orders.ts`/`PRODUCTS` (last consumers = courier + admin-ops)                                                                                            | **Done in Stage 5** (`orders.ts` + `admin-ops.ts` deleted)                                                               |
-| 4            | Customer accounts / addresses / measurements / wishlist / guest claim                                                                                                | **CLOSED** (P1–P9, 2026-07-03; CI-green)                                                                                 |
-| 5            | Courier adapters (SteadFast/Pathao/Manual), shipments, webhooks, outbox                                                                                              | **Implemented + remediated** (`17dab60` + 5-part fix pass, 2026-07-11; CI-green)                                         |
-| 5.5          | Review remediation: real audit viewer, courier lifecycle/integrity/RBAC fixes, contact inbox, honest mock-screen placeholders                                        | **Done** (see 2026-07-11 header entry)                                                                                   |
-| 6            | Banners, CMS, newsletter, reports, size settings, outbox sender                                                                                                      | **Planned** — master plan `docs/stage-6-content-ops-plan.md` (P0 decision gate + P1–P7; screens stay hidden until built) |
-| 7            | Hardening, perf/a11y, CI/CD, backups                                                                                                                                 | Not started                                                                                                              |
+| Stage        | Scope                                                                                                                                                                | Status                                                                                                                                                                                |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1            | Auth, RBAC, CSRF, headers, rate limit, MFA scaffold, audit, owner-safety                                                                                             | Implemented                                                                                                                                                                           |
+| 1.5          | Security closure (4 bugs + A–E + follow-up hardening)                                                                                                                | **Operationally closed** (migrations applied; `api` exposed; proofs run)                                                                                                              |
+| 2 (Pass 1)   | DB-backed **public catalog read** path                                                                                                                               | Implemented + live                                                                                                                                                                    |
+| 2 (Pass 2)   | Admin **product / category / inventory** writes (DB-backed + hardened)                                                                                               | **Implemented + live + CI-green**                                                                                                                                                     |
+| 2 (Pass 3a)  | **Reviews moderation + rating/review_count sync** (DB-backed)                                                                                                        | **Implemented + live + CI-green**                                                                                                                                                     |
+| 2 (Pass 3b)  | **Authenticated customer review submission** (persisted + moderated)                                                                                                 | **Implemented + live + CI-green**                                                                                                                                                     |
+| 2 (Pass 3c)  | **DB-backed catalog facets & counts** (shop filter sidebar)                                                                                                          | **Implemented + live + CI-green**                                                                                                                                                     |
+| 2 (Pass 3d)  | **DB-backed site settings** (announcement bar live; audited admin form)                                                                                              | **Implemented + live + CI-green**                                                                                                                                                     |
+| 2 (Pass 3e)  | **Storage-backed media library** (real uploads via signed URLs)                                                                                                      | **Implemented + live + CI-green**                                                                                                                                                     |
+| 2 (Pass 3f)  | **Product gallery management** (attach library media; atomic replace)                                                                                                | **Implemented + live + CI-green**                                                                                                                                                     |
+| 2 (Pass 3g)  | **Admin dashboard cut off mock `PRODUCTS`** (live catalog widgets)                                                                                                   | **Implemented + live + CI-green**                                                                                                                                                     |
+| 2 (Pass 3g+) | Delete the `PRODUCTS` constant itself                                                                                                                                | **Gated on Stage 5** (only `admin.courier.tsx` + `admin-ops.ts` still consume it; courier booking is Stage 5)                                                                         |
+| 3 (Pass 1)   | **Order schema, numbering & idempotency** (RPC-only tables, no behavior)                                                                                             | **Implemented + live**                                                                                                                                                                |
+| 3 (Pass 1r)  | **Inventory reservations** (soft holds + lazy availability + cron sweep)                                                                                             | **Implemented + live**                                                                                                                                                                |
+| 3 (Pass 3a)  | **Server-authoritative pricing/order RPCs** (`quote_order`/`place_order`)                                                                                            | **Implemented + live**                                                                                                                                                                |
+| 3 (Pass 3b)  | **Checkout app integration** (payment settings + checkout-shared + server fns + checkout rewire + cart reconciliation + order-success)                               | **Implemented + live + CI-green**                                                                                                                                                     |
+| 3 (Pass 4)   | **Order-lifecycle / payment / read RPCs** (transition_order + verify/reject/confirm/cancel/return + submit_payment_evidence + admin & customer reads) — **DB layer** | **RPCs live + in repo (recovered `df207c9`)**                                                                                                                                         |
+| 3 (Pass 4a)  | **Shared 15-status model + admin order server fns** (`orders-shared` + `orders.server` + `orders.api`, guarded; unit tests)                                          | **Implemented + CI-green** (no UI)                                                                                                                                                    |
+| 3 (Pass 4b)  | **DB-backed admin orders board** (`admin.orders.tsx` on `listOrdersFn`: lanes, server search, pagination, summary sheet) — replaces mock                             | **Implemented + CI-green**                                                                                                                                                            |
+| 3 (Pass 4c)  | **Admin order detail sheet + lifecycle actions** (`getOrderDetailFn` + `nextActions` → guarded server fns, `expected_version`)                                       | **Implemented + CI-green**                                                                                                                                                            |
+| 3 (Pass 4d)  | **DB-backed payments review queue** + admin duplicate-TrxID warning (`admin_order_stats`, `get_order_detail.trx_id_duplicate`)                                       | **Implemented + live + CI-green**                                                                                                                                                     |
+| 3 (Pass 4e)  | **Payment evidence** (private Storage bucket; customer submit; admin signed-URL view)                                                                                | **Implemented + live + CI-green**                                                                                                                                                     |
+| 3 (Pass 4f)  | **Customer order history + capability tracking** (`listMyOrdersFn`/`getMyOrderFn`/`trackOrderFn`); mock `ORDERS` retired from customer + account + dashboard         | **Implemented + live + CI-green**                                                                                                                                                     |
+| 3 (Pass 4g)  | **Custom-order measurements** captured server-side (`order_items.custom_measurements`; all read RPCs project it)                                                     | **Implemented + live + CI-green**                                                                                                                                                     |
+| 3 (Pass 4h)  | **Order-lifecycle DB test** (`pass4_db.test.sql`) + confirm/restock `set_inventory` bug fix; doc refresh                                                             | **Implemented + live + CI-green**                                                                                                                                                     |
+| 5 (gated)    | Retire mock `orders.ts`/`PRODUCTS` (last consumers = courier + admin-ops)                                                                                            | **Done in Stage 5** (`orders.ts` + `admin-ops.ts` deleted)                                                                                                                            |
+| 4            | Customer accounts / addresses / measurements / wishlist / guest claim                                                                                                | **CLOSED** (P1–P9, 2026-07-03; CI-green)                                                                                                                                              |
+| 5            | Courier adapters (SteadFast/Pathao/Manual), shipments, webhooks, outbox                                                                                              | **Implemented + remediated** (`17dab60` + 5-part fix pass, 2026-07-11; CI-green)                                                                                                      |
+| 5.5          | Review remediation: real audit viewer, courier lifecycle/integrity/RBAC fixes, contact inbox, honest mock-screen placeholders                                        | **Done** (see 2026-07-11 header entry)                                                                                                                                                |
+| 6            | Banners, CMS, newsletter, reports, size settings, outbox sender                                                                                                      | **CLOSED (content scope)** — P3 banners + P4 policies + P5 size charts + P6 reports/CSV + P7 (2026-07-12); P1 sender + P2 newsletter consent **owner-deferred** (own domain/provider) |
+| 7            | Hardening, perf/a11y, CI/CD, backups                                                                                                                                 | Not started                                                                                                                                                                           |
 
 ## Migrations (live project xomjxtmhkglhuiccekld)
 
-**63 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
-ledger matches the 63 repo files exactly (versions + names), in order. _(MCP-applied
+**67 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
+ledger matches the 67 repo files exactly (versions + names), in order. _(MCP-applied
 migrations are stamped with the prod-server clock then the repo file is named to
 match; the six `…627211*` Pass-4 RPCs were recovered earlier — see the header
 notes. Parity is verified after every apply via `supabase migration list`.)_ In order:
@@ -353,6 +400,10 @@ notes. Parity is verified after every apply via `supabase migration list`.)_ In 
                                           …710195925 webhook_booking_integrity
                                           …710204703 contact_messages
                                           …711083958 stage5_polish
+                                          …711162017 stage6_banners
+                                          …711165114 stage6_pages
+                                          …711211537 stage6_reports
+                                          …711215507 stage6_size_charts
 ```
 
 Note: `apply_migration` (MCP) stamps its own version, so after every MCP apply the
@@ -746,15 +797,22 @@ notification outbox rows), the **owner-only audit-log viewer**, the
 `admin-ops.ts` / `CUSTOMERS` / `ORDERS` / `MOCK_COUPONS` / `PRODUCTS` are all
 deleted.
 
-**Still mock / localStorage / not built (all covered by the Stage 6 master
-plan, `docs/stage-6-content-ops-plan.md`):** cart holds item IDs in
-localStorage only (no server-side cart — signed-in wishlist IS server-synced;
-cart stays out of Stage 6 scope); **Banners / Reports / Size Settings** admin
-screens are intentionally hidden from the nav behind "Coming soon" placeholders
-until Stage 6 builds them for real; the notification outbox has no sender yet
-(rows are written, nothing consumes them — Stage 6 P1); newsletter unsubscribe/
-consent management (Stage 6 P2); the admin Policies screen's Edit button is
-inert — storefront policy pages are static routes (Stage 6 P4).
+**Real / persistent — content & operations (Stage 6):** **homepage hero
+banners** (`banners` + `api.get_active_banners`, scheduled, media-library-only
+images, admin CRUD), the **policies CMS** (`site_pages` + revisions for the 4
+Prose policy pages; markdown drafts → publish → restore; designed pages stay
+in code, labeled honestly), **size charts** (`size_charts` powering the size
+guide's fixed tab AND its starting-point helper, admin grid editor), and
+**business reports + CSV export** (5 aggregate RPCs; PII-free orders CSV).
+Every storefront consumer keeps a static fallback, so a DB outage degrades to
+the original hardcoded content instead of a blank page.
+
+**Still mock / localStorage / not built:** cart holds item IDs in
+localStorage only (no server-side cart — signed-in wishlist IS server-synced);
+the notification outbox has no sender yet (rows are written, nothing consumes
+them — Stage 6 P1, **owner-deferred** until their own domain/provider is
+connected); newsletter unsubscribe/consent management (Stage 6 P2, deferred
+with P1).
 
 **Privacy / fail-closed guardrails (F-03 / F-04):** customer account PII lives
 server-side under deny-all RLS (Stage 4); the one-time localStorage import
@@ -765,12 +823,13 @@ checkout calls the real `place_order` RPC.
 ## CI (honest)
 
 `ci.yml` runs (genuinely): frozen Bun install, typecheck, lint, format, test, build,
-**migrate-from-empty** (boots a local Supabase, applies all 63 migrations to a
+**migrate-from-empty** (boots a local Supabase, applies all 67 migrations to a
 blank DB — incl. the Stage 3 order schema/reservations/RPCs/payment-method
 settings, the Pass-4 order-lifecycle/read RPCs, the Stage-4 account tables/RPCs,
-and the Stage-5 courier schema + audit/contact RPCs), and **DB integration
+the Stage-5 courier schema + audit/contact RPCs, and the Stage-6
+banners/pages/reports/size-chart schema + RPCs), and **DB integration
 tests** (`pass2_db.test.sql` + `pass3_db.test.sql` + `pass4_db.test.sql` +
-`stage4_db.test.sql` + `stage5_db.test.sql`
+`stage4_db.test.sql` + `stage5_db.test.sql` + `stage6_db.test.sql`
 — stock write-guard, set_inventory validation, ledger immutability, FK RESTRICT,
 first-variant conservation, owner-only purge, reorder validation, bulk idempotency,
 actor-deletion restriction, grant verification, post-migration schema proof, the
@@ -796,7 +855,13 @@ rating sync, customer submission → pending → approve → rating, catalog-fac
   failed→delivery_failed, webhook idempotency + processed/error marking +
   empty-reference booking guard, the contact submit/inbox/triage RPCs, and the
   §polish batch — request-hash duplicate detection (`booking_in_progress` vs
-  `double_booking`) + newsletter normalize/re-consent/grants).
+  `double_booking`) + newsletter normalize/re-consent/grants; **Stage 6**
+  (`stage6_db.test.sql`) — §banners (grant posture, schedule-window filtering,
+  media-library-only images, in-use delete guard, CRUD + audits), §pages (fixed
+  slugs, seed integrity, draft→publish→revision lifecycle incl. the 20-revision
+  prune, restore-to-draft), §reports (fixture orders → exact aggregate
+  assertions for all five RPCs), and §sizes (seed integrity, deep jsonb
+  validation rejections, CRUD + audits, inactive-hidden public read)).
   The migrate-from-empty job **exposes the `api` schema** in the local
   stack config (never `private`) and runs a **REST smoke test (F-08)** against
   PostgREST on the fresh stack: anon can reach a public `api` RPC (`catalog_facets`),
@@ -827,12 +892,14 @@ rating sync, customer submission → pending → approve → rating, catalog-fac
    `subscribe_newsletter`, idempotent re-consent; unsubscribe UI is Stage 6);
    courier mutations use the `courierWrite` rate bucket. Still open: a
    notification-outbox sender (`notification_events` rows are written but
-   nothing consumes them — needs a channel/provider decision). Now planned as
-   **Stage 6 P1** — master plan `docs/stage-6-content-ops-plan.md`
-   (2026-07-11): P0 decision gate (SMS-first BD aggregator recommended;
-   `customer_phone` is NOT NULL, `customer_email` nullable), P1 sender
-   (adapter seam + SKIP-LOCKED claim + pg_cron drain), P2 newsletter consent,
-   P3 banners, P4 policies CMS, P5 size settings, P6 reports + CSV, P7 closure.
+   nothing consumes them). Planned as **Stage 6 P1** (master plan
+   `docs/stage-6-content-ops-plan.md`) and now **DEFERRED BY THE OWNER
+   (2026-07-12)** together with P2 newsletter consent: the owner will set up
+   the provider (SMS-first BD aggregator recommended — `customer_phone` is
+   NOT NULL, `customer_email` nullable; Resend for email needs their own
+   domain's DNS for SPF/DKIM) when they connect their own domain. The rest of
+   Stage 6 (P3 banners, P4 policies CMS, P5 size charts, P6 reports + CSV,
+   P7 closure) shipped 2026-07-11/12 — see the header entry.
 7. GPT-audit remediation status: done — F-02, F-03, F-04, F-05, F-06, F-07, F-08,
    F-10, F-11, F-13, F-15, F-16, F-17, F-19. **F-10** (MFA factor removal now
    requires an AAL2 step-up + a rate limit) and **F-11** (authenticated password
@@ -849,10 +916,12 @@ rating sync, customer submission → pending → approve → rating, catalog-fac
    self-or-admin and service ops go via SECURITY DEFINER RPCs; now reads as an
    owner). Remaining audit items: F-14 (customer→staff promotion), F-18
    (deployment target — business decision).
-8. Live security advisors (2026-07-11): intentional INFO `rls_enabled_no_policy`
+8. Live security advisors (2026-07-12): intentional INFO `rls_enabled_no_policy`
    on every RPC-only table (now incl. the courier/webhook/notification/contact
-   tables) + WARN `anon/authenticated_security_definer_function_executable`
-   for `api.catalog_facets()`, `api.get_public_settings()` and
-   `api.quote_order()` — **intentional public reads**, accepted posture +
-   the deferred leaked-password toggle. No new advisors from the Stage-5 /
-   remediation migrations.
+   tables and the Stage-6 `banners`/`site_pages`/`site_page_revisions`/
+   `size_charts`) + WARN `anon/authenticated_security_definer_function_executable`
+   for the intentional public reads (`api.catalog_facets()`,
+   `api.get_public_settings()`, `api.quote_order()`, and the Stage-6
+   `api.get_active_banners()`/`get_site_page()`/`get_size_charts()`) —
+   accepted posture + the deferred leaked-password toggle. No unexpected
+   advisors from the Stage-5 / remediation / Stage-6 migrations.
