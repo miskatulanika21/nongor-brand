@@ -231,6 +231,17 @@ jobs:
           export DB_URL
           bash supabase/tests/concurrency.test.sh
 
+      # Stage-7 P2: money-path races under genuine parallel connections —
+      # oversell (product-row FOR UPDATE), duplicate order (idempotency_keys
+      # unique key), coupon exhaustion (coupon-row FOR UPDATE + usage_count).
+      - name: Concurrency test (order money-path races)
+        run: |
+          command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
+          DB_URL=$(supabase status -o env 2>/dev/null | sed -n 's/^DB_URL=//p' | tr -d '"')
+          [ -z "$DB_URL" ] && DB_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+          export DB_URL
+          bash supabase/tests/concurrency-orders.test.sh
+
       - name: Tear down local stack
         if: always()
         run: supabase stop --no-backup || true
