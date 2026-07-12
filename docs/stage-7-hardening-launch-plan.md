@@ -11,10 +11,11 @@ event that unblocks Stage-6 P1/P2, so they resume as the planned Stage-6
 addendum during the launch window — this plan schedules the hand-off but does
 not re-own that work.
 
-Each sub-pass follows the project convention: **prod-proven migration (if any)
-+ atomic commit + CI-green**, committed straight to `main`, pushed per part
-(multi-PC). Status docs (`CURRENT_STATUS.md`, `IMPLEMENTATION_PLAN.md`,
-`WALKTHROUGH.md`) update at stage/pass completion only (doc-cadence rule).
+Each sub-pass follows the project convention: \*\*prod-proven migration (if any)
+
+- atomic commit + CI-green\*\*, committed straight to `main`, pushed per part
+  (multi-PC). Status docs (`CURRENT_STATUS.md`, `IMPLEMENTATION_PLAN.md`,
+  `WALKTHROUGH.md`) update at stage/pass completion only (doc-cadence rule).
 
 Stage 7 is the first stage whose deliverable is **operational confidence**, not
 features. The bar is: a stranger could take this to production, and if it broke
@@ -34,21 +35,21 @@ mobile) and a11y audits, CSP tightening, legal review.**
 
 What exists today (verified against the code, 2026-07-12):
 
-| Area                | Current state                                                                                                                                                                                                                                                                            |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Security headers    | `headers.server.ts` sets HSTS (prod), `X-Frame-Options: DENY`, `Referrer-Policy`, and a CSP — **but `script-src` and `style-src` both carry `'unsafe-inline'`**. That is the single biggest remaining XSS blast-radius gap. No nonce/hash strategy yet.                                    |
-| Rate limiting       | `rate-limit.server.ts` has ~22 named buckets (auth, catalog, quote/place, payment, account, wishlist, contact, newsletter, courier). Coverage is good but **never audited pass-by-pass against the full server-fn inventory** — Stage 7 must prove every public/state-changing fn has one. |
-| Concurrency tests   | `concurrency.test.sh` (two-connection advisory-lock race) runs in `migrations-local`. Oversell / coupon-exhaustion / duplicate-idempotency races are asserted **single-session** in the `*_db.test.sql` suites, not under true parallel connections. Gap = multi-session load proof.       |
-| Error monitoring    | **Only `@vercel/analytics`** (Core Web Vitals + RUM) in `__root.tsx`. No exception tracking, no server-side error aggregation, no alerting. A 500 in a server fn is invisible unless someone reads Vercel logs by hand.                                                                    |
-| CI                  | `.github/workflows/ci.yml` = 3 jobs (`quality`, `migrations-local`, `supabase-lint`) + the Supabase Preview GitHub-app check = **4 checks green**. **No deploy job, no post-deploy smoke, no promotion/rollback workflow** — deploys are Vercel-auto on push to `main`.                     |
-| Backup / DR         | **No backup or restore runbook exists.** Supabase provides PITR (plan-dependent) but there is no documented restore drill, no migration-rollback policy, no data-export procedure. This is the highest-severity documentation gap for launch.                                              |
-| Performance         | Vercel fn pinned `bom1` == Supabase `ap-south-1` (Mumbai); 3-layer nav-perf cache; AVIF/WebP image CDN. **No captured Lighthouse/CWV baseline, no LCP<2.5s-mobile proof, no bundle-size budget.**                                                                                          |
-| Accessibility       | Never audited. shadcn/Radix primitives give a decent floor (focus management, ARIA on dialogs), but no keyboard-trap / contrast / screen-reader / form-label pass has been run.                                                                                                            |
-| Auth go-live gates  | `auth_leaked_password_protection` still **off** (dashboard toggle). Credential rotation still deferred (go-live task). Google OAuth working (secret rotation folds into go-live).                                                                                                          |
-| RBAC / audit items  | **F-14** (existing-customer → staff promotion) still open. **F-18** (deployment target) is effectively resolved — the app is on Vercel prod (`nongor-brand.vercel.app`); Stage 7 records the decision and closes it.                                                                        |
-| Storefront polish   | Visual-audit list still open (`[[visual-audit-2026-07-02]]`): placeholder product photography, badge clutter, star-rounding (5★ vs 4.7), ৳ glyph render, "Unavailable" social buttons, PDP video placeholder.                                                                              |
-| Legal               | Policy pages exist (now CMS-backed) but **no legal review** of return/refund/privacy/terms copy against Bangladesh e-commerce norms + the actual COD/courier flow.                                                                                                                          |
-| Secrets             | Webhook secrets + courier keys + service-role key live in Vercel env. No documented rotation cadence, no secrets inventory.                                                                                                                                                               |
+| Area               | Current state                                                                                                                                                                                                                                                                              |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Security headers   | `headers.server.ts` sets HSTS (prod), `X-Frame-Options: DENY`, `Referrer-Policy`, and a CSP — **but `script-src` and `style-src` both carry `'unsafe-inline'`**. That is the single biggest remaining XSS blast-radius gap. No nonce/hash strategy yet.                                    |
+| Rate limiting      | `rate-limit.server.ts` has ~22 named buckets (auth, catalog, quote/place, payment, account, wishlist, contact, newsletter, courier). Coverage is good but **never audited pass-by-pass against the full server-fn inventory** — Stage 7 must prove every public/state-changing fn has one. |
+| Concurrency tests  | `concurrency.test.sh` (two-connection advisory-lock race) runs in `migrations-local`. Oversell / coupon-exhaustion / duplicate-idempotency races are asserted **single-session** in the `*_db.test.sql` suites, not under true parallel connections. Gap = multi-session load proof.       |
+| Error monitoring   | **Only `@vercel/analytics`** (Core Web Vitals + RUM) in `__root.tsx`. No exception tracking, no server-side error aggregation, no alerting. A 500 in a server fn is invisible unless someone reads Vercel logs by hand.                                                                    |
+| CI                 | `.github/workflows/ci.yml` = 3 jobs (`quality`, `migrations-local`, `supabase-lint`) + the Supabase Preview GitHub-app check = **4 checks green**. **No deploy job, no post-deploy smoke, no promotion/rollback workflow** — deploys are Vercel-auto on push to `main`.                    |
+| Backup / DR        | **No backup or restore runbook exists.** Supabase provides PITR (plan-dependent) but there is no documented restore drill, no migration-rollback policy, no data-export procedure. This is the highest-severity documentation gap for launch.                                              |
+| Performance        | Vercel fn pinned `bom1` == Supabase `ap-south-1` (Mumbai); 3-layer nav-perf cache; AVIF/WebP image CDN. **No captured Lighthouse/CWV baseline, no LCP<2.5s-mobile proof, no bundle-size budget.**                                                                                          |
+| Accessibility      | Never audited. shadcn/Radix primitives give a decent floor (focus management, ARIA on dialogs), but no keyboard-trap / contrast / screen-reader / form-label pass has been run.                                                                                                            |
+| Auth go-live gates | `auth_leaked_password_protection` still **off** (dashboard toggle). Credential rotation still deferred (go-live task). Google OAuth working (secret rotation folds into go-live).                                                                                                          |
+| RBAC / audit items | **F-14** (existing-customer → staff promotion) still open. **F-18** (deployment target) is effectively resolved — the app is on Vercel prod (`nongor-brand.vercel.app`); Stage 7 records the decision and closes it.                                                                       |
+| Storefront polish  | Visual-audit list still open (`[[visual-audit-2026-07-02]]`): placeholder product photography, badge clutter, star-rounding (5★ vs 4.7), ৳ glyph render, "Unavailable" social buttons, PDP video placeholder.                                                                              |
+| Legal              | Policy pages exist (now CMS-backed) but **no legal review** of return/refund/privacy/terms copy against Bangladesh e-commerce norms + the actual COD/courier flow.                                                                                                                         |
+| Secrets            | Webhook secrets + courier keys + service-role key live in Vercel env. No documented rotation cadence, no secrets inventory.                                                                                                                                                                |
 
 **Architecture posture (unchanged):** tables RLS deny-all RPC-only; RPCs
 `SECURITY DEFINER`, `search_path=''`, service-role-only EXECUTE; server fns =
@@ -125,7 +126,7 @@ known audit finding.
 - **Auth go-live toggles.** Enable `auth_leaked_password_protection` (dashboard);
   add a documented step. Draft the **credential-rotation runbook** (service-role
   key, DB password, courier API keys, webhook secrets, OAuth secret) — the
-  *procedure* now, the *execution* at P7 cut-over.
+  _procedure_ now, the _execution_ at P7 cut-over.
 - **Secrets inventory.** One doc listing every secret, where it lives (Vercel env
   / Supabase Vault / DB setting), its rotation trigger, and its blast radius.
 - **Full security-review pass.** Run the `/security-review` skill over the whole
@@ -158,8 +159,8 @@ just single-session SQL. This is the pass that lets us sleep during a flash sale
     `usage_count` exact, no over-grant (the `SELECT … FOR UPDATE` on the coupon
     row is the thing under test).
   - **Duplicate order / idempotency:** same `idempotency_key` fired M times in
-    parallel → one order created, all callers get the *same* order back, no
-    `idempotency_conflict` for identical payloads, and a *different* payload on
+    parallel → one order created, all callers get the _same_ order back, no
+    `idempotency_conflict` for identical payloads, and a _different_ payload on
     the same key → `idempotency_conflict`.
 - **Reservation expiry under load:** overlapping `expire_reservations` sweeps +
   concurrent places → no double-release, no lost hold, lazy-availability stays
@@ -186,7 +187,7 @@ Make failures visible. Today a server-fn 500 is invisible.
   (no PII beyond a hashed id). Source-map upload in the build.
 - **Structured server logging.** A tiny logger with request-id correlation
   (reuse Vercel's `x-vercel-id`), consistent shape (`{level, event, code,
-  duration_ms}`), so courier/webhook/notification drains and RPC errors are
+duration_ms}`), so courier/webhook/notification drains and RPC errors are
   greppable. No PII, no secrets — a redaction guard.
 - **Health & readiness endpoint.** `GET /api/health` (or `/healthz`): checks DB
   reachability (a cheap `select 1` via the anon read path) + returns build sha +
@@ -329,17 +330,17 @@ formally opened; go-live checklist complete.
 
 ## 4. Sequencing & effort
 
-| Pass | Depends on        | Size | Notes                                                        |
+| Pass | Depends on        | Size | Notes                                                       |
 | ---- | ----------------- | ---- | ----------------------------------------------------------- |
 | P0   | owner             | —    | Only #1 (vendor) / #4 (domain) block anything; answer async |
-| P1   | —                 | L    | CSP nonce work + F-14 are the big items; independent         |
-| P2   | —                 | M    | Extends existing concurrency harness; independent            |
-| P3   | P0 #1             | M    | Vendor SDK + logging + healthz + alerting                    |
-| P4   | P3 (nice-to-have) | M    | Baseline → fix to budget; a11y; bundle budget in CI          |
-| P5   | P3 (healthz)      | M    | Smoke needs `/healthz`; promotion + rollback                 |
-| P6   | P0 #2             | M    | Mostly docs + one real restore drill                         |
-| P7   | P0 #3/#4, P1      | M    | Content + legal + domain cut-over; opens Stage-6 P1/P2 gate  |
-| P8   | all               | S    | Closure + docs                                               |
+| P1   | —                 | L    | CSP nonce work + F-14 are the big items; independent        |
+| P2   | —                 | M    | Extends existing concurrency harness; independent           |
+| P3   | P0 #1             | M    | Vendor SDK + logging + healthz + alerting                   |
+| P4   | P3 (nice-to-have) | M    | Baseline → fix to budget; a11y; bundle budget in CI         |
+| P5   | P3 (healthz)      | M    | Smoke needs `/healthz`; promotion + rollback                |
+| P6   | P0 #2             | M    | Mostly docs + one real restore drill                        |
+| P7   | P0 #3/#4, P1      | M    | Content + legal + domain cut-over; opens Stage-6 P1/P2 gate |
+| P8   | all               | S    | Closure + docs                                              |
 
 **Recommended order:** **P0 → P1 → P2 → P3 → P4 → P5 → P6 → P7 → P8.**
 P1/P2 first (harden + prove before anything else moves), then P3 (see everything
@@ -367,13 +368,13 @@ newsletter consent) are **not** owned here — P7 only opens their gate.
 
 - **CSP nonce regression breaks the app** — the `'unsafe-inline'` removal is the
   riskiest change; land it behind an env flag with a `Content-Security-Policy-
-  Report-Only` shadow first, watch violation reports for a day, then enforce.
+Report-Only` shadow first, watch violation reports for a day, then enforce.
 - **A hardening change silently breaks a flow** — every pass ends with a
   live-drive (the recurring Stage-5/6 lesson: SQL + unit tests miss call-layer
   bugs); the P5 post-deploy smoke is the backstop.
 - **Perf "fixes" that don't move the metric** — measure first (captured
   baseline), change against the trace, re-measure; never optimize on a hunch.
-- **A backup that can't restore** — P6's deliverable is the *drill*, not the
+- **A backup that can't restore** — P6's deliverable is the _drill_, not the
   backup config; RTO/RPO must be recorded from a real restore.
 - **Domain cut-over breaks OAuth / cookies / HSTS** — P7 has an explicit
   checklist; do it in a low-traffic window with the rollback (Vercel instant
