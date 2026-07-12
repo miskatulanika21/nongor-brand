@@ -363,13 +363,15 @@ posture as every prior stage: RPC-only deny-all tables, guarded server fns,
 zod mirrors, audited staff writes, static fallbacks for every storefront
 consumer. Sub-passes:
 
-- [ ] **P0 — decision gate** (user): notification channel/provider
-      (recommended SMS-first via a BD aggregator — `customer_phone` is
-      NOT NULL, `customer_email` nullable — email via Resend second,
-      WhatsApp deferred); whether to add `order_placed`/`payment_verified`/
-      `order_cancelled` events; policy CMS body format (markdown
-      recommended); size-settings shape (structured charts recommended).
-- [ ] **P1 — notification-outbox sender**: extend `notification_events`
+- [x] **P0 — decision gate** (resolved 2026-07-12): policy CMS body format =
+      markdown; size-settings shape = structured charts (both shipped below).
+      Notification channel/provider + extra events: **DEFERRED BY OWNER** —
+      the owner will set up the provider (e.g. Resend needs their own domain's
+      DNS for SPF/DKIM) when they connect their own domain; do not start P1/P2
+      until then.
+- [ ] **P1 — notification-outbox sender** — **DEFERRED (owner, 2026-07-12)**
+      until the owner connects their own domain + provider account: extend
+      `notification_events`
       (status/attempts/backoff/`dedupe_key`/recipient snapshot),
       `claim_notification_batch` (FOR UPDATE SKIP LOCKED) +
       `mark_notification_result` (backoff + dead-letter),
@@ -377,7 +379,8 @@ consumer. Sub-passes:
       secret-gated drain endpoint driven by pg_cron + pg_net every minute
       (+ opportunistic post-enqueue drains), Settings kill switch, admin
       visibility tab with manual retry.
-- [ ] **P2 — newsletter consent management**: `unsubscribe_token` +
+- [ ] **P2 — newsletter consent management** — **DEFERRED (owner,
+      2026-07-12)** with P1 (needs the email rail): `unsubscribe_token` +
       one-click `/newsletter/unsubscribe` route + `List-Unsubscribe`
       header, admin subscriber list + CSV export.
 - [x] **P3 — banners** (2026-07-11, migration `20260711162017`): `banners`
@@ -417,14 +420,22 @@ consumer. Sub-passes:
       nav un-hidden (staff lack `reports.view` — verified in tests);
       `stage6_db.test.sql` §reports in CI; visually verified in a real
       browser against seeded fixtures with hand-checked figures.
-- [ ] **P7 — closure**: nav/RBAC sanity for the un-hidden screens,
-      live-drive verification (incl. one real notification send), visual
-      pass on the new admin screens, single status-doc sync.
+- [x] **P7 — closure** (2026-07-12): nav/RBAC sanity + real-browser visual
+      pass + live-drive verification were done per pass as each screen
+      shipped (`admin-routes.test.ts` asserts visibility per role); the
+      notification-send check moves to P1 (deferred with it); single
+      status-doc sync done at closure (this file + `CURRENT_STATUS.md` +
+      `WALKTHROUGH.md`).
 
 **Exit:** every hidden admin screen real and visible; storefront content
-(banners/policies/size charts) DB-backed with static fallbacks; customers
-notified on shipment events via at least one real channel; newsletter
-consent round-trip complete; reports run off live data with CSV export.
+(banners/policies/size charts) DB-backed with static fallbacks; reports run
+off live data with CSV export. **STAGE 6 CLOSED for the content scope
+(P3/P4/P5/P6 + P7, 2026-07-12; 67 migrations; 576 Vitest;
+`stage6_db.test.sql` in CI; every pass visually verified in a real
+browser).** The notification sender (P1) + newsletter consent (P2) are an
+owner-deferred addendum: they resume when the owner connects their own
+domain and picks the provider — the original exit criteria for
+notifications/newsletter apply to that addendum, not to this closure.
 
 ## Stage 7 — Hardening & launch
 

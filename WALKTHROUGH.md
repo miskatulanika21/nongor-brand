@@ -1,8 +1,8 @@
 # WALKTHROUGH — actual data flows
 
-Reflects what the code does today (Stages 2–4 closed; Stage 3 checkout + order
-management and Stage 4 customer accounts fully live — 56 migrations). Updated
-each stage.
+Reflects what the code does today (Stages 2–6 closed for their shipped scope;
+checkout + order management, customer accounts, courier & shipments, and the
+Stage-6 content/reports modules all live — 67 migrations). Updated each stage.
 
 ## Request → response security wrapper
 
@@ -305,9 +305,58 @@ via `submitContactFn` (CSRF origin + per-IP `contactSubmit` rate limit; the
 spammed) into `contact_messages` (RPC-only deny-all). Staff read it at
 `/admin/messages` (`messages.view`; search/filter/pagination) and triage
 new/handled/archived (`messages.manage`, `contact.status_changed` audit,
-reply-on-WhatsApp deep link). Banners / Reports / Size Settings are hidden
-from the admin nav (`hidden` flag in `admin-routes.ts` — route guards intact)
-behind "Coming soon" placeholders until Stage 6 builds them for real.
+reply-on-WhatsApp deep link). Banners / Reports / Size Settings were hidden
+behind "Coming soon" placeholders here; Stage 6 built all three for real and
+removed the `hidden` flags (below).
+
+## Content & operations (Stage 6) — live
+
+All four modules share the established posture: an RPC-only deny-all table,
+`SECURITY DEFINER` RPCs (anon-granted for public reads that expose no staff
+ids; service-role-only for staff ops with SQL-side active-staff re-checks),
+guarded server fns (`requirePermission` reads / `guardAdminWrite` writes),
+isomorphic zod mirrors, canonical audits, and a **static fallback for every
+storefront consumer** (a DB outage renders the original hardcoded content).
+Public reads sit behind the 60s `cachedPublic` process-memory cache.
+
+- **Banners** (`banners`, `content.manage`): the homepage loader fetches
+  `api.get_active_banners` (active + inside the optional `starts_at`/`ends_at`
+  window, ordered by `sort_order`) in parallel with product cards;
+  `HeroSection` renders the first live banner (eyebrow/title/subtitle/CTA/
+  image/overlay card) or its built-in hero. Admin CRUD picks images from the
+  media library only (`image_not_in_library` otherwise), and `delete_media`
+  refuses to delete an image a banner still uses (`media_in_use`).
+- **Policies CMS** (`site_pages` + `site_page_revisions`, `content.manage`):
+  the four Prose policy routes (delivery/payment/cookie/authenticity) load
+  `api.get_site_page(slug)` and render `body_md` through a dependency-free
+  markdown renderer (`Markdown.tsx` — builds React elements, raw HTML stays
+  inert, protocol-filtered links) inside `CmsPolicyPage`, falling back to the
+  original static JSX. Admin edits a **draft** (jsonb), previews, then
+  publishes — publish snapshots the previous live copy into revisions (pruned
+  to 20); restore copies a revision back into the draft, never straight to
+  live. The designed pages (return/custom-size/privacy/terms) stay in code and
+  the admin screen labels them honestly (Preview only).
+- **Size charts** (`size_charts`, `sizes.manage`): each chart is ordered
+  `columns` + aligned `rows` jsonb (deep-validated in the RPC — ragged rows,
+  bogus helper column, >12 cols/>30 rows all rejected with stable codes). The
+  size-guide's fixed-chart tab AND its starting-point helper both read
+  `api.get_size_charts` (the helper computes from the same numbers), with the
+  original hardcoded arrays as fallback; per-chart unit drives the
+  inches/centimetres copy; ★ marks the storefront "Most Selected" badge.
+  Admin is a real grid editor (add/remove rows + columns kept aligned by
+  construction).
+- **Reports + CSV** (`reports.view`): `admin.reports.tsx` is URL-as-state
+  (`?from&to` + presets) over `loadReports`, which `Promise.all`s five
+  read-only aggregate RPCs (sales summary with documented confirmed/delivered
+  definitions, top products, coupon ledger, courier performance incl.
+  avg-hours-to-deliver from `order_status_history`, COD reconciliation; all
+  half-open `[from, to)` ranges). Every section exports CSV via the shared
+  `toCsv` (UTF-8 BOM for Excel/Bangla/৳, RFC-4180 quoting, formula-injection
+  guard, 50k-row cap); the orders export is deliberately PII-free.
+
+The notification-outbox **sender** and newsletter consent management remain
+unbuilt — **deferred by the owner** until they connect their own domain and
+pick a provider; `notification_events` rows keep accumulating unconsumed.
 
 ## CI
 
@@ -316,10 +365,11 @@ behind "Coming soon" placeholders until Stage 6 builds them for real.
 mandatory). A `migrations-local` job applies every migration to a fresh LOCAL
 Supabase DB (Docker, no creds) — the authoritative migrate-from-empty check —
 then runs the DB integration tests (`pass2_db.test.sql`, `pass3_db.test.sql`,
-`pass4_db.test.sql`, `stage4_db.test.sql`, `stage5_db.test.sql` — the last
-covering the owner-only audit reader, the courier lifecycle incl. the
+`pass4_db.test.sql`, `stage4_db.test.sql`, `stage5_db.test.sql` — covering the
+owner-only audit reader, the courier lifecycle incl. the
 courier_booked→delivered regression, webhook idempotency/processed marking,
-the empty-reference booking guard, and the contact RPCs) and the
+the empty-reference booking guard, and the contact RPCs — and
+`stage6_db.test.sql` §banners/§pages/§reports/§sizes) and the
 two-connection concurrency test (`concurrency.test.sh`). A separate job runs `supabase db lint --linked` against
 the DEPLOYED DB using the `SUPABASE_ACCESS_TOKEN` + `SUPABASE_PROJECT_ID` +
 `SUPABASE_DB_PASSWORD` repository secrets (now configured); it skips with a
@@ -329,10 +379,10 @@ does not validate pending migrations — that is the `migrations-local` job's ro
 ## Still mock / localStorage (later stages)
 
 Cart holds item IDs in `localStorage` only (no server-side cart; the signed-in
-wishlist is server-synced as of Stage 4). Footer newsletter form (demo);
-Banners / Reports / Size Settings (hidden behind "Coming soon" until Stage 6);
-notification-outbox sender (rows written, nothing consumes them); dead
-`PRODUCTS` export in `src/lib/products.ts` awaiting deletion. (Reviews
+wishlist is server-synced as of Stage 4). Notification-outbox sender (rows
+written, nothing consumes them) + newsletter unsubscribe/consent management —
+both **owner-deferred** until their own domain/provider is connected. (Reviews
 moderation, site settings, checkout, the full order lifecycle, coupons,
-customer accounts, courier & shipments, the audit viewer, and the contact
-inbox are all DB-backed.) See `CURRENT_STATUS.md`.
+customer accounts, courier & shipments, the audit viewer, the contact inbox,
+the footer newsletter opt-in, banners, the policies CMS, size charts, and
+reports are all DB-backed.) See `CURRENT_STATUS.md`.
