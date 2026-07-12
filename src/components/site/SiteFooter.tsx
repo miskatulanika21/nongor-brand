@@ -357,7 +357,7 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
           <div className="hidden gap-10 lg:grid lg:grid-cols-[1.6fr_1fr_1.1fr_1fr_1.3fr]">
             {/* Brand */}
             <div className="space-y-4">
-              <Logo variant="light" />
+              <Logo variant="light" roundMark />
               <p className="max-w-xs text-sm leading-relaxed text-primary-foreground/70">
                 A premium women&apos;s boutique rooted in Bangladeshi craft, custom-fit clothing,
                 and timeless feminine elegance.
@@ -472,7 +472,7 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
           {/* MOBILE: brand + accordion */}
           <div className="lg:hidden">
             <div className="space-y-4">
-              <Logo variant="light" />
+              <Logo variant="light" roundMark />
               <p className="text-sm leading-relaxed text-primary-foreground/70">
                 A premium women&apos;s boutique rooted in Bangladeshi craft, custom-fit clothing,
                 and timeless feminine elegance.
