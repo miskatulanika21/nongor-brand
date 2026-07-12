@@ -207,6 +207,17 @@ jobs:
           [ -z "$DB_URL" ] && DB_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
           psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/stage6_db.test.sql
 
+      # Stage-7: self-serve account deletion (api.delete_account) — orders
+      # anonymized to guest ownership (records preserved, XOR intact, hash
+      # rotated), personal data cascaded, auth.users removed, account.deleted
+      # audit written, staff/unknown rejected, service-role-only grant posture.
+      - name: DB integration tests (stage-7 hardening)
+        run: |
+          command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
+          DB_URL=$(supabase status -o env 2>/dev/null | sed -n 's/^DB_URL=//p' | tr -d '"')
+          [ -z "$DB_URL" ] && DB_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/stage7_db.test.sql
+
       # Two-connection concurrency test: launches parallel psql sessions to verify
       # that advisory-lock serialization in api.bulk_set_inventory actually works
       # across genuine concurrent database connections (not single-session sequential).

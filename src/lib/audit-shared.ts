@@ -73,6 +73,7 @@ export const AUDIT_ACTIONS = [
   "coupon.deleted",
   // customer accounts
   "account.imported",
+  "account.deleted",
   // contact inbox
   "contact.status_changed",
   // content (Stage 6)
@@ -208,6 +209,7 @@ export const AUDIT_ACTION_META: Record<AuditAction, AuditActionMeta> = {
   "coupon.status_changed": { label: "Coupon status changed", category: "coupons", tone: "info" },
   "coupon.deleted": { label: "Coupon deleted", category: "coupons", tone: "danger" },
   "account.imported": { label: "Account data imported", category: "account", tone: "neutral" },
+  "account.deleted": { label: "Account deleted", category: "account", tone: "danger" },
   "contact.status_changed": {
     label: "Contact message updated",
     category: "account",
