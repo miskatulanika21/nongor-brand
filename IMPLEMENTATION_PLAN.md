@@ -500,11 +500,16 @@ about them. Sub-passes:
       drain, admin visibility tab; P2 = `unsubscribe_token` + one-click
       `/newsletter/unsubscribe` + `List-Unsubscribe` + admin subscriber list/CSV.
       Live-drive one real send before closing.
-- [ ] **P4 — performance & accessibility**: capture CWV baseline
-      (chrome-devtools Lighthouse), fix to **LCP < 2.5s mobile** / CLS < 0.1 /
-      INP < 200ms, admin-bundle split, bundle-size budget in CI; axe on key
-      routes + keyboard-only checkout/admin walkthrough, WCAG 2.1 AA
-      (maroon/gold contrast, labels, focus), reduced-motion sanity.
+- [~] **P4 — performance & accessibility** (2026-07-13): **A11y DONE** —
+  `e2e/a11y.spec.ts` (axe WCAG 2.0/2.1 A+AA) **passes on all 7 key routes**
+  (home/shop/cart/checkout/login/size-guide/contact); fixed eyebrow gold
+  contrast (→ #7d5e22), slider label, every SelectTrigger `aria-label`,
+  social `role="img"`, a muted note. **Perf BASELINED** (Lighthouse mobile:
+  score 74, LCP 4.5s, **CLS 0**, TBT 200ms; hero img already optimal, LCP
+  anchored by FCP/payload) — `docs/stage-7-perf-a11y.md`. **LCP-to-<2.5s
+  optimization** (shrink the 609 KiB entry chunk + 158 KiB CSS + self-host
+  fonts) is a scoped follow-up (iterative bundle work). Bundle-budget CI
+  guard + manual keyboard walkthrough also outstanding.
 - [ ] **P5 — CI/CD & release engineering**: post-deploy Playwright smoke on
       the preview URL, gated preview→prod promotion, migration-parity guard,
       rollback runbook (app = Vercel instant revert; DB = forward-only +
