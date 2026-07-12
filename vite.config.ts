@@ -28,6 +28,11 @@ export default defineConfig(({ command, mode }) => {
     },
     // Use Lightning CSS in dev AND build so the static output matches the preview.
     css: { transformer: "lightningcss" },
+    // Target modern evergreen browsers so the build stops shipping legacy-JS
+    // transpilation (async/spread/optional-chaining helpers) to browsers that
+    // run it natively — smaller bundles + faster parse. Safe for the audience
+    // (2020+ mobile Chrome/Safari). Skipped for the dev-mode build.
+    ...(isDevBuild ? {} : { build: { target: "es2020" } }),
     resolve: {
       alias: { "@": `${process.cwd()}/src` },
       // Avoid duplicate React / Query copies (hydration + context safety).
