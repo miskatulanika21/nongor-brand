@@ -536,7 +536,7 @@ function Cart() {
                 value={deliveryZone}
                 onValueChange={(v) => setDeliveryZone(v as DeliveryZone)}
               >
-                <SelectTrigger className="bg-background">
+                <SelectTrigger className="bg-background" aria-label="Delivery zone">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

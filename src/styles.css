@@ -190,7 +190,11 @@
     letter-spacing: 0.28em;
     font-size: 0.7rem;
     font-weight: 500;
-    color: var(--color-gold);
+    /* Deep "antique gold" so the small eyebrow text clears WCAG AA (4.5:1) on
+       every cream surface it sits on (page + secondary/card tints, ~4.5:1 on the
+       darkest); dark-surface usages override this via a Tailwind text-* class
+       (e.g. text-gold-foreground). */
+    color: #7d5e22;
   }
   .ornament-divider {
     display: flex;

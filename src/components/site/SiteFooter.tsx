@@ -370,9 +370,9 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
                   disabled ? (
                     <span
                       key={label}
-                      aria-disabled="true"
+                      role="img"
                       aria-label={label}
-                      title="TikTok — coming soon"
+                      title={label}
                       className="inline-flex size-9 cursor-not-allowed items-center justify-center rounded-full border border-gold/15 text-primary-foreground/30"
                     >
                       <Icon className="size-4" />
@@ -485,9 +485,9 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
                   disabled ? (
                     <span
                       key={label}
-                      aria-disabled="true"
+                      role="img"
                       aria-label={label}
-                      title="TikTok — coming soon"
+                      title={label}
                       className="inline-flex size-10 cursor-not-allowed items-center justify-center rounded-full border border-gold/15 text-primary-foreground/30"
                     >
                       <Icon className="size-4" />
