@@ -8,6 +8,15 @@
  * Start injects hydration scripts and Tailwind emits inline styles; tightening
  * to nonces is a future hardening step that must not break hydration now.
  *
+ * CSP tightening (Stage 7 / P1): the ENFORCED policy still carries
+ * `script-src 'unsafe-inline'` (hydration must not break). Alongside it we emit a
+ * STRICT `Content-Security-Policy-Report-Only` that drops `'unsafe-inline'` in
+ * favour of a per-request `'nonce-…'` + `'strict-dynamic'`; TanStack stamps the
+ * same nonce onto the scripts it injects, so only genuinely-unexpected inline
+ * script executes a violation report (collected at /api/csp-report). Once prod
+ * traffic shows the Report-Only policy clean, set CSP_ENFORCE_STRICT=true to
+ * promote the strict policy to enforced and retire `'unsafe-inline'`.
+ *
  * The .server.ts suffix keeps this off the client bundle.
  */
 import process from "node:process";
@@ -55,6 +64,39 @@ function buildCsp(): string {
 }
 
 /**
+ * Build the STRICT CSP — nonce + strict-dynamic, no `script-src 'unsafe-inline'`.
+ * `strict-dynamic` lets a nonced script load further scripts (e.g. the Vercel
+ * analytics injector) without each needing its own nonce, and makes host-source
+ * allowlists redundant for scripts, so we drop the analytics host from script-src.
+ * style-src keeps `'unsafe-inline'` for now (Tailwind emits inline styles; nonce-ing
+ * styles is a separate, more invasive step). Emitted Report-Only until proven.
+ */
+function buildStrictCsp(nonce: string): string {
+  const supabaseOrigin = originOf(process.env.VITE_SUPABASE_URL);
+  const supabaseWs = supabaseOrigin ? supabaseOrigin.replace(/^http/, "ws") : null;
+  const upstashOrigin = originOf(process.env.UPSTASH_REDIS_REST_URL);
+  const vercelAnalytics = "https://va.vercel-scripts.com";
+  const connectSrc = ["'self'", supabaseOrigin, supabaseWs, upstashOrigin, vercelAnalytics].filter(
+    Boolean,
+  );
+
+  return [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    `script-src 'nonce-${nonce}' 'strict-dynamic' https: 'unsafe-inline'`,
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: blob: https:",
+    `connect-src ${connectSrc.join(" ")}`,
+    "report-uri /api/csp-report",
+    "upgrade-insecure-requests",
+  ].join("; ");
+}
+
+/**
  * Return a NEW Response carrying the security headers.
  *
  * Why not mutate in place: some runtimes hand back a Response whose `headers`
@@ -73,7 +115,7 @@ function buildCsp(): string {
  * Adds CSP only to HTML responses; the lighter headers apply to all. HSTS only
  * in production (assumes HTTPS termination at the edge).
  */
-export function withSecurityHeaders(response: Response, isProd: boolean): Response {
+export function withSecurityHeaders(response: Response, isProd: boolean, nonce?: string): Response {
   // `new Headers(response.headers)` copies the full header list, preserving
   // every Set-Cookie entry (undici/Bun keep them as a list, not a merged value).
   const headers = new Headers(response.headers);
@@ -89,7 +131,18 @@ export function withSecurityHeaders(response: Response, isProd: boolean): Respon
 
   const contentType = headers.get("content-type") ?? "";
   if (contentType.includes("text/html")) {
-    headers.set("Content-Security-Policy", buildCsp());
+    // Once the strict policy is proven clean in prod, CSP_ENFORCE_STRICT=true
+    // promotes it to the enforced header (dropping script-src 'unsafe-inline');
+    // until then it rides as Report-Only alongside the permissive enforced one.
+    const enforceStrict = nonce && process.env.CSP_ENFORCE_STRICT === "true";
+    if (enforceStrict) {
+      headers.set("Content-Security-Policy", buildStrictCsp(nonce));
+    } else {
+      headers.set("Content-Security-Policy", buildCsp());
+      if (nonce) {
+        headers.set("Content-Security-Policy-Report-Only", buildStrictCsp(nonce));
+      }
+    }
   }
 
   // Passing `response.body` transfers the (possibly streaming) body without

@@ -74,4 +74,32 @@ describe("withSecurityHeaders", () => {
     expect(out.headers.get("Content-Security-Policy")).toContain("default-src");
     expect(await out.text()).toBe("chunk1chunk2");
   });
+
+  // ---- Stage 7 P1: nonce + strict Report-Only CSP ----
+
+  it("emits no Report-Only header when no nonce is supplied", () => {
+    const out = withSecurityHeaders(html(), false);
+    expect(out.headers.get("Content-Security-Policy-Report-Only")).toBeNull();
+    // Enforced policy is unchanged (still permissive).
+    expect(out.headers.get("Content-Security-Policy")).toContain("'unsafe-inline'");
+  });
+
+  it("emits a strict Report-Only policy carrying the nonce when supplied", () => {
+    const out = withSecurityHeaders(html(), false, "abc123==");
+    const enforced = out.headers.get("Content-Security-Policy") ?? "";
+    const reportOnly = out.headers.get("Content-Security-Policy-Report-Only") ?? "";
+    // Enforced stays permissive so hydration never breaks.
+    expect(enforced).toContain("'unsafe-inline'");
+    // Report-Only is the strict, nonce-based policy.
+    expect(reportOnly).toContain("'nonce-abc123=='");
+    expect(reportOnly).toContain("'strict-dynamic'");
+    expect(reportOnly).toContain("report-uri /api/csp-report");
+  });
+
+  it("does not attach CSP to non-HTML even with a nonce", () => {
+    const json = new Response("{}", { headers: { "content-type": "application/json" } });
+    const out = withSecurityHeaders(json, false, "abc123==");
+    expect(out.headers.get("Content-Security-Policy")).toBeNull();
+    expect(out.headers.get("Content-Security-Policy-Report-Only")).toBeNull();
+  });
 });
