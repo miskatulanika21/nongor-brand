@@ -328,7 +328,9 @@ function InviteDialog({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              An invitation email with a secure setup link will be sent. No password is set here.
+              If this email already has an account (e.g. an existing customer), it's promoted to
+              staff in place. Otherwise an invitation email with a secure setup link is sent — no
+              password is set here.
             </p>
           </div>
         </form>

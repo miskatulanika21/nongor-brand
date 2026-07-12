@@ -43,6 +43,7 @@ export const AUDIT_ACTIONS = [
   // staff
   "staff.invited",
   "staff.provisioned",
+  "staff.promoted",
   "staff.activated",
   "staff.deactivated",
   "staff.role_changed",
@@ -173,6 +174,7 @@ export const AUDIT_ACTION_META: Record<AuditAction, AuditActionMeta> = {
   "owner.action": { label: "Owner action", category: "security", tone: "info" },
   "staff.invited": { label: "Staff invited", category: "staff", tone: "info" },
   "staff.provisioned": { label: "Staff provisioned", category: "staff", tone: "success" },
+  "staff.promoted": { label: "Customer promoted to staff", category: "staff", tone: "success" },
   "staff.activated": { label: "Staff activated", category: "staff", tone: "success" },
   "staff.deactivated": { label: "Staff deactivated", category: "staff", tone: "warning" },
   "staff.role_changed": { label: "Staff role changed", category: "staff", tone: "info" },
