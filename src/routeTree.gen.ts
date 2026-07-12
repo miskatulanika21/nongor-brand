@@ -18,6 +18,7 @@ import { Route as SiteIndexRouteImport } from './routes/_site.index'
 import { Route as AuthUpdatePasswordRouteImport } from './routes/auth.update-password'
 import { Route as AuthConfirmRouteImport } from './routes/auth.confirm'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
+import { Route as ApiHealthRouteImport } from './routes/api.health'
 import { Route as ApiCspReportRouteImport } from './routes/api.csp-report'
 import { Route as AdminStaffRouteImport } from './routes/admin.staff'
 import { Route as AdminSizeSettingsRouteImport } from './routes/admin.size-settings'
@@ -114,6 +115,11 @@ const AuthConfirmRoute = AuthConfirmRouteImport.update({
 const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/auth/callback',
   path: '/auth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiHealthRoute = ApiHealthRouteImport.update({
+  id: '/api/health',
+  path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiCspReportRoute = ApiCspReportRouteImport.update({
@@ -431,6 +437,7 @@ export interface FileRoutesByFullPath {
   '/admin/size-settings': typeof AdminSizeSettingsRoute
   '/admin/staff': typeof AdminStaffRoute
   '/api/csp-report': typeof ApiCspReportRoute
+  '/api/health': typeof ApiHealthRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/update-password': typeof AuthUpdatePasswordRoute
@@ -491,6 +498,7 @@ export interface FileRoutesByTo {
   '/admin/size-settings': typeof AdminSizeSettingsRoute
   '/admin/staff': typeof AdminStaffRoute
   '/api/csp-report': typeof ApiCspReportRoute
+  '/api/health': typeof ApiHealthRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/update-password': typeof AuthUpdatePasswordRoute
@@ -556,6 +564,7 @@ export interface FileRoutesById {
   '/admin/size-settings': typeof AdminSizeSettingsRoute
   '/admin/staff': typeof AdminStaffRoute
   '/api/csp-report': typeof ApiCspReportRoute
+  '/api/health': typeof ApiHealthRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/update-password': typeof AuthUpdatePasswordRoute
@@ -622,6 +631,7 @@ export interface FileRouteTypes {
     | '/admin/size-settings'
     | '/admin/staff'
     | '/api/csp-report'
+    | '/api/health'
     | '/auth/callback'
     | '/auth/confirm'
     | '/auth/update-password'
@@ -682,6 +692,7 @@ export interface FileRouteTypes {
     | '/admin/size-settings'
     | '/admin/staff'
     | '/api/csp-report'
+    | '/api/health'
     | '/auth/callback'
     | '/auth/confirm'
     | '/auth/update-password'
@@ -746,6 +757,7 @@ export interface FileRouteTypes {
     | '/admin/size-settings'
     | '/admin/staff'
     | '/api/csp-report'
+    | '/api/health'
     | '/auth/callback'
     | '/auth/confirm'
     | '/auth/update-password'
@@ -768,6 +780,7 @@ export interface RootRouteChildren {
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiCspReportRoute: typeof ApiCspReportRoute
+  ApiHealthRoute: typeof ApiHealthRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   AuthConfirmRoute: typeof AuthConfirmRoute
   AuthUpdatePasswordRoute: typeof AuthUpdatePasswordRoute
@@ -838,6 +851,13 @@ declare module '@tanstack/react-router' {
       path: '/auth/callback'
       fullPath: '/auth/callback'
       preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/health': {
+      id: '/api/health'
+      path: '/api/health'
+      fullPath: '/api/health'
+      preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/csp-report': {
@@ -1360,6 +1380,7 @@ const rootRouteChildren: RootRouteChildren = {
   RobotsDottxtRoute: RobotsDottxtRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiCspReportRoute: ApiCspReportRoute,
+  ApiHealthRoute: ApiHealthRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   AuthConfirmRoute: AuthConfirmRoute,
   AuthUpdatePasswordRoute: AuthUpdatePasswordRoute,

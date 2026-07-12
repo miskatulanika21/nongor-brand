@@ -6,9 +6,10 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { type ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 
 import appCss from "../styles.css?url";
+import { initClientObservability } from "@/lib/observability";
 import { Toaster } from "@/components/ui/sonner";
 import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 import { SpeedInsights } from "@vercel/speed-insights/react";
@@ -149,6 +150,11 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  // Start client error monitoring once (no-op unless VITE_SENTRY_DSN is set).
+  useEffect(() => {
+    void initClientObservability();
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>

@@ -33,11 +33,23 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
     return response;
   }
 
-  console.error(consumeLastCapturedError() ?? new Error(`h3 swallowed SSR error: ${body}`));
+  const swallowed = consumeLastCapturedError() ?? new Error(`h3 swallowed SSR error: ${body}`);
+  console.error(swallowed);
+  void reportServerError(swallowed, { path: "ssr_swallowed" });
   return new Response(renderErrorPage(), {
     status: 500,
     headers: { "content-type": "text/html; charset=utf-8" },
   });
+}
+
+/** Best-effort Sentry capture (no-op unless SENTRY_DSN is set); never throws. */
+async function reportServerError(error: unknown, context?: Record<string, unknown>): Promise<void> {
+  try {
+    const { captureServerException } = await import("./lib/server/observability.server");
+    await captureServerException(error, context);
+  } catch {
+    // ignore
+  }
 }
 
 export default {
@@ -61,6 +73,7 @@ export default {
         return withSecurityHeaders(normalized, isProduction(), nonce);
       } catch (error) {
         console.error(error);
+        await reportServerError(error, { path: "ssr_fetch" });
         const errorResponse = new Response(renderErrorPage(), {
           status: 500,
           headers: { "content-type": "text/html; charset=utf-8" },
