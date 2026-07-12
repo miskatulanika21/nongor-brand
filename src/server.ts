@@ -3,6 +3,7 @@ import "./lib/error-capture";
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 import { withSecurityHeaders } from "./lib/server/headers.server";
+import { generateNonce, runWithNonce } from "./lib/server/request-nonce.server";
 import { isProduction, ensureEnvValidated } from "./lib/server/env.server";
 
 type ServerEntry = {
@@ -41,24 +42,31 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
 
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
-    try {
-      ensureEnvValidated();
-      const handler = await getServerEntry();
-      const response = await handler.fetch(request, env, ctx);
-      const normalized = await normalizeCatastrophicSsrResponse(response);
-      // Rebuild the response with security headers. We no longer swallow a
-      // failure here: instead it falls through to the outer catch, which returns
-      // a safe error page that is itself passed through withSecurityHeaders. The
-      // intent is that a normal response is never emitted without headers; the
-      // error-path rebuild is best-effort and not an absolute guarantee.
-      return withSecurityHeaders(normalized, isProduction());
-    } catch (error) {
-      console.error(error);
-      const errorResponse = new Response(renderErrorPage(), {
-        status: 500,
-        headers: { "content-type": "text/html; charset=utf-8" },
-      });
-      return withSecurityHeaders(errorResponse, isProduction());
-    }
+    // One CSP nonce per request, shared (via AsyncLocalStorage) between
+    // getRouter() — which stamps it onto every script TanStack injects — and
+    // withSecurityHeaders() below, which puts the same nonce in the CSP. getRouter
+    // runs synchronously inside handler.fetch, i.e. inside this ALS scope.
+    const nonce = generateNonce();
+    return runWithNonce(nonce, async () => {
+      try {
+        ensureEnvValidated();
+        const handler = await getServerEntry();
+        const response = await handler.fetch(request, env, ctx);
+        const normalized = await normalizeCatastrophicSsrResponse(response);
+        // Rebuild the response with security headers. We no longer swallow a
+        // failure here: instead it falls through to the outer catch, which returns
+        // a safe error page that is itself passed through withSecurityHeaders. The
+        // intent is that a normal response is never emitted without headers; the
+        // error-path rebuild is best-effort and not an absolute guarantee.
+        return withSecurityHeaders(normalized, isProduction(), nonce);
+      } catch (error) {
+        console.error(error);
+        const errorResponse = new Response(renderErrorPage(), {
+          status: 500,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+        return withSecurityHeaders(errorResponse, isProduction(), nonce);
+      }
+    });
   },
 };

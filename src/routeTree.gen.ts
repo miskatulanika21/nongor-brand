@@ -18,6 +18,7 @@ import { Route as SiteIndexRouteImport } from './routes/_site.index'
 import { Route as AuthUpdatePasswordRouteImport } from './routes/auth.update-password'
 import { Route as AuthConfirmRouteImport } from './routes/auth.confirm'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
+import { Route as ApiCspReportRouteImport } from './routes/api.csp-report'
 import { Route as AdminStaffRouteImport } from './routes/admin.staff'
 import { Route as AdminSizeSettingsRouteImport } from './routes/admin.size-settings'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
@@ -113,6 +114,11 @@ const AuthConfirmRoute = AuthConfirmRouteImport.update({
 const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/auth/callback',
   path: '/auth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCspReportRoute = ApiCspReportRouteImport.update({
+  id: '/api/csp-report',
+  path: '/api/csp-report',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminStaffRoute = AdminStaffRouteImport.update({
@@ -424,6 +430,7 @@ export interface FileRoutesByFullPath {
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/size-settings': typeof AdminSizeSettingsRoute
   '/admin/staff': typeof AdminStaffRoute
+  '/api/csp-report': typeof ApiCspReportRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/update-password': typeof AuthUpdatePasswordRoute
@@ -483,6 +490,7 @@ export interface FileRoutesByTo {
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/size-settings': typeof AdminSizeSettingsRoute
   '/admin/staff': typeof AdminStaffRoute
+  '/api/csp-report': typeof ApiCspReportRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/update-password': typeof AuthUpdatePasswordRoute
@@ -547,6 +555,7 @@ export interface FileRoutesById {
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/size-settings': typeof AdminSizeSettingsRoute
   '/admin/staff': typeof AdminStaffRoute
+  '/api/csp-report': typeof ApiCspReportRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/update-password': typeof AuthUpdatePasswordRoute
@@ -612,6 +621,7 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/size-settings'
     | '/admin/staff'
+    | '/api/csp-report'
     | '/auth/callback'
     | '/auth/confirm'
     | '/auth/update-password'
@@ -671,6 +681,7 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/size-settings'
     | '/admin/staff'
+    | '/api/csp-report'
     | '/auth/callback'
     | '/auth/confirm'
     | '/auth/update-password'
@@ -734,6 +745,7 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/size-settings'
     | '/admin/staff'
+    | '/api/csp-report'
     | '/auth/callback'
     | '/auth/confirm'
     | '/auth/update-password'
@@ -755,6 +767,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRouteWithChildren
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  ApiCspReportRoute: typeof ApiCspReportRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   AuthConfirmRoute: typeof AuthConfirmRoute
   AuthUpdatePasswordRoute: typeof AuthUpdatePasswordRoute
@@ -825,6 +838,13 @@ declare module '@tanstack/react-router' {
       path: '/auth/callback'
       fullPath: '/auth/callback'
       preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/csp-report': {
+      id: '/api/csp-report'
+      path: '/api/csp-report'
+      fullPath: '/api/csp-report'
+      preLoaderRoute: typeof ApiCspReportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/staff': {
@@ -1339,6 +1359,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRouteWithChildren,
   RobotsDottxtRoute: RobotsDottxtRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  ApiCspReportRoute: ApiCspReportRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   AuthConfirmRoute: AuthConfirmRoute,
   AuthUpdatePasswordRoute: AuthUpdatePasswordRoute,

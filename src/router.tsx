@@ -12,12 +12,27 @@ function RoutePending() {
   );
 }
 
+/**
+ * The current request's CSP nonce, read from the global accessor installed by
+ * request-nonce.server.ts. SSR-only: the `import.meta.env.SSR` guard is a build
+ * constant, so this whole branch is dead-code-eliminated from the client bundle
+ * (which never imports the server-only nonce module).
+ */
+function readRequestNonce(): string | undefined {
+  if (!import.meta.env.SSR) return undefined;
+  const getter = (globalThis as Record<string, unknown>)["__nongorr_request_nonce__"] as
+    | (() => string | undefined)
+    | undefined;
+  return getter?.();
+}
+
 export const getRouter = () => {
   const queryClient = new QueryClient();
 
   const router = createRouter({
     routeTree,
     context: { queryClient },
+    ssr: { nonce: readRequestNonce() },
     scrollRestoration: true,
     // Run the whole match pipeline (chunk + beforeLoad + loader) on link
     // hover/touchstart so most clicks commit instantly. The default
