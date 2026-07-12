@@ -454,14 +454,21 @@ about them. Sub-passes:
       Stage-6 P1/P2 notification sender + newsletter consent are REACTIVATED
       into launch scope as pass P3.5** — SMS provider + Resend confirmation is a
       sub-decision asked at that pass's start.
-- [ ] **P1 — security hardening & closure**: **CSP tightening** — remove
-      `'unsafe-inline'` from `script-src` via per-request nonce (Report-Only
-      shadow first) + `object-src`/`base-uri`/`frame-ancestors` + tight
-      `connect-src`; rate-limit coverage audit enforced as a test (every
-      server fn → bucket); **F-14** existing-customer→staff promotion RPC +
-      admin action; enable leaked-password protection; credential-rotation
-      runbook + secrets inventory; full `/security-review` pass; advisors
-      final sweep.
+- [x] **P1 — security hardening & closure** (2026-07-12): **P1a CSP nonce**
+      — per-request nonce (ALS-shared: `getRouter` `ssr.nonce` + header) drives
+      a strict `Content-Security-Policy-Report-Only` (nonce + `strict-dynamic`,
+      no `unsafe-inline`, `report-uri /api/csp-report`) alongside the unchanged
+      enforced policy; live-verified (header nonce == all 76 script nonces ==
+      csp-nonce meta); flip `CSP_ENFORCE_STRICT=true` after the prod watch.
+      **P1b** rate-limit coverage audit enforced by `rate-limit-coverage.test.ts`
+      (all ~124 server fns classified; caught+fixed 3 unthrottled ops).
+      **P1c/F-14** `api.promote_to_staff` — invite-or-promote flow (owner/MFA
+      gated, audited; migration `20260712124515`). **P1d** secrets inventory +
+      rotation runbook (`docs/stage-7-secrets-and-rotation.md`). **P1e** security
+      review + advisors sweep (`docs/stage-7-security-review.md`; advisors =
+      known-intentional only, no new items). **Two owner-gated flips remain:**
+      set `CSP_ENFORCE_STRICT=true` (after watch) and enable leaked-password
+      protection (dashboard).
 - [ ] **P2 — concurrency & correctness suite**: prove oversell / coupon race /
       duplicate-idempotency under **true parallel connections** (extend
       `concurrency.test.sh` into CI) + reservation-expiry race; documented
