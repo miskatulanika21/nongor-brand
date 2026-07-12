@@ -1,6 +1,7 @@
 # Stage 7 — Master Plan: Hardening & Launch
 
-**Status:** PLANNED (plan created 2026-07-12). Not started.
+**Status:** IN PROGRESS (plan 2026-07-12). **P0 decision gate RESOLVED
+2026-07-12** (§2). Next: **P1 — security hardening & closure**.
 
 **Predecessors:** Stages 1–6 closed. Stage 6 content scope shipped (banners /
 policies CMS / size charts / reports+CSV); **Stage 6 P1 (notification-outbox
@@ -61,32 +62,46 @@ Stage 7 hardens the perimeter around this posture; it does not rearchitect it.
 
 ## 2. P0 — Decision gate (owner decisions)
 
-Answer async; only #1 and #4 block a pass.
+**RESOLVED 2026-07-12.** Owner answers recorded below; the biggest consequence is
+that **the owner-deferred Stage-6 P1/P2 (notification sender + newsletter
+consent) is now REACTIVATED and in launch scope** — see the note after the list.
 
-1. **Error-monitoring vendor (blocks P3).** Recommended: **Sentry** (mature
-   TanStack Start / React + Node server SDK, generous free tier, source-map
-   upload, release health). Alternatives: Vercel's own Observability/Log Drains
-   (cheaper, shallower), or Highlight/BetterStack. The adapter is thin either
-   way; the decision picks the vendor, not the architecture. Free-tier Sentry
-   is enough for launch volume.
-2. **Backup / DR tier (informs P6).** Confirm the Supabase plan's PITR window
-   (Free = daily logical only; Pro = 7-day PITR). If still Free, P6 documents a
-   scheduled `pg_dump` to object storage as the interim; if Pro, P6 documents
-   the PITR restore drill. Either way P6 ships a runbook — the decision only
-   changes which procedure is primary.
-3. **Legal copy (blocks P7 legal sub-item only).** Who signs off return/refund/
-   privacy/terms? Recommended: owner supplies final Bangla+English copy (or
-   approves a drafted set); we wire it through the P4-CMS `site_pages` so legal
-   edits never need a deploy again.
-4. **Launch domain (blocks P7 cut-over AND unblocks Stage-6 P1/P2).** The custom
-   domain + its DNS is the gating event for SPF/DKIM (email) and for final
-   secret rotation. Owner provides the domain; everything downstream (HSTS
-   preload submission, OAuth redirect allowlist, email sender domain, cookie
-   domain) keys off it.
-5. **Go-live blocking bar (informs P8 exit).** Which of the visual-audit items
-   (real photography especially) are launch-blocking vs fast-follow? Recommended:
-   real product photography is the only true blocker among them; the rest are
-   fast-follow polish.
+1. **Error-monitoring vendor (blocks P3): → SENTRY.** P3 wires Sentry client +
+   server SDK behind an env flag, with source-map upload in the build and its
+   host added to the P1 CSP `connect-src` allowlist. Free tier for launch.
+2. **Backup / DR tier (informs P6): → FREE TIER (no PITR).** So P6's **primary**
+   backup is a scheduled logical `pg_dump` (roles + `api`/`private`/`public`
+   data + a Storage-bucket manifest) to off-Supabase object storage, retention
+   documented, plus the mandatory **restore drill** with recorded RTO/RPO. PITR
+   is not available on this plan; note the upgrade path but don't depend on it.
+   _(Recommend revisiting Pro before real customer-order volume — daily logical
+   backups mean an RPO measured in hours.)_
+3. **Legal copy (blocks P7 legal sub-item): → LAUNCH-BLOCKING.** Owner supplies /
+   approves final return/refund/privacy/terms copy; we wire it through the
+   P4-CMS `site_pages` so future legal edits never need a deploy. **Action:
+   owner to provide the copy** (the one owner-authored input this stage needs).
+4. **Launch domain (gates P7; unblocks Stage-6 P1/P2): → HAVE ONE READY.** The
+   custom domain + DNS exists, so P7 does the **full cut-over** (TLS, HSTS
+   preload, OAuth redirect allowlist, cookie domain, canonical/sitemap) and
+   **the SPF/DKIM prerequisite for email is satisfied** — the notification /
+   newsletter rail is unblocked. Owner to confirm the exact domain string when
+   we reach the cut-over.
+5. **Go-live blocking bar (informs P8 exit): → ALL FOUR BLOCKING.** Real product
+   photography, legal-copy review, the notification sender, **and** the
+   visual-audit polish are all required before go-live (none are fast-follow).
+   This raises the Stage-7 bar and pulls the deferred notification work in.
+
+**Consequence — Stage-6 P1/P2 reactivated (new launch-blocking scope).** With the
+domain ready (#4) and the sender named launch-blocking (#5), the notification
+outbox sender + newsletter consent are no longer deferred. They execute per
+`docs/stage-6-content-ops-plan.md` §P1/§P2 **as part of Stage 7's launch scope**,
+scheduled as **pass P3.5** (after P3 observability gives us the drain/dead-letter
+visibility, before/parallel to P5 so the smoke test can cover a real send). One
+**remaining owner sub-decision** surfaces when P3.5 starts (Stage-6 P0 #1/#2):
+the **SMS provider** (BD aggregator — Alpha SMS / BulkSMSBD / SSL Wireless, since
+`customer_phone` is the only universal contact) and confirming **Resend** for
+email (now viable — the domain's DNS can carry SPF/DKIM). Ask at pass start, not
+now.
 
 ---
 
@@ -203,6 +218,36 @@ duration_ms}`), so courier/webhook/notification drains and RPC errors are
 **Exit:** an unhandled server error shows up in the tracker within seconds with a
 stack + release; `/healthz` is green; an uptime alert fires on a forced outage in
 a drill.
+
+### P3.5 — Notification sender + newsletter consent (reactivated from Stage 6)
+
+Pulled into launch scope by the P0 decisions (domain ready + sender named
+launch-blocking). **Built per `docs/stage-6-content-ops-plan.md` §P1/§P2** — that
+plan is the authoritative spec; this pass just schedules and executes it here.
+Placed after P3 so the drain has exception-tracking + dead-letter visibility from
+day one, and before/parallel to P5 so the post-deploy smoke can cover a real
+send. Summary of what §P1/§P2 build:
+
+- **Owner sub-decision at pass start** (Stage-6 P0 #1/#2): SMS provider (BD
+  aggregator) + confirm Resend for email (domain DNS now carries SPF/DKIM) +
+  which events notify beyond the 6 shipment events already written.
+- Extend `notification_events` (status / attempts / backoff / `dedupe_key` /
+  recipient snapshot); `claim_notification_batch` (FOR UPDATE SKIP LOCKED) +
+  `mark_notification_result` (exponential backoff + dead-letter); Settings kill
+  switch; backfill existing rows to `skipped`.
+- `NotificationChannelAdapter` seam (mirror of `CourierAdapter`) + first adapter;
+  pure template registry (Bangla-friendly), unit-tested; secret-gated drain
+  endpoint driven by `pg_cron` + `pg_net` every minute (both sides Mumbai) +
+  opportunistic post-enqueue drains; admin visibility tab (status / attempts /
+  last_error / manual retry) — the dead-letter count from P3 already surfaces it.
+- **P2 newsletter consent:** `unsubscribe_token` + one-click
+  `/newsletter/unsubscribe` + `List-Unsubscribe` header on every send; admin
+  subscriber list + CSV (reuses the Stage-6 `toCsv` helper).
+- **Live-drive a real end-to-end send before closing** (the recurring lesson).
+
+**Exit:** one real SMS/email sent end-to-end through the outbox; retries + dead-
+letter + kill switch proven; unsubscribe round-trips; `stage6_db.test.sql`
+§claim/mark green. This closes the Stage-6 addendum.
 
 ### P4 — Performance & accessibility audit
 
@@ -330,27 +375,29 @@ formally opened; go-live checklist complete.
 
 ## 4. Sequencing & effort
 
-| Pass | Depends on        | Size | Notes                                                       |
-| ---- | ----------------- | ---- | ----------------------------------------------------------- |
-| P0   | owner             | —    | Only #1 (vendor) / #4 (domain) block anything; answer async |
-| P1   | —                 | L    | CSP nonce work + F-14 are the big items; independent        |
-| P2   | —                 | M    | Extends existing concurrency harness; independent           |
-| P3   | P0 #1             | M    | Vendor SDK + logging + healthz + alerting                   |
-| P4   | P3 (nice-to-have) | M    | Baseline → fix to budget; a11y; bundle budget in CI         |
-| P5   | P3 (healthz)      | M    | Smoke needs `/healthz`; promotion + rollback                |
-| P6   | P0 #2             | M    | Mostly docs + one real restore drill                        |
-| P7   | P0 #3/#4, P1      | M    | Content + legal + domain cut-over; opens Stage-6 P1/P2 gate |
-| P8   | all               | S    | Closure + docs                                              |
+| Pass | Depends on         | Size | Notes                                                                           |
+| ---- | ------------------ | ---- | ------------------------------------------------------------------------------- |
+| P0   | owner              | —    | **RESOLVED 2026-07-12** (Sentry / Free-tier / domain-ready / all-four-blocking) |
+| P1   | —                  | L    | CSP nonce work + F-14 are the big items; independent                            |
+| P2   | —                  | M    | Extends existing concurrency harness; independent                               |
+| P3   | P0 #1 (Sentry)     | M    | Vendor SDK + logging + healthz + alerting                                       |
+| P3.5 | P3, owner sub-dec. | L    | Notification sender + newsletter (Stage-6 §P1/§P2); now in scope                |
+| P4   | P3 (nice-to-have)  | M    | Baseline → fix to budget; a11y; bundle budget in CI                             |
+| P5   | P3 (healthz), P3.5 | M    | Smoke needs `/healthz`; covers a real send; promotion + rollback                |
+| P6   | P0 #2 (Free tier)  | M    | `pg_dump` pipeline + one real restore drill (no PITR on plan)                   |
+| P7   | P0 #3/#4, P1, P3.5 | M    | Content + legal + domain cut-over (domain ready)                                |
+| P8   | all                | S    | Closure + docs                                                                  |
 
-**Recommended order:** **P0 → P1 → P2 → P3 → P4 → P5 → P6 → P7 → P8.**
+**Recommended order:** **P0 ✓ → P1 → P2 → P3 → P3.5 → P4 → P5 → P6 → P7 → P8.**
 P1/P2 first (harden + prove before anything else moves), then P3 (see everything
-after), then P4/P5/P6 in parallel across PCs if desired (independent), then P7
-last because the domain cut-over is irreversible-ish and should ride on top of a
-fully-hardened, observable, restorable system. P6 (DR) can start anytime — it's
+after), then P3.5 (the notification sender, now launch-blocking, rides on P3's
+visibility), then P4/P6 in parallel across PCs if desired, then P5 (smoke can now
+cover a real send), then P7 last because the domain cut-over should ride on top of
+a fully-hardened, observable, restorable system. P6 (DR) can start anytime — it's
 mostly documentation + a drill and gates nothing.
 
 **Parallel-PC candidates** (multi-PC workflow): P2, P4, and P6 are cleanly
-independent of P1/P3 and of each other.
+independent of P1/P3/P3.5 and of each other.
 
 ---
 
@@ -361,8 +408,9 @@ consent), WhatsApp adapter (seam ready from Stage 6), rich-text CMS editor,
 per-customer notification preferences, server-side cart, multi-currency /
 i18n framework, a full pen-test engagement (this stage does a self-review, not a
 third-party audit — recommend one post-launch), and any new customer-facing
-features (that's a future stage). Stage-6 P1/P2 (the notification sender +
-newsletter consent) are **not** owned here — P7 only opens their gate.
+features (that's a future stage). _(Note: the notification sender + newsletter
+consent, previously out of scope here, were pulled INTO scope by the P0 decisions
+— now pass P3.5.)_
 
 ## 6. Risks & guards
 

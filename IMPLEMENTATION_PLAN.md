@@ -445,10 +445,15 @@ zero new customer-facing functionality). Hardens the unhappy paths (attack,
 load, provider outage, data loss, bad deploy) and proves what we can assert
 about them. Sub-passes:
 
-- [ ] **P0 — decision gate** (owner): error-monitoring vendor (rec. Sentry),
-      backup/PITR tier, legal-copy signoff, launch domain, and which
-      visual-audit items block launch (rec. only real photography). Only the
-      vendor + domain answers block a pass.
+- [x] **P0 — decision gate** (resolved 2026-07-12): monitoring = **Sentry**;
+      backup tier = **Free** (no PITR → P6 builds a scheduled `pg_dump`
+      pipeline + restore drill); launch domain = **ready** (P7 full cut-over;
+      SPF/DKIM prerequisite satisfied); legal copy = **launch-blocking** (owner
+      to supply); go-live bar = **all four blocking** (real photography, legal,
+      notification sender, visual-audit polish). **Consequence: the deferred
+      Stage-6 P1/P2 notification sender + newsletter consent are REACTIVATED
+      into launch scope as pass P3.5** — SMS provider + Resend confirmation is a
+      sub-decision asked at that pass's start.
 - [ ] **P1 — security hardening & closure**: **CSP tightening** — remove
       `'unsafe-inline'` from `script-src` via per-request nonce (Report-Only
       shadow first) + `object-src`/`base-uri`/`frame-ancestors` + tight
@@ -466,6 +471,15 @@ about them. Sub-passes:
       today only `@vercel/analytics`) client+server, structured request-id
       logging with redaction, `/healthz` readiness endpoint, external uptime +
       alerting, admin dead-letter/webhook-failure surface.
+- [ ] **P3.5 — notification sender + newsletter consent** (reactivated from
+      Stage 6 by the P0 decisions; built per `docs/stage-6-content-ops-plan.md`
+      §P1/§P2): outbox `notification_events` extension (status/attempts/backoff/
+      `dedupe_key`/recipient snapshot) + `claim_notification_batch` (SKIP LOCKED) + `mark_notification_result` (backoff + dead-letter), Settings kill switch;
+      `NotificationChannelAdapter` seam + first adapter (SMS BD aggregator +
+      Resend email), unit-tested templates, secret-gated `pg_cron`+`pg_net`
+      drain, admin visibility tab; P2 = `unsubscribe_token` + one-click
+      `/newsletter/unsubscribe` + `List-Unsubscribe` + admin subscriber list/CSV.
+      Live-drive one real send before closing.
 - [ ] **P4 — performance & accessibility**: capture CWV baseline
       (chrome-devtools Lighthouse), fix to **LCP < 2.5s mobile** / CLS < 0.1 /
       INP < 200ms, admin-bundle split, bundle-size budget in CI; axe on key
@@ -483,9 +497,8 @@ about them. Sub-passes:
       photography, badge clutter, star rounding, ৳ glyph, social buttons);
       legal copy finalized via the P4 CMS `site_pages`; domain + TLS + HSTS
       preload + OAuth redirect + cookie domain cut-over; **final credential
-      rotation**; **opens the deferred Stage-6 P1/P2 gate** (domain → SPF/DKIM
-      → notification sender + newsletter consent resume per
-      `docs/stage-6-content-ops-plan.md`); go-live checklist.
+      rotation**; confirm the launch domain string + set email SPF/DKIM (the
+      notification/newsletter rail itself ships in P3.5); go-live checklist.
 - [ ] **P8 — stage closure**: full regression + smoke green; final advisors /
       security-review / a11y / CWV numbers recorded; status docs synced once.
 
@@ -497,8 +510,8 @@ with recorded RTO/RPO; production promotion gated + reversible; domain live and
 secrets rotated. Stage-6 P1/P2 (notification sender + newsletter consent) are
 **not** built here — P7 only opens their gate.
 
-**Recommended order:** P0 → P1 → P2 → P3 → P4 → P5 → P6 → P7 → P8 (P2/P4/P6 are
-independent, good multi-PC parallel candidates).
+**Recommended order:** P0 ✓ → P1 → P2 → P3 → P3.5 → P4 → P5 → P6 → P7 → P8
+(P2/P4/P6 are independent, good multi-PC parallel candidates).
 
 ## Working rules (every stage)
 
