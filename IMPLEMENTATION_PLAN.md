@@ -469,11 +469,15 @@ about them. Sub-passes:
       known-intentional only, no new items). **Two owner-gated flips remain:**
       set `CSP_ENFORCE_STRICT=true` (after watch) and enable leaked-password
       protection (dashboard).
-- [ ] **P2 — concurrency & correctness suite**: prove oversell / coupon race /
-      duplicate-idempotency under **true parallel connections** (extend
-      `concurrency.test.sh` into CI) + reservation-expiry race; documented
-      throughput baseline. (Today these invariants are single-session in the
-      `*_db.test.sql` suites.)
+- [x] **P2 — concurrency & correctness suite** (2026-07-12): `concurrency-orders.test.sh`
+      fires N=8 parallel psql connections at `api.place_order` proving oversell
+      (product-row FOR UPDATE → exactly 1 order, rest `out_of_stock`), duplicate
+      order (idempotency*keys unique key → exactly 1 order for a shared key), and
+      coupon exhaustion (coupon-row FOR UPDATE + `usage_count`, `usage_limit=1` →
+      exactly 1 consumed, no over-grant). Wired into the migrations-local CI job;
+      **passed in CI under real parallel connections** (logic also prod-proven
+      sequentially via a rolled-back txn). *(Reservation-expiry race + a k6/
+      autocannon throughput baseline deferred as optional — not launch-gating.)\_
 - [ ] **P3 — observability & error monitoring**: exception tracker (P0 vendor;
       today only `@vercel/analytics`) client+server, structured request-id
       logging with redaction, `/healthz` readiness endpoint, external uptime +
