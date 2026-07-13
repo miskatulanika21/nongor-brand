@@ -36,6 +36,23 @@ export function isManualMethod(m: PaymentMethod): m is ManualPaymentMethod {
 }
 
 /**
+ * Customer-facing label for a payment method — never render the raw slug
+ * (`Cod` / `Bkash`) to a customer. Unknown values fall back to the raw string.
+ */
+export function paymentMethodLabel(method: string): string {
+  switch (method) {
+    case "cod":
+      return "Cash on Delivery";
+    case "bkash":
+      return "bKash";
+    case "nagad":
+      return "Nagad";
+    default:
+      return method;
+  }
+}
+
+/**
  * Methods currently offered, derived from public settings. Falls back to a
  * safe default (COD on, bKash) when settings are unavailable so checkout is
  * never left with zero options purely due to a transient read failure.

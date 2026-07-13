@@ -3,7 +3,40 @@
 Authoritative record of verified project state. Code and live-environment
 behavior are the source of truth; this file is updated after every stage.
 
-\_Last updated: 2026-07-12 — **Stage 6 content & operational modules: CLOSED
+\_Last updated: 2026-07-13 — **Customer-experience remediation (post-Stage-6;
+on branch `fix/customer-experience-remediation`, NOT yet merged/deployed).**
+Driven by two external QA reports; full change list + verification in
+`docs/Nongorr_Remediation_Report_2026-07-13.md`. Shipped (typecheck + lint +
+**588 Vitest** green): **AUD-01** real product zoom — new `ProductImageViewer`
+(wheel / pinch / tap-cycle→300%, image-clamped pan, drag + keyboard pan,
+announced zoom %, ≥44px controls, focus-return; verified in-browser);
+**AUD-02/03** programmatic form labels + `aria-invalid`/`describedby` + an
+announced validation summary across checkout / contact / profile / addresses /
+measurements / security; **AUD-04/AUD-09** stale account-sync copy corrected +
+404 New-Arrivals filter token; **order #1** `/orders/:id` now reachable (split
+into an `<Outlet/>` layout + `orders.index`, login preserves the detail URL);
+**#5** accessible payment-screenshot upload (focusable button + 320px wrap);
+**#10** track requires both fields with typed not-found/rate-limit/network
+errors + a `role=status` live region; **#6/#7/#8** store re-architecture — cart
+hydrates independent of the wishlist partition + a `cartHydrated` skeleton gate
+(no false-empty flash), a `quoteSeq` guard (no stale-quote overwrite), and a
+canonical `lineKey` dedup for add / save / move (with `store-cart.test.tsx`);
+content: shared `paymentMethodLabel`, status-filter labels, and Bangladesh
+(UTC+6) dates. **Order-workflow #2/#3/#4 — migration + frontend, CI-validated,
+NOT applied to prod:** `20260713090000_order_replay_receipt.sql` makes
+`api.place_order` replay return the full placement contract and re-issue a guest
+tracking token (pass4 §10 test); `/order-success` now renders a **server-verified
+receipt** fetched via `track_order` (guest) / `get_my_order` (signed-in) — the
+URL is a capability, never trusted display data — showing real items/totals with
+an invalid/expired state. **Staging path wired** for the real-order E2E gate
+(`docs/staging-supabase-runbook.md`, guarded `staging:*` npm scripts + a
+prod-ref block); it needs a free second Supabase project (no Docker on this PC;
+cloud branch is paid). Deferred: remaining #9 (saved-address radio / full 44px
+audit / WhatsApp FAB overlap), order-detail courier + real status-history
+timeline, and the payment-unconfigured business decision (AUD-04 payment-policy
+copy). Prior context:\_
+
+\_Earlier (2026-07-12) — **Stage 6 content & operational modules: CLOSED
 for the content scope (P3/P4/P5/P6 + P7 closure; P1/P2 owner-deferred).**
 Master plan `docs/stage-6-content-ops-plan.md` (`0882f0c`). Every
 formerly-hidden admin screen (Banners / Reports / Size Settings) is now real,

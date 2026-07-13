@@ -63,6 +63,7 @@ import { Route as SiteAuthenticityPolicyRouteImport } from './routes/_site.authe
 import { Route as SiteAccountRouteImport } from './routes/_site.account'
 import { Route as SiteAboutRouteImport } from './routes/_site.about'
 import { Route as SiteSplatRouteImport } from './routes/_site.$'
+import { Route as SiteOrdersIndexRouteImport } from './routes/_site.orders.index'
 import { Route as SiteAccountIndexRouteImport } from './routes/_site.account.index'
 import { Route as ApiWebhookSteadfastRouteImport } from './routes/api.webhook.steadfast'
 import { Route as ApiWebhookPathaoRouteImport } from './routes/api.webhook.pathao'
@@ -342,6 +343,11 @@ const SiteSplatRoute = SiteSplatRouteImport.update({
   path: '/$',
   getParentRoute: () => SiteRoute,
 } as any)
+const SiteOrdersIndexRoute = SiteOrdersIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => SiteOrdersRoute,
+} as any)
 const SiteAccountIndexRoute = SiteAccountIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -451,6 +457,7 @@ export interface FileRoutesByFullPath {
   '/api/webhook/pathao': typeof ApiWebhookPathaoRoute
   '/api/webhook/steadfast': typeof ApiWebhookSteadfastRoute
   '/account/': typeof SiteAccountIndexRoute
+  '/orders/': typeof SiteOrdersIndexRoute
 }
 export interface FileRoutesByTo {
   '/robots.txt': typeof RobotsDottxtRoute
@@ -468,7 +475,6 @@ export interface FileRoutesByTo {
   '/faq': typeof SiteFaqRoute
   '/login': typeof SiteLoginRoute
   '/order-success': typeof SiteOrderSuccessRoute
-  '/orders': typeof SiteOrdersRouteWithChildren
   '/payment-policy': typeof SitePaymentPolicyRoute
   '/privacy-policy': typeof SitePrivacyPolicyRoute
   '/return-policy': typeof SiteReturnPolicyRoute
@@ -513,6 +519,7 @@ export interface FileRoutesByTo {
   '/api/webhook/pathao': typeof ApiWebhookPathaoRoute
   '/api/webhook/steadfast': typeof ApiWebhookSteadfastRoute
   '/account': typeof SiteAccountIndexRoute
+  '/orders': typeof SiteOrdersIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -579,6 +586,7 @@ export interface FileRoutesById {
   '/api/webhook/pathao': typeof ApiWebhookPathaoRoute
   '/api/webhook/steadfast': typeof ApiWebhookSteadfastRoute
   '/_site/account/': typeof SiteAccountIndexRoute
+  '/_site/orders/': typeof SiteOrdersIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -645,6 +653,7 @@ export interface FileRouteTypes {
     | '/api/webhook/pathao'
     | '/api/webhook/steadfast'
     | '/account/'
+    | '/orders/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/robots.txt'
@@ -662,7 +671,6 @@ export interface FileRouteTypes {
     | '/faq'
     | '/login'
     | '/order-success'
-    | '/orders'
     | '/payment-policy'
     | '/privacy-policy'
     | '/return-policy'
@@ -707,6 +715,7 @@ export interface FileRouteTypes {
     | '/api/webhook/pathao'
     | '/api/webhook/steadfast'
     | '/account'
+    | '/orders'
   id:
     | '__root__'
     | '/_site'
@@ -772,6 +781,7 @@ export interface FileRouteTypes {
     | '/api/webhook/pathao'
     | '/api/webhook/steadfast'
     | '/_site/account/'
+    | '/_site/orders/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1168,6 +1178,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SiteSplatRouteImport
       parentRoute: typeof SiteRoute
     }
+    '/_site/orders/': {
+      id: '/_site/orders/'
+      path: '/'
+      fullPath: '/orders/'
+      preLoaderRoute: typeof SiteOrdersIndexRouteImport
+      parentRoute: typeof SiteOrdersRoute
+    }
     '/_site/account/': {
       id: '/_site/account/'
       path: '/'
@@ -1256,10 +1273,12 @@ const SiteAccountRouteWithChildren = SiteAccountRoute._addFileChildren(
 
 interface SiteOrdersRouteChildren {
   SiteOrdersIdRoute: typeof SiteOrdersIdRoute
+  SiteOrdersIndexRoute: typeof SiteOrdersIndexRoute
 }
 
 const SiteOrdersRouteChildren: SiteOrdersRouteChildren = {
   SiteOrdersIdRoute: SiteOrdersIdRoute,
+  SiteOrdersIndexRoute: SiteOrdersIndexRoute,
 }
 
 const SiteOrdersRouteWithChildren = SiteOrdersRoute._addFileChildren(

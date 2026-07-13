@@ -75,6 +75,7 @@ function Cart() {
   const allProducts = Route.useLoaderData();
   const {
     cart,
+    cartHydrated,
     updateQty,
     removeFromCart,
     cartSubtotal,
@@ -101,16 +102,22 @@ function Cart() {
   const [reconciling, setReconciling] = useState(false);
   /** Per-item warnings keyed by `code:size`. */
   const [itemWarnings, setItemWarnings] = useState<Map<string, string>>(new Map());
+  // Monotonic request id: only the newest quote may write state, so a slow
+  // earlier response can never overwrite the totals for a newer cart. (#7)
+  const quoteSeq = useRef(0);
 
   const reconcile = useCallback(async () => {
     const lines = cartToQuoteLines(cart);
     if (lines.length === 0) return;
+    const seq = ++quoteSeq.current;
     setReconciling(true);
     setQuoteError(null);
     try {
       const result = await quoteOrderFn({
         data: { lines, zone: deliveryZone, coupon: couponCode ?? undefined },
       });
+      // A newer cart superseded this request while it was in flight — drop it.
+      if (seq !== quoteSeq.current) return;
       if (!result.success) {
         setQuoteError(result.error);
       } else {
@@ -147,9 +154,9 @@ function Cart() {
       }
     } catch {
       // Non-critical — client-side totals remain usable
-      setQuoteError("Could not verify prices right now.");
+      if (seq === quoteSeq.current) setQuoteError("Could not verify prices right now.");
     } finally {
-      setReconciling(false);
+      if (seq === quoteSeq.current) setReconciling(false);
     }
   }, [cart, deliveryZone, couponCode, updateQty]);
 
@@ -208,6 +215,24 @@ function Cart() {
       icon: <Trash2 className="h-6 w-6" />,
       onConfirm: () => removeFromCart(item.id),
     });
+  }
+
+  // Until the persisted cart is read from localStorage, show a skeleton rather
+  // than the empty state — otherwise a saved cart briefly flashes as empty. (#6)
+  if (!cartHydrated) {
+    return (
+      <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
+        <div className="mb-8 h-10 w-48 animate-pulse rounded bg-muted" />
+        <div className="grid gap-8 lg:grid-cols-[1.6fr_1fr]">
+          <div className="space-y-4">
+            {[0, 1].map((i) => (
+              <div key={i} className="h-36 animate-pulse rounded-xl bg-muted" />
+            ))}
+          </div>
+          <div className="h-72 animate-pulse rounded-xl bg-muted" />
+        </div>
+      </div>
+    );
   }
 
   if (!cart.length && !savedForLater.length) {

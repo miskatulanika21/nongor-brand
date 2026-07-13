@@ -143,7 +143,7 @@ export const FAQS: Faq[] = [
   {
     category: "Account",
     q: "Do I need an account to order?",
-    a: "Guest checkout is available. The current Account area is a browser-local UI preview for saved addresses, measurements and device orders; authentication and cross-device sync are not connected yet.",
+    a: "Guest checkout is available, so you can order without an account. Creating an account (email or Google sign-in) lets you save addresses and measurement profiles, keep your wishlist, and see your order history — all synced securely to your account across devices.",
   },
   // Support
   {

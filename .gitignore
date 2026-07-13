@@ -16,10 +16,11 @@ dist-ssr
 .nitro
 *.local
 
-# Environment secrets — NEVER commit real env files (only .env.example)
+# Environment secrets — NEVER commit real env files (only *.example templates)
 .env
 .env.*
 !.env.example
+!.env.staging.example
 
 # Test / coverage / report artifacts
 coverage
@@ -56,3 +57,5 @@ supabase/.gitignore
 
 .vercel
 .env*
+!.env.example
+!.env.staging.example
