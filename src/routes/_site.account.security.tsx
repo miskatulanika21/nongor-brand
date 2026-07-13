@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -229,6 +229,8 @@ function DeleteAccountCard({ hasPassword }: { hasPassword: boolean }) {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pwId = useId();
+  const pwErrorId = `${pwId}-error`;
 
   async function onDelete() {
     setError(null);
@@ -275,19 +277,24 @@ function DeleteAccountCard({ hasPassword }: { hasPassword: boolean }) {
       </p>
       {hasPassword && (
         <div className="mt-4 max-w-sm space-y-1.5">
-          <Label className="text-sm">Current password</Label>
+          <Label htmlFor={pwId} className="text-sm">
+            Current password
+          </Label>
           <Input
+            id={pwId}
             type="password"
             placeholder="Enter your current password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="current-password"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? pwErrorId : undefined}
             className={cn(error && "border-destructive focus-visible:ring-destructive/30")}
           />
         </div>
       )}
       {error && (
-        <p className="mt-2 flex items-center gap-1.5 text-xs text-destructive">
+        <p id={pwErrorId} className="mt-2 flex items-center gap-1.5 text-xs text-destructive">
           <AlertCircle className="h-3.5 w-3.5" /> {error}
         </p>
       )}
@@ -311,6 +318,12 @@ function ChangePasswordCard() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [show, setShow] = useState(false);
+  const fid = useId();
+  const ids = {
+    current: `${fid}-current`,
+    password: `${fid}-password`,
+    confirm: `${fid}-confirm`,
+  };
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [done, setDone] = useState(false);
@@ -370,33 +383,46 @@ function ChangePasswordCard() {
       ) : (
         <form onSubmit={onSubmit} className="space-y-3" noValidate>
           <div className="space-y-1.5">
-            <Label className="text-sm">Current password</Label>
+            <Label htmlFor={ids.current} className="text-sm">
+              Current password
+            </Label>
             <Input
+              id={ids.current}
               type={show ? "text" : "password"}
               placeholder="Enter your current password"
               value={current}
               onChange={(e) => setCurrent(e.target.value)}
               autoComplete="current-password"
+              aria-invalid={errors.current ? true : undefined}
+              aria-describedby={errors.current ? `${ids.current}-error` : undefined}
               className={cn(
                 errors.current && "border-destructive focus-visible:ring-destructive/30",
               )}
             />
             {errors.current && (
-              <p className="flex items-center gap-1.5 text-xs text-destructive">
+              <p
+                id={`${ids.current}-error`}
+                className="flex items-center gap-1.5 text-xs text-destructive"
+              >
                 <AlertCircle className="h-3.5 w-3.5" /> {errors.current}
               </p>
             )}
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-sm">New password</Label>
+            <Label htmlFor={ids.password} className="text-sm">
+              New password
+            </Label>
             <div className="relative">
               <Input
+                id={ids.password}
                 type={show ? "text" : "password"}
                 placeholder="At least 6 characters"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="new-password"
+                aria-invalid={errors.password ? true : undefined}
+                aria-describedby={errors.password ? `${ids.password}-error` : undefined}
                 className={cn(
                   "pr-10",
                   errors.password && "border-destructive focus-visible:ring-destructive/30",
@@ -412,26 +438,37 @@ function ChangePasswordCard() {
               </button>
             </div>
             {errors.password && (
-              <p className="flex items-center gap-1.5 text-xs text-destructive">
+              <p
+                id={`${ids.password}-error`}
+                className="flex items-center gap-1.5 text-xs text-destructive"
+              >
                 <AlertCircle className="h-3.5 w-3.5" /> {errors.password}
               </p>
             )}
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-sm">Confirm new password</Label>
+            <Label htmlFor={ids.confirm} className="text-sm">
+              Confirm new password
+            </Label>
             <Input
+              id={ids.confirm}
               type={show ? "text" : "password"}
               placeholder="Re-enter password"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               autoComplete="new-password"
+              aria-invalid={errors.confirm ? true : undefined}
+              aria-describedby={errors.confirm ? `${ids.confirm}-error` : undefined}
               className={cn(
                 errors.confirm && "border-destructive focus-visible:ring-destructive/30",
               )}
             />
             {errors.confirm && (
-              <p className="flex items-center gap-1.5 text-xs text-destructive">
+              <p
+                id={`${ids.confirm}-error`}
+                className="flex items-center gap-1.5 text-xs text-destructive"
+              >
                 <AlertCircle className="h-3.5 w-3.5" /> {errors.confirm}
               </p>
             )}

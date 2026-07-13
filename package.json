@@ -17,7 +17,12 @@
     "test:e2e": "playwright test",
     "provision-admin": "npx tsx scripts/provision-admin.ts",
     "seed-catalog": "npx tsx scripts/seed-catalog.ts",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test && npm run build"
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test && npm run build",
+    "staging:link": "node scripts/staging-link.mjs",
+    "staging:guard": "node scripts/staging-guard.mjs",
+    "staging:migrations": "node scripts/staging-guard.mjs && npx supabase migration list --linked",
+    "staging:push": "node scripts/staging-guard.mjs && npx supabase db push",
+    "staging:reset": "node scripts/staging-guard.mjs && npx supabase db reset --linked"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

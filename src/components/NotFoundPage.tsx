@@ -65,7 +65,7 @@ export function NotFoundPage() {
           <nav aria-label="Helpful links" className="mt-10 flex flex-wrap gap-x-6 gap-y-2 text-sm">
             <Link
               to="/shop"
-              search={{ filter: "new" }}
+              search={{ filter: "new-arrivals" }}
               className="text-primary underline-offset-4 hover:underline"
             >
               New Arrivals

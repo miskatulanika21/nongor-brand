@@ -1,5 +1,14 @@
 import { createFileRoute, Link, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactElement,
+} from "react";
 import { useStore } from "@/lib/store";
 import { formatBDT, PAYMENT_NOTICE } from "@/lib/brand";
 
@@ -228,6 +237,7 @@ function Checkout() {
     address: useRef<HTMLDivElement>(null),
     trxId: useRef<HTMLDivElement>(null),
   };
+  const errorSummaryRef = useRef<HTMLDivElement>(null);
 
   // Cleanup object URL on unmount.
   useEffect(() => {
@@ -235,6 +245,21 @@ function Checkout() {
       if (screenshotRef.current) URL.revokeObjectURL(screenshotRef.current.url);
     };
   }, []);
+
+  // Clear inline errors (and the announced summary) as the customer corrects a
+  // field. Errors are only ADDED on submit — this only ever removes resolved
+  // ones so stale messages never linger.
+  useEffect(() => {
+    setErrors((prev) => {
+      if (Object.keys(prev).length === 0) return prev;
+      const fresh = validate();
+      const next: Errors = {};
+      for (const k of Object.keys(prev)) if (fresh[k]) next[k] = prev[k];
+      return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+    });
+    // validate() reads the latest field state; re-run whenever an input changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name, phone, district, area, thana, address, trxId, selectedMethod, isManual]);
 
   // ── Fetch quote on mount + when cart/zone changes ──────────────────────
   const fetchQuote = useCallback(async () => {
@@ -393,12 +418,22 @@ function Checkout() {
     return err;
   }
 
+  const ERROR_ORDER = ["name", "phone", "district", "locality", "address", "trxId"];
+
   function scrollToFirstError(err: Errors) {
-    const order = ["name", "phone", "district", "locality", "address", "trxId"];
-    const first = order.find((k) => err[k]);
+    const first = ERROR_ORDER.find((k) => err[k]);
     if (first && refs[first]?.current) {
       refs[first].current?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
+  }
+
+  /** Move keyboard focus to a field's control from the error summary. */
+  function focusField(key: string) {
+    const control = refs[key]?.current?.querySelector<HTMLElement>(
+      "input, textarea, [role='combobox'], button",
+    );
+    control?.focus();
+    control?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   /**
@@ -432,6 +467,9 @@ function Checkout() {
     const err = validate();
     setErrors(err);
     if (Object.keys(err).length) {
+      // Move focus to the announced summary so AT users hear what failed,
+      // then reveal the first offending field.
+      requestAnimationFrame(() => errorSummaryRef.current?.focus());
       scrollToFirstError(err);
       return;
     }
@@ -465,7 +503,6 @@ function Checkout() {
         // localStorage TrxID stash: the screenshot is uploaded to the private
         // evidence bucket and the order flips to payment_submitted server-side.
         // A failure here never undoes the placed order — we warn and continue.
-        let finalStatus = result.order.status;
         if (isManual && trxId.trim()) {
           try {
             const shot = screenshot ? await fileToEvidencePayload(screenshot.file) : null;
@@ -479,7 +516,6 @@ function Checkout() {
               },
             });
             if (ev.success) {
-              finalStatus = ev.status;
               if (ev.duplicateWarning) {
                 toast.warning(
                   "We noticed this TrxID was used before — our team will verify it manually.",
@@ -496,14 +532,13 @@ function Checkout() {
         }
 
         clearCart();
-        // Navigate to order-success with server data in search params
+        // Navigate to order-success with the CAPABILITY only — the success page
+        // fetches + verifies the order server-side (never trusts these params).
         navigate({
           to: "/order-success",
           search: {
             order_id: result.order.order_id,
             order_no: result.order.order_no,
-            status: finalStatus,
-            total: result.order.total,
             token: result.order.guest_token ?? undefined,
           },
         });
@@ -586,6 +621,35 @@ function Checkout() {
 
       <form onSubmit={submit} className="grid gap-8 lg:grid-cols-[1.5fr_1fr]" noValidate>
         <div className="space-y-8">
+          {/* Announced validation summary — focused on submit failure (AUD-03) */}
+          {Object.keys(errors).length > 0 && (
+            <div
+              ref={errorSummaryRef}
+              tabIndex={-1}
+              role="alert"
+              aria-labelledby="checkout-error-summary-title"
+              className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 outline-none focus-visible:ring-2 focus-visible:ring-destructive"
+            >
+              <p id="checkout-error-summary-title" className="text-sm font-medium text-destructive">
+                Please fix {Object.keys(errors).length} field
+                {Object.keys(errors).length > 1 ? "s" : ""} before placing your order:
+              </p>
+              <ul className="mt-2 list-inside list-disc space-y-1 text-sm">
+                {ERROR_ORDER.filter((k) => errors[k]).map((k) => (
+                  <li key={k}>
+                    <button
+                      type="button"
+                      onClick={() => focusField(k)}
+                      className="text-left text-destructive underline underline-offset-2 hover:no-underline"
+                    >
+                      {errors[k]}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {/* Delivery */}
           <section className="space-y-4 rounded-xl border border-border bg-card p-6">
             <h2 className="font-display text-2xl text-foreground">Delivery Details</h2>
@@ -645,10 +709,16 @@ function Checkout() {
                 error={errors.phone}
                 fieldRef={refs.phone}
                 hint="Bangladeshi mobile, e.g. 01712345678"
+                htmlFor="checkout-phone"
               >
                 <div className="relative">
                   <Input
+                    id="checkout-phone"
                     type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    aria-invalid={errors.phone ? true : undefined}
+                    aria-describedby={errors.phone ? "checkout-phone-error" : "checkout-phone-hint"}
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="01XXXXXXXXX"
@@ -727,6 +797,7 @@ function Checkout() {
                 <Checkbox
                   checked={saveAddress}
                   onCheckedChange={(v) => setSaveAddress(v === true)}
+                  aria-label="Save this address to my account for next time"
                 />
                 Save this address to my account for next time
               </label>
@@ -756,17 +827,25 @@ function Checkout() {
 
             {/* Method selector — only show if more than one option */}
             {methods.length > 1 && (
-              <div className="grid gap-2 sm:grid-cols-3">
+              <div
+                role="radiogroup"
+                aria-label="Payment method"
+                className="grid gap-2 sm:grid-cols-3"
+              >
                 {methods.map((m) => {
                   const Icon = METHOD_ICON[m];
+                  const selected = selectedMethod === m;
                   return (
                     <button
                       key={m}
                       type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      aria-label={METHOD_LABEL[m]}
                       onClick={() => setSelectedMethod(m)}
                       className={cn(
-                        "flex items-center gap-2 rounded-lg border-2 p-3 text-left text-sm transition-all",
-                        selectedMethod === m
+                        "flex items-center gap-2 rounded-lg border-2 p-3 text-left text-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        selected
                           ? "border-primary bg-primary/5 font-medium text-foreground"
                           : "border-border bg-background text-muted-foreground hover:border-primary/50",
                       )}
@@ -886,7 +965,7 @@ function Checkout() {
 
                 <Field label="Payment screenshot (optional, recommended)">
                   {screenshot ? (
-                    <div className="flex items-center gap-3 rounded-lg border border-border bg-background p-3">
+                    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-background p-3">
                       <Dialog>
                         <DialogTrigger asChild>
                           <button type="button" className="shrink-0">
@@ -908,7 +987,7 @@ function Checkout() {
                           />
                         </DialogContent>
                       </Dialog>
-                      <span className="flex-1 truncate text-sm text-muted-foreground">
+                      <span className="min-w-0 flex-1 basis-32 truncate text-sm text-muted-foreground">
                         {screenshot.file.name}
                       </span>
                       <Button
@@ -924,7 +1003,9 @@ function Checkout() {
                       </Button>
                     </div>
                   ) : (
-                    <label
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
                       onDragOver={(e) => {
                         e.preventDefault();
                         setDragOver(true);
@@ -935,26 +1016,31 @@ function Checkout() {
                         setDragOver(false);
                         acceptFile(e.dataTransfer.files?.[0]);
                       }}
+                      aria-label="Upload payment screenshot"
+                      aria-describedby={screenshotError ? "screenshot-error" : undefined}
                       className={cn(
-                        "flex cursor-pointer flex-col items-center gap-1 rounded-lg border border-dashed border-border bg-background p-5 text-center text-sm text-muted-foreground hover:border-primary",
+                        "flex w-full cursor-pointer flex-col items-center gap-1 rounded-lg border border-dashed border-border bg-background p-5 text-center text-sm text-muted-foreground hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                         dragOver && "border-primary bg-primary/5",
                       )}
                     >
                       <Upload className="h-5 w-5" />
-                      <span>Drag & drop or tap to upload</span>
+                      <span>Drag &amp; drop or tap to upload</span>
                       <span className="text-xs">JPEG, PNG or WebP · up to 5 MB</span>
-                    </label>
+                    </button>
                   )}
                   <input
                     ref={fileInputRef}
                     type="file"
                     accept="image/jpeg,image/png,image/webp"
-                    className="hidden"
+                    className="sr-only"
+                    tabIndex={-1}
                     onChange={onPickFile}
                     aria-label="Upload payment screenshot"
                   />
                   {screenshotError && (
-                    <p className="mt-1 text-xs text-destructive">{screenshotError}</p>
+                    <p id="screenshot-error" className="mt-1 text-xs text-destructive">
+                      {screenshotError}
+                    </p>
                   )}
                   <p className="mt-1 text-xs text-muted-foreground">
                     Previewed in your browser only — nothing is uploaded yet.
@@ -1144,6 +1230,7 @@ function Field({
   error,
   fieldRef,
   hint,
+  htmlFor,
 }: {
   label: string;
   required?: boolean;
@@ -1151,16 +1238,52 @@ function Field({
   error?: string;
   fieldRef?: React.RefObject<HTMLDivElement | null>;
   hint?: string;
+  /**
+   * Escape hatch: when the control isn't the direct child (e.g. a wrapped
+   * input) the caller sets this to the control's own `id` and wires
+   * `aria-describedby`/`aria-invalid` itself using `${htmlFor}-hint` /
+   * `${htmlFor}-error`. Otherwise the id + ARIA are injected automatically.
+   */
+  htmlFor?: string;
 }) {
+  const autoId = useId();
+  const controlId = htmlFor ?? autoId;
+  const hintId = `${controlId}-hint`;
+  const errorId = `${controlId}-error`;
+  const describedBy =
+    [error ? errorId : null, hint && !error ? hintId : null].filter(Boolean).join(" ") || undefined;
+
+  // Auto-wire the common case (control is the direct child). When `htmlFor` is
+  // supplied the caller owns the wiring, so we don't clone.
+  const control =
+    !htmlFor && isValidElement(children)
+      ? cloneElement(children as ReactElement<Record<string, unknown>>, {
+          id: (children.props as Record<string, unknown>).id ?? controlId,
+          "aria-invalid": error ? true : undefined,
+          "aria-describedby":
+            [(children.props as Record<string, unknown>)["aria-describedby"], describedBy]
+              .filter(Boolean)
+              .join(" ") || undefined,
+        })
+      : children;
+
   return (
     <div className="space-y-1.5" ref={fieldRef}>
-      <Label className="text-sm">
+      <Label htmlFor={controlId} className="text-sm">
         {label}
         {required && <span className="text-primary"> *</span>}
       </Label>
-      {children}
-      {hint && !error && <p className="text-xs text-muted-foreground">{hint}</p>}
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {control}
+      {hint && !error && (
+        <p id={hintId} className="text-xs text-muted-foreground">
+          {hint}
+        </p>
+      )}
+      {error && (
+        <p id={errorId} className="text-xs text-destructive">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

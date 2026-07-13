@@ -1,10 +1,21 @@
 import { createFileRoute, Link, useRouteContext } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { formatBDT, BRAND } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Separator } from "@/components/ui/separator";
 import { ClaimOrderCard } from "@/components/orders/ClaimOrderCard";
-import { Copy, Truck, MessageCircle, Check, AlertTriangle } from "lucide-react";
+import { MeasurementsList } from "@/components/orders/MeasurementsList";
+import { CustomerStatusBadge } from "@/components/admin/order-status";
+import { paymentMethodLabel } from "@/lib/checkout-shared";
+import { getMyOrderFn, trackOrderFn } from "@/lib/orders.api";
+import type {
+  CustomMeasurements,
+  MyOrderDetail,
+  OrderStatus,
+  TrackOrderResult,
+} from "@/lib/orders-shared";
+import { Copy, Truck, MessageCircle, Check, AlertTriangle, PackageOpen } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_site/order-success")({
@@ -20,73 +31,186 @@ export const Route = createFileRoute("/_site/order-success")({
     ],
     links: [{ rel: "canonical", href: "/order-success" }],
   }),
+  // The URL carries a CAPABILITY only (order id/no + guest token). Every value
+  // shown on the page is fetched + verified server-side from that capability —
+  // the query string is never trusted for display (#3/#4).
   validateSearch: (search: Record<string, unknown>) => ({
-    order_id: (search.order_id as string) ?? undefined,
-    order_no: (search.order_no as string) ?? undefined,
-    status: (search.status as string) ?? undefined,
-    total: search.total ? Number(search.total) : undefined,
+    order_id: typeof search.order_id === "string" ? search.order_id : undefined,
+    order_no: typeof search.order_no === "string" ? search.order_no : undefined,
     token: typeof search.token === "string" ? search.token : undefined,
   }),
   component: OrderSuccess,
 });
 
-function OrderSuccess() {
-  const search = Route.useSearch();
-
-  // Orders are created server-side at checkout, which redirects here with the
-  // order in the URL (P3b). A bare /order-success visit has nothing to show.
-  const serverOrder = search.order_id
-    ? {
-        id: search.order_no ?? search.order_id,
-        orderId: search.order_id,
-        orderNo: search.order_no ?? search.order_id,
-        status: search.status ?? "pending_confirmation",
-        total: search.total ?? 0,
-        token: search.token ?? null,
-      }
-    : null;
-
-  if (!serverOrder) return <NoOrderFallback />;
-  return <ServerOrderSuccess serverOrder={serverOrder} />;
+/** Normalised, server-verified receipt shared by the guest + signed-in paths. */
+interface Receipt {
+  orderId: string | null;
+  orderNo: string;
+  status: OrderStatus;
+  total: number;
+  paymentMethod: string;
+  items: Array<{
+    name: string;
+    image: string | null;
+    qty: number;
+    variantSize: string | null;
+    customMeasurements: CustomMeasurements | null;
+  }>;
+  // Richer breakdown only available on the signed-in (owner) path.
+  breakdown?: { subtotal: number; discount: number; shippingFee: number };
+  ship?: { address: string; area: string | null; district: string; zone: string };
 }
 
-/** Status labels for server order statuses. */
-const SERVER_STATUS_LABEL: Record<string, string> = {
-  pending_confirmation: "Pending Confirmation",
-  pending_payment: "Pending Payment Verification",
-  confirmed: "Confirmed",
-};
-
-function ServerOrderSuccess({
-  serverOrder,
-}: {
-  serverOrder: {
-    id: string;
-    orderId: string;
-    orderNo: string;
-    status: string;
-    total: number;
-    token: string | null;
+function fromTrack(r: TrackOrderResult, orderId: string | null): Receipt {
+  return {
+    orderId,
+    orderNo: r.order.orderNo,
+    status: r.order.status,
+    total: r.order.total,
+    paymentMethod: r.order.paymentMethod,
+    items: r.items.map((i) => ({
+      name: i.name,
+      image: i.image,
+      qty: i.qty,
+      variantSize: i.variantSize,
+      customMeasurements: i.customMeasurements,
+    })),
   };
-}) {
-  const statusLabel = SERVER_STATUS_LABEL[serverOrder.status] ?? serverOrder.status;
-  const isCod = serverOrder.status === "pending_confirmation";
+}
 
+function fromMyOrder(o: MyOrderDetail): Receipt {
+  return {
+    orderId: o.order.id,
+    orderNo: o.order.orderNo,
+    status: o.order.status,
+    total: o.order.total,
+    paymentMethod: o.order.paymentMethod,
+    items: o.items.map((i) => ({
+      name: i.name,
+      image: i.image,
+      qty: i.qty,
+      variantSize: i.variantSize,
+      customMeasurements: i.customMeasurements,
+    })),
+    breakdown: {
+      subtotal: o.order.subtotal,
+      discount: o.order.discount,
+      shippingFee: o.order.shippingFee,
+    },
+    ship: {
+      address: o.order.shipAddress,
+      area: o.order.shipArea,
+      district: o.order.shipDistrict,
+      zone: o.order.shipZone,
+    },
+  };
+}
+
+type LoadState =
+  | { phase: "loading" }
+  | { phase: "ready"; receipt: Receipt; guestToken: string | null }
+  | { phase: "invalid" };
+
+function OrderSuccess() {
+  const { order_id, order_no, token } = Route.useSearch();
   const { sessionSummary } = useRouteContext({ from: "/_site" }) as {
     sessionSummary: { isAuthenticated: boolean };
   };
-  // Claiming consumes the capability token (the RPC clears its hash), so once
-  // claimed this page renders exactly like a signed-in order: account actions,
-  // no guest tracking-link card.
-  const [claimed, setClaimed] = useState(false);
-  const guestToken = claimed ? null : serverOrder.token;
+  const signedIn = sessionSummary.isAuthenticated;
+  const [state, setState] = useState<LoadState>({ phase: "loading" });
 
-  const waText = `Hi Nongorr! 🛍️ My order ${serverOrder.orderNo} is placed. Please confirm! 💕`;
+  useEffect(() => {
+    let live = true;
+
+    // Guest capability: order_no + token → verified via track_order.
+    if (order_no && token) {
+      void trackOrderFn({ data: { orderNo: order_no, token } })
+        .then((res) => {
+          if (!live) return;
+          if (res.success && res.result) {
+            setState({
+              phase: "ready",
+              receipt: fromTrack(res.result, order_id ?? null),
+              guestToken: token,
+            });
+          } else {
+            setState({ phase: "invalid" });
+          }
+        })
+        .catch(() => live && setState({ phase: "invalid" }));
+      return () => {
+        live = false;
+      };
+    }
+
+    // Signed-in capability: order_id → verified via get_my_order (identity-gated).
+    if (signedIn && order_id) {
+      void getMyOrderFn({ data: { orderId: order_id } })
+        .then((res) => {
+          if (!live) return;
+          if (res.success && res.order) {
+            setState({ phase: "ready", receipt: fromMyOrder(res.order), guestToken: null });
+          } else {
+            setState({ phase: "invalid" });
+          }
+        })
+        .catch(() => live && setState({ phase: "invalid" }));
+      return () => {
+        live = false;
+      };
+    }
+
+    setState({ phase: "invalid" });
+    return () => {
+      live = false;
+    };
+  }, [order_id, order_no, token, signedIn]);
+
+  if (state.phase === "loading") return <LoadingReceipt />;
+  if (state.phase === "invalid") return <NoOrderFallback />;
+  return (
+    <ServerOrderSuccess
+      receipt={state.receipt}
+      initialGuestToken={state.guestToken}
+      signedIn={signedIn}
+    />
+  );
+}
+
+function LoadingReceipt() {
+  return (
+    <div className="mx-auto max-w-2xl space-y-4 px-4 py-14 sm:px-6">
+      <Skeleton className="mx-auto h-24 w-24 rounded-full" />
+      <Skeleton className="mx-auto h-8 w-3/4" />
+      <Skeleton className="h-40 w-full rounded-xl" />
+      <Skeleton className="h-32 w-full rounded-xl" />
+    </div>
+  );
+}
+
+function ServerOrderSuccess({
+  receipt,
+  initialGuestToken,
+  signedIn,
+}: {
+  receipt: Receipt;
+  initialGuestToken: string | null;
+  signedIn: boolean;
+}) {
+  const isCod = receipt.paymentMethod === "cod";
+
+  // Claiming consumes the capability token (the RPC clears its hash). Capture
+  // the real order id the claim returns so the "View order" link is correct.
+  const [claimedOrderId, setClaimedOrderId] = useState<string | null>(null);
+  const guestToken = claimedOrderId ? null : initialGuestToken;
+  const viewOrderId = claimedOrderId ?? receipt.orderId;
+
+  const waText = `Hi Nongorr! 🛍️ My order ${receipt.orderNo} is placed. Please confirm! 💕`;
   const waLink = `https://wa.me/${BRAND.whatsapp}?text=${encodeURIComponent(waText)}`;
 
   const copyId = async () => {
     try {
-      await navigator.clipboard.writeText(serverOrder.orderNo);
+      await navigator.clipboard.writeText(receipt.orderNo);
       toast.success("Order number copied");
     } catch {
       toast.error("Could not copy the order number");
@@ -123,30 +247,88 @@ function ServerOrderSuccess({
         </h1>
         <p className="mt-2 text-muted-foreground">Thank you for shopping with Nongorr 💕</p>
         <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
-          <span className="font-display text-lg text-foreground">{serverOrder.orderNo}</span>
+          <span className="font-display text-lg text-foreground">{receipt.orderNo}</span>
           <Button variant="outline" size="sm" onClick={copyId}>
             <Copy className="h-4 w-4" /> Copy
           </Button>
-          <Badge
-            variant="outline"
-            className={
-              isCod
-                ? "border-success/30 bg-success/15 text-success"
-                : "border-gold/40 bg-gold/20 text-gold-foreground"
-            }
-          >
-            {statusLabel}
-          </Badge>
+          <CustomerStatusBadge status={receipt.status} />
         </div>
       </div>
 
-      {/* Total */}
-      {serverOrder.total > 0 && (
-        <div className="mt-8 rounded-xl border border-border bg-card p-6 text-center">
-          <p className="text-sm text-muted-foreground">Order Total</p>
-          <p className="font-display text-2xl text-primary">{formatBDT(serverOrder.total)}</p>
+      {/* Verified order summary — items + totals from the server, not the URL */}
+      <div className="mt-8 rounded-xl border border-border bg-card p-6">
+        <h2 className="font-display text-xl text-foreground">Your order</h2>
+        <div className="mt-4 space-y-4">
+          {receipt.items.map((i, idx) => (
+            <div key={idx} className="space-y-2">
+              <div className="flex gap-3">
+                {i.image ? (
+                  <img
+                    src={i.image}
+                    alt={i.name}
+                    loading="lazy"
+                    onError={(e) => {
+                      e.currentTarget.style.display = "none";
+                    }}
+                    className="h-20 w-16 rounded object-cover"
+                  />
+                ) : (
+                  <div className="grid h-20 w-16 place-items-center rounded bg-muted text-muted-foreground">
+                    <PackageOpen className="h-5 w-5" />
+                  </div>
+                )}
+                <div className="flex-1 text-sm">
+                  <p className="font-medium text-foreground">{i.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Qty {i.qty}
+                    {i.variantSize ? ` · ${i.variantSize}` : ""}
+                  </p>
+                </div>
+              </div>
+              <MeasurementsList measurements={i.customMeasurements} />
+            </div>
+          ))}
         </div>
-      )}
+
+        <Separator className="my-4" />
+        {receipt.breakdown ? (
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Subtotal</span>
+              <span>{formatBDT(receipt.breakdown.subtotal)}</span>
+            </div>
+            {receipt.breakdown.discount > 0 && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Discount</span>
+                <span className="text-gold">− {formatBDT(receipt.breakdown.discount)}</span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Delivery</span>
+              <span>
+                {receipt.breakdown.shippingFee === 0
+                  ? "Free"
+                  : formatBDT(receipt.breakdown.shippingFee)}
+              </span>
+            </div>
+          </div>
+        ) : null}
+        <div className="mt-3 flex items-center justify-between">
+          <span className="font-display text-lg">Total</span>
+          <span className="font-display text-xl text-primary">{formatBDT(receipt.total)}</span>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Payment: {paymentMethodLabel(receipt.paymentMethod)}
+        </p>
+        {receipt.ship && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            Delivery to{" "}
+            {[receipt.ship.address, receipt.ship.area, receipt.ship.district]
+              .filter(Boolean)
+              .join(", ")}
+          </p>
+        )}
+      </div>
 
       {/* What happens next */}
       <div className="mt-6 rounded-xl border border-border bg-card p-6">
@@ -202,11 +384,11 @@ function ServerOrderSuccess({
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button size="sm" asChild>
-              <Link to="/track" search={{ o: serverOrder.orderNo, t: guestToken }}>
+              <Link to="/track" search={{ o: receipt.orderNo, t: guestToken }}>
                 <Truck className="h-4 w-4" /> Track Your Order
               </Link>
             </Button>
-            <CopyTrackLink orderNo={serverOrder.orderNo} token={guestToken} />
+            <CopyTrackLink orderNo={receipt.orderNo} token={guestToken} />
           </div>
         </div>
       )}
@@ -215,26 +397,20 @@ function ServerOrderSuccess({
       {guestToken && (
         <div className="mt-6">
           <ClaimOrderCard
-            orderNo={serverOrder.orderNo}
+            orderNo={receipt.orderNo}
             token={guestToken}
-            signedIn={sessionSummary.isAuthenticated}
-            onClaimed={() => setClaimed(true)}
+            signedIn={signedIn}
+            onClaimed={(r) => setClaimedOrderId(r.orderId)}
           />
         </div>
       )}
 
       {/* Actions */}
       <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-center">
-        {guestToken ? (
-          <Button variant="outline" asChild>
-            <a href={waLink} target="_blank" rel="noreferrer">
-              <MessageCircle className="h-4 w-4" /> Chat on WhatsApp
-            </a>
-          </Button>
-        ) : (
+        {!guestToken && viewOrderId ? (
           <>
             <Button asChild>
-              <Link to="/orders/$id" params={{ id: serverOrder.orderId }}>
+              <Link to="/orders/$id" params={{ id: viewOrderId }}>
                 <Truck className="h-4 w-4" /> View Your Order
               </Link>
             </Button>
@@ -244,6 +420,12 @@ function ServerOrderSuccess({
               </a>
             </Button>
           </>
+        ) : (
+          <Button variant="outline" asChild>
+            <a href={waLink} target="_blank" rel="noreferrer">
+              <MessageCircle className="h-4 w-4" /> Chat on WhatsApp
+            </a>
+          </Button>
         )}
         <Button variant="ghost" asChild>
           <Link to="/shop">Continue Shopping</Link>
@@ -277,14 +459,15 @@ function NoOrderFallback() {
   )}`;
   return (
     <div className="mx-auto max-w-xl px-4 py-16 text-center sm:px-6">
-      <div className="grid h-20 w-20 place-items-center rounded-full bg-gold/15 mx-auto">
+      <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-gold/15">
         <AlertTriangle className="h-10 w-10 text-gold-foreground" />
       </div>
       <h1 className="mt-6 font-display text-2xl text-foreground sm:text-3xl">
         We couldn&apos;t load your order summary
       </h1>
       <p className="mt-3 text-muted-foreground">
-        Your order may have been submitted, but this device could not load the order summary.
+        This link may be incomplete or expired. If you just placed an order, track it with your
+        order number and tracking code, or reach us on WhatsApp.
       </p>
       <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
         <Button asChild>

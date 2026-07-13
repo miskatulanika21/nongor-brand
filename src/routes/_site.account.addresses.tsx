@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { cloneElement, isValidElement, useId, useState, type ReactElement } from "react";
 import { useAccountUI, isValidAccountPhone, type SavedAddress } from "@/lib/account-ui";
 import { normalizeBDPhone } from "@/lib/bd-phone";
 import { Button } from "@/components/ui/button";
@@ -301,11 +301,30 @@ function AddrField({
   error?: string;
   children: React.ReactNode;
 }) {
+  const id = useId();
+  const errorId = `${id}-error`;
+  const control = isValidElement(children)
+    ? cloneElement(children as ReactElement<Record<string, unknown>>, {
+        id: (children.props as Record<string, unknown>).id ?? id,
+        "aria-invalid": error ? true : undefined,
+        "aria-describedby": error
+          ? [(children.props as Record<string, unknown>)["aria-describedby"], errorId]
+              .filter(Boolean)
+              .join(" ")
+          : (children.props as Record<string, unknown>)["aria-describedby"],
+      })
+    : children;
   return (
     <div className="space-y-1.5">
-      <Label className="text-sm">{label}</Label>
-      {children}
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      <Label htmlFor={id} className="text-sm">
+        {label}
+      </Label>
+      {control}
+      {error && (
+        <p id={errorId} className="text-xs text-destructive">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

@@ -44,6 +44,12 @@ interface StoreState {
   isWishlisted: (productId: string) => boolean;
   cartCount: number;
   cartSubtotal: number;
+  /**
+   * True once the cart + checkout UI have been read from localStorage. UIs
+   * gate their empty states on this so a persisted cart never briefly flashes
+   * as "empty" during hydration.
+   */
+  cartHydrated: boolean;
 
   // Checkout UI state
   deliveryZone: DeliveryZone;
@@ -117,6 +123,36 @@ function newCartId(productId: string) {
   return `${productId}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 }
 
+/**
+ * Canonical identity for a cart / saved line: two lines are "the same" only when
+ * product, size, custom measurements AND custom charge all match. Quantities are
+ * merged only across truly-identical configurations. (#8)
+ */
+function lineKey(
+  item: Pick<CartItem, "productId" | "size" | "customSize" | "customCharge">,
+): string {
+  const cs =
+    item.customSize && Object.keys(item.customSize).length > 0
+      ? JSON.stringify(Object.entries(item.customSize).sort(([a], [b]) => a.localeCompare(b)))
+      : "";
+  return `${item.productId}|${item.size ?? ""}|${cs}|${item.customCharge ?? 0}`;
+}
+
+/**
+ * Merge `item` into `list`, combining quantity with an existing line of
+ * identical configuration; otherwise append (re-assigning a fresh id on the rare
+ * id collision so React keys stay unique).
+ */
+function mergeLine(list: CartItem[], item: CartItem): CartItem[] {
+  const key = lineKey(item);
+  const idx = list.findIndex((c) => lineKey(c) === key);
+  if (idx >= 0) {
+    return list.map((c, i) => (i === idx ? { ...c, qty: c.qty + item.qty } : c));
+  }
+  const idConflict = list.some((c) => c.id === item.id);
+  return [...list, idConflict ? { ...item, id: newCartId(item.productId) } : item];
+}
+
 export function StoreProvider({
   children,
   session,
@@ -128,31 +164,55 @@ export function StoreProvider({
   const [cart, setCart] = useState<CartItem[]>([]);
   const [wishlist, setWishlist] = useState<string[]>([]);
   const [checkoutUI, setCheckoutUI] = useState<CheckoutUIState>(DEFAULT_CHECKOUT_UI);
-  const [hydrated, setHydrated] = useState(false);
+  // Cart + checkout UI hydrate ONCE on mount (independent of the wishlist key so
+  // a login/logout partition flip can never re-read stale storage over the live
+  // in-memory cart — #6). Wishlist hydrates separately, per partition.
+  const [cartHydrated, setCartHydrated] = useState(false);
+  const [wishlistHydrated, setWishlistHydrated] = useState(false);
 
   const userId = session?.isAuthenticated === true ? session.userId : null;
   const signedIn = !!userId;
   const wishlistKey = userId ? scopedWishlistKey(userId) : GUEST_WISHLIST_KEY;
 
+  // Cart + checkout UI: read exactly once, on mount.
   useEffect(() => {
     setCart(load<CartItem[]>("nongorr_cart", []));
-    setWishlist(sanitizeWishlistCodes(load<string[]>(wishlistKey, [])));
     setCheckoutUI(loadCheckoutUI());
-    setHydrated(true);
-    // Login/logout is an SPA navigation (no remount): the key flips and this
-    // re-hydrates from the right partition. Declared before the persist
-    // effects so the read always precedes any same-commit write.
+    setCartHydrated(true);
+  }, []);
+
+  // Wishlist: (re)read whenever the account partition changes (login/logout).
+  useEffect(() => {
+    setWishlist(sanitizeWishlistCodes(load<string[]>(wishlistKey, [])));
+    setWishlistHydrated(true);
   }, [wishlistKey]);
 
   useEffect(() => {
-    if (hydrated) localStorage.setItem("nongorr_cart", JSON.stringify(cart));
-  }, [cart, hydrated]);
+    if (cartHydrated) localStorage.setItem("nongorr_cart", JSON.stringify(cart));
+  }, [cart, cartHydrated]);
   useEffect(() => {
-    if (hydrated) localStorage.setItem(wishlistKey, JSON.stringify(wishlist));
-  }, [wishlist, hydrated, wishlistKey]);
+    if (wishlistHydrated) localStorage.setItem(wishlistKey, JSON.stringify(wishlist));
+  }, [wishlist, wishlistHydrated, wishlistKey]);
   useEffect(() => {
-    if (hydrated) localStorage.setItem("nongorr_checkout_ui", JSON.stringify(checkoutUI));
-  }, [checkoutUI, hydrated]);
+    if (cartHydrated) localStorage.setItem("nongorr_checkout_ui", JSON.stringify(checkoutUI));
+  }, [checkoutUI, cartHydrated]);
+
+  // Best-effort flush on hard navigation / tab close, so a cart mutation made
+  // moments before an unload can't be lost to a not-yet-committed effect (#6).
+  const cartRef = useRef(cart);
+  cartRef.current = cart;
+  useEffect(() => {
+    if (!cartHydrated) return;
+    const flush = () => {
+      try {
+        localStorage.setItem("nongorr_cart", JSON.stringify(cartRef.current));
+      } catch {
+        // storage unavailable — nothing more we can do
+      }
+    };
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
+  }, [cartHydrated]);
 
   // Guards stale canonical responses: only the newest in-flight toggle's
   // server list may reconcile state (and a slow login-sync response never
@@ -166,7 +226,7 @@ export function StoreProvider({
   // background accelerator, never a gate.
   const syncedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!hydrated || !userId || syncedFor.current === userId) return;
+    if (!wishlistHydrated || !userId || syncedFor.current === userId) return;
     syncedFor.current = userId;
     const codes = sanitizeWishlistCodes([
       ...load<string[]>(wishlistKey, []),
@@ -185,18 +245,12 @@ export function StoreProvider({
       .catch(() => {
         // offline — the local mirror stands until the next visit
       });
-  }, [hydrated, userId, wishlistKey]);
+  }, [wishlistHydrated, userId, wishlistKey]);
 
   const addToCart: StoreState["addToCart"] = (item) => {
-    setCart((prev) => {
-      const existing = prev.find(
-        (c) => c.productId === item.productId && c.size === item.size && !item.customSize,
-      );
-      if (existing) {
-        return prev.map((c) => (c.id === existing.id ? { ...c, qty: c.qty + item.qty } : c));
-      }
-      return [...prev, { ...item, id: newCartId(item.productId) }];
-    });
+    // Merge into an existing line only when the whole configuration matches —
+    // including custom measurements — otherwise add a distinct line. (#8)
+    setCart((prev) => mergeLine(prev, { ...item, id: newCartId(item.productId) }));
   };
 
   const removeFromCart = (id: string) => setCart((p) => p.filter((c) => c.id !== id));
@@ -262,25 +316,22 @@ export function StoreProvider({
   const setDeliveryNote = (note: string) => setCheckoutUI((s) => ({ ...s, deliveryNote: note }));
 
   const saveForLater = (cartItemId: string) => {
-    setCart((prevCart) => {
-      const item = prevCart.find((c) => c.id === cartItemId);
-      if (!item) return prevCart;
-      setCheckoutUI((s) => ({ ...s, savedForLater: [...s.savedForLater, item] }));
-      return prevCart.filter((c) => c.id !== cartItemId);
-    });
+    const item = cart.find((c) => c.id === cartItemId);
+    if (!item) return;
+    setCart((prev) => prev.filter((c) => c.id !== cartItemId));
+    // Dedupe into the saved list — an identical config merges quantity. (#8)
+    setCheckoutUI((s) => ({ ...s, savedForLater: mergeLine(s.savedForLater, item) }));
   };
 
   const moveToCart = (savedItemId: string) => {
-    setCheckoutUI((s) => {
-      const item = s.savedForLater.find((c) => c.id === savedItemId);
-      if (!item) return s;
-      setCart((prevCart) => {
-        const idConflict = prevCart.some((c) => c.id === item.id);
-        const restored = idConflict ? { ...item, id: newCartId(item.productId) } : item;
-        return [...prevCart, restored];
-      });
-      return { ...s, savedForLater: s.savedForLater.filter((c) => c.id !== savedItemId) };
-    });
+    const item = checkoutUI.savedForLater.find((c) => c.id === savedItemId);
+    if (!item) return;
+    setCheckoutUI((s) => ({
+      ...s,
+      savedForLater: s.savedForLater.filter((c) => c.id !== savedItemId),
+    }));
+    // Merge into an identical cart line instead of creating a duplicate. (#8)
+    setCart((prev) => mergeLine(prev, item));
   };
 
   const removeSavedItem = (savedItemId: string) =>
@@ -302,6 +353,7 @@ export function StoreProvider({
         isWishlisted,
         cartCount,
         cartSubtotal,
+        cartHydrated,
         deliveryZone: checkoutUI.deliveryZone,
         setDeliveryZone,
         couponCode: checkoutUI.couponCode,

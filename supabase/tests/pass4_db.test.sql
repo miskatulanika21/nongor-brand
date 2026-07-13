@@ -333,4 +333,67 @@ BEGIN
   END LOOP;
 END $$;
 
+-- ============================================================
+-- §10 — idempotent-replay recovery contract (order-workflow #2)
+--   A guest retry must return the FULL placement contract (totals) AND a
+--   working tracking credential; the signed-in replay returns totals with no
+--   guest token; a mismatched payload on the same key still conflicts.
+-- ============================================================
+DO $$
+DECLARE
+  r1 jsonb; r2 jsonb; oid uuid; ono text; tok1 text; tok2 text; h_before text; h_after text;
+  cu jsonb := jsonb_build_object('name','Replay','phone','01788888888','district','Dhaka','address','8 Rd');
+  lines jsonb := '[{"code":"p4-prod","qty":1}]'::jsonb;
+BEGIN
+  -- fresh guest place: full totals + a token whose hash is what's stored
+  r1  := api.place_order(lines, cu, 'dhaka', 'cod', 's10-idem', NULL, NULL);
+  oid := (r1->>'order_id')::uuid; ono := r1->>'order_no'; tok1 := r1->>'guest_token';
+  IF tok1 IS NULL THEN RAISE EXCEPTION 'FAIL: s10 fresh missing guest_token %', r1; END IF;
+  IF (r1->>'replayed')::bool THEN RAISE EXCEPTION 'FAIL: s10 fresh flagged replayed'; END IF;
+  IF (r1->>'subtotal')::int <> 500 THEN RAISE EXCEPTION 'FAIL: s10 fresh subtotal %', r1; END IF;
+  IF (r1->>'total')::int <= 500 THEN RAISE EXCEPTION 'FAIL: s10 fresh total (no shipping) %', r1; END IF;
+  SELECT guest_token_hash INTO h_before FROM public.orders WHERE id = oid;
+  IF encode(extensions.digest(tok1,'sha256'),'hex') <> h_before THEN
+    RAISE EXCEPTION 'FAIL: s10 token1 does not hash to stored hash'; END IF;
+  IF api.track_order(ono, h_before) IS NULL THEN RAISE EXCEPTION 'FAIL: s10 token1 not trackable'; END IF;
+
+  -- REPLAY (same key + payload): full contract + a re-issued, working token
+  r2 := api.place_order(lines, cu, 'dhaka', 'cod', 's10-idem', NULL, NULL);
+  IF NOT (r2->>'replayed')::bool THEN RAISE EXCEPTION 'FAIL: s10 replay not flagged %', r2; END IF;
+  IF (r2->>'order_id') <> (r1->>'order_id') THEN RAISE EXCEPTION 'FAIL: s10 replay different order'; END IF;
+  IF (r2->>'total')::int <> (r1->>'total')::int THEN RAISE EXCEPTION 'FAIL: s10 replay lost total %', r2; END IF;
+  IF (r2->>'subtotal')::int <> (r1->>'subtotal')::int THEN RAISE EXCEPTION 'FAIL: s10 replay lost subtotal'; END IF;
+  tok2 := r2->>'guest_token';
+  IF tok2 IS NULL THEN RAISE EXCEPTION 'FAIL: s10 replay lost guest_token (credential loss) %', r2; END IF;
+  SELECT guest_token_hash INTO h_after FROM public.orders WHERE id = oid;
+  IF h_after = h_before THEN RAISE EXCEPTION 'FAIL: s10 replay did not rotate the token'; END IF;
+  IF encode(extensions.digest(tok2,'sha256'),'hex') <> h_after THEN
+    RAISE EXCEPTION 'FAIL: s10 token2 does not hash to rotated hash'; END IF;
+  IF api.track_order(ono, h_after) IS NULL THEN RAISE EXCEPTION 'FAIL: s10 re-issued token not trackable'; END IF;
+
+  -- same key, DIFFERENT payload → still a conflict (identity is preserved)
+  BEGIN
+    PERFORM api.place_order('[{"code":"p4-prod","qty":2}]'::jsonb, cu, 'dhaka', 'cod', 's10-idem', NULL, NULL);
+    RAISE EXCEPTION 'FAIL: s10 mismatched payload did not conflict';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'idempotency_conflict' THEN RAISE EXCEPTION 'FAIL: s10 conflict err=%', SQLERRM; END IF;
+  END;
+END $$;
+
+-- §10b — signed-in replay: totals preserved, no guest token leaked
+DO $$
+DECLARE
+  r1 jsonb; r2 jsonb;
+  cu jsonb := jsonb_build_object('name','ReplayU','phone','01799999999','district','Dhaka','address','9 Rd');
+BEGIN
+  r1 := api.place_order('[{"code":"p4-prod","qty":1}]'::jsonb, cu, 'dhaka', 'cod', 's10u-idem',
+    '00000000-0000-0000-0000-0000000000b2'::uuid, NULL);
+  r2 := api.place_order('[{"code":"p4-prod","qty":1}]'::jsonb, cu, 'dhaka', 'cod', 's10u-idem',
+    '00000000-0000-0000-0000-0000000000b2'::uuid, NULL);
+  IF NOT (r2->>'replayed')::bool THEN RAISE EXCEPTION 'FAIL: s10u replay not flagged %', r2; END IF;
+  IF (r2->>'total')::int <> (r1->>'total')::int THEN RAISE EXCEPTION 'FAIL: s10u replay lost total'; END IF;
+  IF (r2->>'guest_token') IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL: s10u signed-in replay leaked a guest token'; END IF;
+END $$;
+
 ROLLBACK;

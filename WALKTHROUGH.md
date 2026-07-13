@@ -4,6 +4,16 @@ Reflects what the code does today (Stages 2–6 closed for their shipped scope;
 checkout + order management, customer accounts, courier & shipments, and the
 Stage-6 content/reports modules all live — 67 migrations). Updated each stage.
 
+> **2026-07-13 remediation (branch, not merged).** Two customer flows changed
+> shape: **order-success** no longer trusts URL params — it fetches a
+> server-verified receipt via `track_order` (guest) / `get_my_order` (signed-in)
+> using the URL purely as a capability, and `place_order`'s idempotent-replay
+> branch now returns the full contract + re-issues a guest token
+> (`20260713090000_order_replay_receipt.sql`). The **cart store** hydrates the
+> cart independently of the wishlist partition and exposes `cartHydrated`; the
+> cart page guards its quote fetch with a request sequence. See
+> `docs/Nongorr_Remediation_Report_2026-07-13.md`.
+
 ## Request → response security wrapper
 
 `src/server.ts` `fetch()` → render via TanStack Start → `normalizeCatastrophicSsrResponse`
