@@ -1,10 +1,11 @@
 import { createFileRoute, Link, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { trackOrderFn } from "@/lib/orders.api";
 import { CustomerStatusBadge, fmtDate } from "@/components/admin/order-status";
 import { MeasurementsList } from "@/components/orders/MeasurementsList";
 import { ClaimOrderCard } from "@/components/orders/ClaimOrderCard";
 import { CUSTOMER_STEPS, customerProgress, type TrackOrderResult } from "@/lib/orders-shared";
+import { paymentMethodLabel } from "@/lib/checkout-shared";
 import { formatBDT, BRAND } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,7 +50,8 @@ type State =
   | { phase: "idle" }
   | { phase: "loading" }
   | { phase: "ready"; result: TrackOrderResult }
-  | { phase: "missing" };
+  | { phase: "missing" }
+  | { phase: "error"; message: string };
 
 function Track() {
   const { o = "", t = "" } = Route.useSearch();
@@ -60,6 +62,10 @@ function Track() {
   const [orderNo, setOrderNo] = useState(o);
   const [token, setToken] = useState(t);
   const [state, setState] = useState<State>({ phase: "idle" });
+  const [fieldErrors, setFieldErrors] = useState<{ orderNo?: string; token?: string }>({});
+  const [retry, setRetry] = useState(0);
+  const orderNoRef = useRef<HTMLInputElement>(null);
+  const tokenRef = useRef<HTMLInputElement>(null);
 
   // Keep the inputs in sync when the URL search params change externally
   // (e.g. arriving via a capability tracking link).
@@ -79,31 +85,70 @@ function Track() {
     void trackOrderFn({ data: { orderNo: o, token: t } })
       .then((res) => {
         if (!live) return;
-        if (res.success && res.result) setState({ phase: "ready", result: res.result });
-        else setState({ phase: "missing" });
+        if (res.success && res.result) {
+          setState({ phase: "ready", result: res.result });
+        } else if (res.success) {
+          // Reached the server but no order matched the capability pair.
+          setState({ phase: "missing" });
+        } else {
+          // A genuine failure (rate limit, bad origin, backend error) is NOT a
+          // "not found" — surface the real reason instead of misleading the user.
+          const msg = res.error ?? "";
+          if (/couldn't find|not found|no order|match/i.test(msg)) setState({ phase: "missing" });
+          else
+            setState({
+              phase: "error",
+              message: msg || "Something went wrong. Please try again in a moment.",
+            });
+        }
       })
-      .catch(() => live && setState({ phase: "missing" }));
+      .catch(
+        () =>
+          live &&
+          setState({
+            phase: "error",
+            message: "Network error. Please check your connection and try again.",
+          }),
+      );
     return () => {
       live = false;
     };
-  }, [o, t]);
+  }, [o, t, retry]);
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const no = orderNo.trim();
     const tok = token.trim();
-    navigate({
-      to: "/track",
-      search: { ...(no ? { o: no } : {}), ...(tok ? { t: tok } : {}) },
-      replace: true,
-    });
+    // Both fields are required to form a valid capability pair.
+    const errs: { orderNo?: string; token?: string } = {};
+    if (!no) errs.orderNo = "Enter your order number.";
+    if (!tok) errs.token = "Enter your tracking code.";
+    setFieldErrors(errs);
+    if (Object.keys(errs).length > 0) {
+      (errs.orderNo ? orderNoRef : tokenRef).current?.focus();
+      return;
+    }
+    navigate({ to: "/track", search: { o: no, t: tok }, replace: true });
   };
 
   const clear = () => {
     setOrderNo("");
     setToken("");
+    setFieldErrors({});
     navigate({ to: "/track", search: {}, replace: true });
   };
+
+  // Concise status for the screen-reader live region.
+  const liveMessage =
+    state.phase === "loading"
+      ? "Looking up your order…"
+      : state.phase === "ready"
+        ? "Order found."
+        : state.phase === "missing"
+          ? "No order found for those details."
+          : state.phase === "error"
+            ? state.message
+            : "";
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
@@ -116,19 +161,30 @@ function Track() {
         .
       </p>
 
-      <form onSubmit={onSubmit} className="mb-10 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+      <form onSubmit={onSubmit} noValidate className="mb-10 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
         <div>
           <label htmlFor="track-order-no" className="sr-only">
             Order number
           </label>
           <Input
             id="track-order-no"
+            ref={orderNoRef}
             value={orderNo}
-            onChange={(e) => setOrderNo(e.target.value)}
+            onChange={(e) => {
+              setOrderNo(e.target.value);
+              if (fieldErrors.orderNo) setFieldErrors((f) => ({ ...f, orderNo: undefined }));
+            }}
             placeholder="Order number (NGR-100231)"
-            className="bg-card"
+            className={cn("bg-card", fieldErrors.orderNo && "border-destructive")}
             aria-label="Order number"
+            aria-invalid={fieldErrors.orderNo ? true : undefined}
+            aria-describedby={fieldErrors.orderNo ? "track-order-no-error" : undefined}
           />
+          {fieldErrors.orderNo && (
+            <p id="track-order-no-error" className="mt-1 text-xs text-destructive">
+              {fieldErrors.orderNo}
+            </p>
+          )}
         </div>
         <div>
           <label htmlFor="track-token" className="sr-only">
@@ -136,12 +192,23 @@ function Track() {
           </label>
           <Input
             id="track-token"
+            ref={tokenRef}
             value={token}
-            onChange={(e) => setToken(e.target.value)}
+            onChange={(e) => {
+              setToken(e.target.value);
+              if (fieldErrors.token) setFieldErrors((f) => ({ ...f, token: undefined }));
+            }}
             placeholder="Tracking code"
-            className="bg-card font-mono"
+            className={cn("bg-card font-mono", fieldErrors.token && "border-destructive")}
             aria-label="Tracking code"
+            aria-invalid={fieldErrors.token ? true : undefined}
+            aria-describedby={fieldErrors.token ? "track-token-error" : undefined}
           />
+          {fieldErrors.token && (
+            <p id="track-token-error" className="mt-1 text-xs text-destructive">
+              {fieldErrors.token}
+            </p>
+          )}
         </div>
         <div className="flex gap-2">
           <Button type="submit" className="flex-1">
@@ -154,6 +221,11 @@ function Track() {
           )}
         </div>
       </form>
+
+      {/* Screen-reader status announcements for loading / results / errors. */}
+      <p className="sr-only" role="status" aria-live="polite">
+        {liveMessage}
+      </p>
 
       {state.phase === "loading" ? (
         <div className="space-y-4">
@@ -184,6 +256,22 @@ function Track() {
                 <MessageCircle className="h-4 w-4" /> Get help on WhatsApp
               </a>
             </Button>
+          }
+        />
+      ) : state.phase === "error" ? (
+        <EmptyState
+          icon={<AlertTriangle className="h-6 w-6" />}
+          title="We couldn't check that right now"
+          description={state.message}
+          action={
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button onClick={() => setRetry((n) => n + 1)}>Try again</Button>
+              <Button variant="outline" asChild>
+                <a href={`https://wa.me/${BRAND.whatsapp}`} target="_blank" rel="noreferrer">
+                  <MessageCircle className="h-4 w-4" /> Get help on WhatsApp
+                </a>
+              </Button>
+            </div>
           }
         />
       ) : (
@@ -272,8 +360,8 @@ function OrderTimeline({
           <span className="font-display text-lg">Total</span>
           <span className="font-display text-xl text-primary">{formatBDT(order.total)}</span>
         </div>
-        <p className="mt-2 text-xs capitalize text-muted-foreground">
-          Payment: {order.paymentMethod}
+        <p className="mt-2 text-xs text-muted-foreground">
+          Payment: {paymentMethodLabel(order.paymentMethod)}
         </p>
       </div>
 

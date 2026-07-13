@@ -4,6 +4,7 @@ import { getMyOrderFn } from "@/lib/orders.api";
 import { CustomerStatusBadge, fmtDate } from "@/components/admin/order-status";
 import { MeasurementsList } from "@/components/orders/MeasurementsList";
 import { CUSTOMER_STEPS, customerProgress, type MyOrderDetail } from "@/lib/orders-shared";
+import { paymentMethodLabel } from "@/lib/checkout-shared";
 import { formatBDT, BRAND } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -38,7 +39,7 @@ type LoadState =
   | { phase: "ready"; order: MyOrderDetail }
   | { phase: "missing"; needsAuth: boolean };
 
-function NotFoundPanel({ needsAuth }: { needsAuth: boolean }) {
+function NotFoundPanel({ needsAuth, next }: { needsAuth: boolean; next: string }) {
   return (
     <div className="mx-auto max-w-2xl px-4 py-16">
       <EmptyState
@@ -53,7 +54,7 @@ function NotFoundPanel({ needsAuth }: { needsAuth: boolean }) {
           <div className="flex flex-wrap justify-center gap-2">
             {needsAuth && (
               <Button asChild>
-                <Link to="/login" search={{ next: "/orders" }}>
+                <Link to="/login" search={{ next }}>
                   Sign in
                 </Link>
               </Button>
@@ -103,7 +104,8 @@ function OrderDetails() {
       </div>
     );
   }
-  if (state.phase === "missing") return <NotFoundPanel needsAuth={state.needsAuth} />;
+  if (state.phase === "missing")
+    return <NotFoundPanel needsAuth={state.needsAuth} next={`/orders/${id}`} />;
 
   const { order, items, payment } = state.order;
   const { stepIndex, exception } = customerProgress(order.status);
@@ -187,8 +189,8 @@ function OrderDetails() {
         </div>
         <div className="rounded-xl border border-border bg-card p-5 text-sm">
           <h3 className="mb-2 font-display text-lg">Payment</h3>
-          <p className="capitalize text-muted-foreground">
-            {order.paymentMethod}
+          <p className="text-muted-foreground">
+            {paymentMethodLabel(order.paymentMethod)}
             {payment ? ` · ${payment.status}` : ""}
           </p>
           {payment?.trxId && (

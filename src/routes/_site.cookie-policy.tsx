@@ -61,27 +61,28 @@ function StaticCookiePolicy() {
 
         <h2>What the current site may store locally</h2>
         <p>
-          To make the shopping experience work, the current frontend may store browser-local
-          information for:
+          To make the shopping experience work, the site may store browser-local information for:
         </p>
         <ul>
           <li>Cart contents</li>
-          <li>Wishlist</li>
+          <li>Wishlist (for guests; signed-in wishlists are saved to your account)</li>
           <li>Checkout preferences</li>
-          <li>Local mock orders</li>
-          <li>Account UI profile</li>
-          <li>Saved addresses</li>
-          <li>Measurement profiles</li>
           <li>Dismissed announcement state</li>
           <li>Recently viewed items</li>
-          <li>Newsletter demo preference, if used</li>
+          <li>Your session, so you stay signed in</li>
         </ul>
 
         <h2>What this means</h2>
         <ul>
-          <li>This local data is stored in your browser on this device.</li>
-          <li>It is not automatically synchronized across your devices.</li>
-          <li>Clearing your browser storage may remove it.</li>
+          <li>
+            Guest data such as your cart and wishlist is stored in your browser on this device and
+            is not synchronized across your devices.
+          </li>
+          <li>
+            When you sign in, your saved addresses, measurement profiles, wishlist and order history
+            are stored securely in your account and are available on any device you sign in from.
+          </li>
+          <li>Clearing your browser storage may remove guest (not signed-in) data.</li>
           <li>
             Current analytics and advertising tracking are not connected, unless that changes later.
           </li>

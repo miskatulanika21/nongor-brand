@@ -32,20 +32,31 @@ const PAYMENT_BADGE: Record<PaymentStatus, string> = {
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-// Deterministic (UTC) date — avoids SSR/client locale-timezone hydration drift.
-export function fmtDate(iso: string): string {
+// Nongorr operates in Bangladesh (Asia/Dhaka, UTC+6, no DST). Formatting in a
+// fixed +6 offset gives customers the correct local day (a late-night order no
+// longer shows the previous date) while staying deterministic across SSR and
+// client — a fixed offset can't drift like a locale-timezone lookup would.
+const DHAKA_OFFSET_MS = 6 * 60 * 60 * 1000;
+
+function toDhaka(iso: string): Date | null {
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Date(d.getTime() + DHAKA_OFFSET_MS);
+}
+
+export function fmtDate(iso: string): string {
+  const d = toDhaka(iso);
+  if (!d) return iso.slice(0, 10);
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
-// Deterministic (UTC) date + time for the status-history timeline.
+// Date + time (Bangladesh Standard Time) for the status-history timeline.
 export function fmtDateTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
+  const d = toDhaka(iso);
+  if (!d) return iso;
   const hh = String(d.getUTCHours()).padStart(2, "0");
   const mm = String(d.getUTCMinutes()).padStart(2, "0");
-  return `${fmtDate(iso)} · ${hh}:${mm} UTC`;
+  return `${fmtDate(iso)} · ${hh}:${mm} BST`;
 }
 
 export function StatusBadge({ status }: { status: OrderStatus }) {

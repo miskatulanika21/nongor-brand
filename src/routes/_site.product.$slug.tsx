@@ -1,5 +1,5 @@
 import { createFileRoute, Link, notFound, useRouteContext } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import sizeChart from "@/assets/size-chart.webp";
 import { NotFoundPage } from "@/components/NotFoundPage";
 import { READY_SIZES, GIRLS_SIZES, type Product } from "@/lib/products";
@@ -46,6 +46,7 @@ import { toDisplayMeasurements } from "@/lib/measurements";
 import { OptimizedImage } from "@/components/OptimizedImage";
 import { HIGH_IMAGE_QUALITY } from "@/lib/image-cdn";
 import { cn } from "@/lib/utils";
+import { ProductImageViewer } from "@/components/site/ProductImageViewer";
 import {
   Heart,
   MessageCircle,
@@ -58,8 +59,6 @@ import {
   Plus,
   Share2,
   Link2,
-  ChevronLeft,
-  ChevronRight,
   Star,
   Check,
   Clock,
@@ -187,6 +186,7 @@ function ProductPage() {
   const { addToCart, toggleWishlist, isWishlisted } = useStore();
   const [activeImg, setActiveImg] = useState(0);
   const [lightbox, setLightbox] = useState(false);
+  const viewerTriggerRef = useRef<HTMLButtonElement>(null);
   const [size, setSize] = useState<string>("");
   const [isCustom, setIsCustom] = useState(false);
   const [measures, setMeasures] = useState<Record<string, string>>({});
@@ -237,18 +237,6 @@ function ProductPage() {
     }
   }, [product.id]);
 
-  // Lightbox arrow-key navigation (only while open and with multiple images).
-  useEffect(() => {
-    if (!lightbox || !multiImage) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowLeft")
-        setActiveImg((i) => (i - 1 + displayGallery.length) % displayGallery.length);
-      if (e.key === "ArrowRight") setActiveImg((i) => (i + 1) % displayGallery.length);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [lightbox, multiImage, displayGallery.length]);
-
   const off = discountPct(product.price, product.salePrice);
   const wished = isWishlisted(product.id);
   const needsSize =
@@ -294,10 +282,6 @@ function ProductPage() {
       () => toast.success("Product link copied"),
       () => toast.error("Could not copy link"),
     );
-  };
-
-  const galleryStep = (dir: number) => {
-    setActiveImg((i) => (i + dir + displayGallery.length) % displayGallery.length);
   };
 
   const handleAdd = () => {
@@ -348,6 +332,7 @@ function ProductPage() {
         {/* Gallery */}
         <div className="space-y-3">
           <button
+            ref={viewerTriggerRef}
             type="button"
             className="relative block aspect-[4/5] w-full cursor-zoom-in overflow-hidden rounded-2xl bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => setLightbox(true)}
@@ -414,43 +399,16 @@ function ProductPage() {
             </div>
           )}
 
-          {/* Fullscreen lightbox */}
-          <Dialog open={lightbox} onOpenChange={setLightbox}>
-            <DialogContent className="max-w-4xl gap-0 overflow-hidden p-0">
-              <DialogTitle className="sr-only">{product.name} image viewer</DialogTitle>
-              <div className="relative bg-background">
-                <OptimizedImage
-                  src={displayGallery[activeImg]}
-                  alt={`${product.name} — view ${activeImg + 1}`}
-                  widths={[1080, 1920]}
-                  sizes="100vw"
-                  quality={HIGH_IMAGE_QUALITY}
-                  className="mx-auto max-h-[80vh] w-auto object-contain"
-                />
-                {multiImage && (
-                  <>
-                    <button
-                      onClick={() => galleryStep(-1)}
-                      aria-label="Previous image"
-                      className="absolute left-3 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-card/90 text-foreground shadow-soft hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <ChevronLeft className="h-5 w-5" />
-                    </button>
-                    <button
-                      onClick={() => galleryStep(1)}
-                      aria-label="Next image"
-                      className="absolute right-3 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-card/90 text-foreground shadow-soft hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <ChevronRight className="h-5 w-5" />
-                    </button>
-                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-                      {activeImg + 1} / {displayGallery.length}
-                    </div>
-                  </>
-                )}
-              </div>
-            </DialogContent>
-          </Dialog>
+          {/* Fullscreen zoomable viewer */}
+          <ProductImageViewer
+            open={lightbox}
+            onOpenChange={setLightbox}
+            images={displayGallery}
+            index={activeImg}
+            onIndexChange={setActiveImg}
+            name={product.name}
+            triggerRef={viewerTriggerRef}
+          />
         </div>
 
         {/* Info */}
