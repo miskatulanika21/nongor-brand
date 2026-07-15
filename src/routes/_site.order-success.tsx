@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { ClaimOrderCard } from "@/components/orders/ClaimOrderCard";
 import { MeasurementsList } from "@/components/orders/MeasurementsList";
+import { OrderItemThumb } from "@/components/orders/OrderItemThumb";
 import { CustomerStatusBadge } from "@/components/admin/order-status";
 import { paymentMethodLabel } from "@/lib/checkout-shared";
 import { getMyOrderFn, trackOrderFn } from "@/lib/orders.api";
@@ -15,7 +16,7 @@ import type {
   OrderStatus,
   TrackOrderResult,
 } from "@/lib/orders-shared";
-import { Copy, Truck, MessageCircle, Check, AlertTriangle, PackageOpen } from "lucide-react";
+import { Copy, Truck, MessageCircle, Check, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_site/order-success")({
@@ -122,10 +123,11 @@ function OrderSuccess() {
   useEffect(() => {
     let live = true;
 
-    // Guest capability: order_no + token → verified via track_order.
-    if (order_no && token) {
-      void trackOrderFn({ data: { orderNo: order_no, token } })
-        .then((res) => {
+    async function load() {
+      // 1) Guest capability first (order_no + token → track_order).
+      if (order_no && token) {
+        try {
+          const res = await trackOrderFn({ data: { orderNo: order_no, token } });
           if (!live) return;
           if (res.success && res.result) {
             setState({
@@ -133,34 +135,37 @@ function OrderSuccess() {
               receipt: fromTrack(res.result, order_id ?? null),
               guestToken: token,
             });
-          } else {
-            setState({ phase: "invalid" });
+            return;
           }
-        })
-        .catch(() => live && setState({ phase: "invalid" }));
-      return () => {
-        live = false;
-      };
-    }
+          // Not a hard failure — fall through to the owner-scoped attempt. This
+          // is the post-claim case: claiming invalidates the guest token, but an
+          // authenticated owner can still load the order by its id (#7).
+        } catch {
+          /* fall through to the owner-scoped attempt */
+        }
+      }
 
-    // Signed-in capability: order_id → verified via get_my_order (identity-gated).
-    if (signedIn && order_id) {
-      void getMyOrderFn({ data: { orderId: order_id } })
-        .then((res) => {
+      // 2) Owner-scoped fallback (authenticated + order_id → get_my_order). Only
+      // ever returns the caller's OWN order; a non-owner id yields not-found, so
+      // this never exposes another customer's order.
+      if (signedIn && order_id) {
+        try {
+          const res = await getMyOrderFn({ data: { orderId: order_id } });
           if (!live) return;
           if (res.success && res.order) {
             setState({ phase: "ready", receipt: fromMyOrder(res.order), guestToken: null });
-          } else {
-            setState({ phase: "invalid" });
+            return;
           }
-        })
-        .catch(() => live && setState({ phase: "invalid" }));
-      return () => {
-        live = false;
-      };
+        } catch {
+          /* fall through to invalid */
+        }
+      }
+
+      if (live) setState({ phase: "invalid" });
     }
 
-    setState({ phase: "invalid" });
+    setState({ phase: "loading" });
+    void load();
     return () => {
       live = false;
     };
@@ -262,21 +267,7 @@ function ServerOrderSuccess({
           {receipt.items.map((i, idx) => (
             <div key={idx} className="space-y-2">
               <div className="flex gap-3">
-                {i.image ? (
-                  <img
-                    src={i.image}
-                    alt={i.name}
-                    loading="lazy"
-                    onError={(e) => {
-                      e.currentTarget.style.display = "none";
-                    }}
-                    className="h-20 w-16 rounded object-cover"
-                  />
-                ) : (
-                  <div className="grid h-20 w-16 place-items-center rounded bg-muted text-muted-foreground">
-                    <PackageOpen className="h-5 w-5" />
-                  </div>
-                )}
+                <OrderItemThumb image={i.image} name={i.name} className="h-20 w-16" />
                 <div className="flex-1 text-sm">
                   <p className="font-medium text-foreground">{i.name}</p>
                   <p className="text-xs text-muted-foreground">

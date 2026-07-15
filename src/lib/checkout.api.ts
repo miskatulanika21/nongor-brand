@@ -107,6 +107,7 @@ export const placeOrderFn = createServerFn({ method: "POST" })
         actorId,
         quoteToken: data.quoteToken,
         coupon: data.coupon ?? null,
+        guestTokenHash: data.guestTokenHash ?? null,
       });
       return { success: true as const, order };
     } catch (e) {

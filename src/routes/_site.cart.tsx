@@ -119,6 +119,10 @@ function Cart() {
       // A newer cart superseded this request while it was in flight — drop it.
       if (seq !== quoteSeq.current) return;
       if (!result.success) {
+        // The newest quote failed → drop the stale one so an old server price is
+        // never shown as current; the client-side subtotal remains as a fallback.
+        setQuote(null);
+        setItemWarnings(new Map());
         setQuoteError(result.error);
       } else {
         setQuote(result.quote);
@@ -153,8 +157,13 @@ function Cart() {
         setItemWarnings(warnings);
       }
     } catch {
-      // Non-critical — client-side totals remain usable
-      if (seq === quoteSeq.current) setQuoteError("Could not verify prices right now.");
+      // Non-critical — client-side totals remain usable, but drop any stale
+      // server quote so it isn't shown as the current verified price.
+      if (seq === quoteSeq.current) {
+        setQuote(null);
+        setItemWarnings(new Map());
+        setQuoteError("Could not verify prices right now.");
+      }
     } finally {
       if (seq === quoteSeq.current) setReconciling(false);
     }

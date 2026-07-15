@@ -51,10 +51,13 @@ echo "fixtures loaded"
 
 place_order() {
   # $1 = lines jsonb, $2 = idempotency key, $3 = coupon (or empty)
+  # A guest placement requires a client token hash (sha256 hex); a fixed valid
+  # hash is fine here — every request in a race shares the same order or fails
+  # before the token matters, and tracking is by order_no + hash.
   local lines="$1" key="$2" coupon="$3" couponarg
   if [ -n "$coupon" ]; then couponarg="'$coupon'"; else couponarg="NULL"; fi
   psql "$DB_URL" -t -A -c \
-    "SELECT api.place_order('$lines'::jsonb, '$CUST'::jsonb, 'dhaka', 'cod', '$key', NULL, NULL, $couponarg);"
+    "SELECT api.place_order('$lines'::jsonb, '$CUST'::jsonb, 'dhaka', 'cod', '$key', NULL, NULL, $couponarg, encode(extensions.digest('conc-token','sha256'),'hex'));"
 }
 
 # ---- Race 1: OVERSELL (1 unit, N parallel, distinct keys) -----------------

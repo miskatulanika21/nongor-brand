@@ -1,8 +1,12 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { listMyOrdersFn } from "@/lib/orders.api";
 import { CustomerStatusBadge, fmtDate } from "@/components/admin/order-status";
-import { ORDER_STATUS_META } from "@/lib/orders-shared";
+import {
+  ORDER_STATUS_META,
+  orderReadReasonMessage,
+  type OrderReadReason,
+} from "@/lib/orders-shared";
 import { formatBDT, BRAND } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { EmptyState } from "@/components/states";
+import { OrderItemThumb } from "@/components/orders/OrderItemThumb";
 import { Eye, MessageCircle, PackageSearch, Search } from "lucide-react";
 
 export const Route = createFileRoute("/_site/orders/")({
@@ -28,20 +33,30 @@ export const Route = createFileRoute("/_site/orders/")({
     ],
     links: [{ rel: "canonical", href: "/orders" }],
   }),
-  // Identity-gated server read. When not signed in, listMyOrdersFn returns
-  // success:false → we render the sign-in prompt (guests track single orders by
-  // token from /track instead, since the DB has no guest order list).
+  // Identity-gated server read. A failure carries a distinct reason (#6): only an
+  // `unauthenticated` reason means "sign in" — a backend/network failure must NOT
+  // masquerade as signed-out, or a signed-in customer is wrongly told to log in.
   loader: async () => {
-    const res = await listMyOrdersFn({ data: { limit: 50 } });
-    return res.success
-      ? { orders: res.orders, total: res.total, signedIn: true }
-      : { orders: [], total: 0, signedIn: false };
+    try {
+      const res = await listMyOrdersFn({ data: { limit: 50 } });
+      if (res.success)
+        return { orders: res.orders, total: res.total, ok: true as const, reason: null };
+      return {
+        orders: [],
+        total: 0,
+        ok: false as const,
+        reason: (res.reason ?? "unavailable") as OrderReadReason,
+      };
+    } catch {
+      return { orders: [], total: 0, ok: false as const, reason: "network" as OrderReadReason };
+    }
   },
   component: Orders,
 });
 
 function Orders() {
-  const { orders, signedIn } = Route.useLoaderData();
+  const { orders, total, ok, reason } = Route.useLoaderData();
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
@@ -62,7 +77,7 @@ function Orders() {
 
   const hasFilters = search.trim() !== "" || statusFilter !== "all";
 
-  if (!signedIn) {
+  if (!ok && reason === "unauthenticated") {
     return (
       <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6">
         <h1 className="mb-2 font-display text-4xl text-foreground">My Orders</h1>
@@ -87,10 +102,42 @@ function Orders() {
     );
   }
 
+  // A backend/network failure is NOT a signed-out state — offer a retry, never a
+  // misleading "sign in" prompt (#6).
+  if (!ok) {
+    return (
+      <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6" role="alert">
+        <h1 className="mb-2 font-display text-4xl text-foreground">My Orders</h1>
+        <EmptyState
+          icon={<PackageSearch className="h-6 w-6" />}
+          title="We couldn't load your orders"
+          description={orderReadReasonMessage(reason)}
+          action={
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button onClick={() => router.invalidate()}>Retry</Button>
+              <Button variant="outline" asChild>
+                <Link to="/track">Track an order</Link>
+              </Button>
+            </div>
+          }
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6">
       <h1 className="mb-2 font-display text-4xl text-foreground">My Orders</h1>
-      <p className="mb-8 text-sm text-muted-foreground">Your recent orders with Nongorr.</p>
+      <p className="mb-8 text-sm text-muted-foreground">
+        Your recent orders with Nongorr.
+        {total > orders.length && (
+          <>
+            {" "}
+            Showing your latest {orders.length} of {total} orders — older orders can be found with
+            their tracking link.
+          </>
+        )}
+      </p>
 
       <div className="mb-8 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
         <div className="relative">
@@ -158,21 +205,11 @@ function Orders() {
 
               {o.firstItem && (
                 <div className="my-4 flex items-center gap-3">
-                  {o.firstItem.image ? (
-                    <img
-                      src={o.firstItem.image}
-                      alt={o.firstItem.name}
-                      loading="lazy"
-                      onError={(e) => {
-                        e.currentTarget.style.display = "none";
-                      }}
-                      className="h-16 w-14 shrink-0 rounded-lg object-cover"
-                    />
-                  ) : (
-                    <div className="grid h-16 w-14 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
-                      <PackageSearch className="h-5 w-5" />
-                    </div>
-                  )}
+                  <OrderItemThumb
+                    image={o.firstItem.image}
+                    name={o.firstItem.name}
+                    className="h-16 w-14"
+                  />
                   <p className="line-clamp-2 text-sm text-foreground">
                     {o.firstItem.name}
                     {o.itemCount > 1 && (
@@ -184,7 +221,7 @@ function Orders() {
 
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-muted-foreground">
-                  {o.itemCount} item(s) ·{" "}
+                  {o.itemCount} {o.itemCount === 1 ? "item" : "items"} ·{" "}
                   <span className="font-semibold text-primary">{formatBDT(o.total)}</span>
                 </p>
                 <div className="flex flex-wrap gap-2">

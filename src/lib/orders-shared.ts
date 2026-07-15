@@ -561,6 +561,39 @@ export function orderErrorMessage(code: string | null | undefined): string {
   return ORDER_ERROR_MESSAGES[code] ?? GENERIC_ORDER_ERROR;
 }
 
+// ── Customer read-failure taxonomy (order-workflow #6) ───────────────────────
+// Distinct, non-oracular reasons a customer read (track / my order / my orders)
+// can fail, so the UI can show the RIGHT recovery instead of collapsing every
+// failure to "not found" or "signed out". `not_found` deliberately also covers
+// "exists but not yours" — the RPC returns order_not_found for a non-owner, so
+// this never reveals whether another customer's order exists. `network` is a
+// client-only reason (a thrown fetch/transport error), never sent by the server.
+export type OrderReadReason =
+  | "unauthenticated"
+  | "not_found"
+  | "rate_limited"
+  | "origin_rejected"
+  | "unavailable"
+  | "network";
+
+export const ORDER_READ_REASON_MESSAGE: Record<OrderReadReason, string> = {
+  unauthenticated: "Please sign in to view this.",
+  not_found: "We couldn't find an order matching those details.",
+  rate_limited: "Too many attempts. Please wait a moment and try again.",
+  origin_rejected: "This request was blocked for security. Please reload and try again.",
+  unavailable: "We couldn't reach the order service. Please try again in a moment.",
+  network: "You appear to be offline. Check your connection and try again.",
+};
+
+/** True when the failure is transient and a "Retry" action makes sense. */
+export function orderReadReasonRetryable(reason: OrderReadReason): boolean {
+  return reason === "rate_limited" || reason === "unavailable" || reason === "network";
+}
+
+export function orderReadReasonMessage(reason: OrderReadReason | null | undefined): string {
+  return reason ? ORDER_READ_REASON_MESSAGE[reason] : ORDER_READ_REASON_MESSAGE.unavailable;
+}
+
 // ── Server-fn input validators (zod; mirror the RPC argument bounds) ─────────
 
 const orderStatusEnum = z.enum(ORDER_STATUSES);

@@ -10,6 +10,9 @@ import {
   orderStatusMeta,
   orderErrorMessage,
   ORDER_ERROR_MESSAGES,
+  orderReadReasonMessage,
+  orderReadReasonRetryable,
+  ORDER_READ_REASON_MESSAGE,
   listOrdersSchema,
   orderIdSchema,
   transitionOrderSchema,
@@ -345,5 +348,29 @@ describe("guest-order claim (P7)", () => {
   it("orders.api exposes claimGuestOrderFn", async () => {
     const api = await import("@/lib/orders.api");
     expect(typeof (api as Record<string, unknown>).claimGuestOrderFn).toBe("function");
+  });
+});
+
+describe("customer read-failure taxonomy (#6)", () => {
+  it("gives every reason a distinct, non-empty message", () => {
+    const reasons = Object.keys(ORDER_READ_REASON_MESSAGE) as Array<
+      keyof typeof ORDER_READ_REASON_MESSAGE
+    >;
+    const messages = reasons.map((r) => orderReadReasonMessage(r));
+    expect(new Set(messages).size).toBe(reasons.length); // all distinct
+    for (const m of messages) expect(m.length).toBeGreaterThan(0);
+  });
+
+  it("not_found never reveals existence (same copy as a wrong token would show)", () => {
+    expect(orderReadReasonMessage("not_found")).toMatch(/couldn't find/i);
+  });
+
+  it("marks only transient reasons as retryable", () => {
+    expect(orderReadReasonRetryable("rate_limited")).toBe(true);
+    expect(orderReadReasonRetryable("unavailable")).toBe(true);
+    expect(orderReadReasonRetryable("network")).toBe(true);
+    expect(orderReadReasonRetryable("unauthenticated")).toBe(false);
+    expect(orderReadReasonRetryable("not_found")).toBe(false);
+    expect(orderReadReasonRetryable("origin_rejected")).toBe(false);
   });
 });

@@ -5,15 +5,18 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { OptimizedImage } from "@/components/OptimizedImage";
 import { HIGH_IMAGE_QUALITY } from "@/lib/image-cdn";
 import { cn } from "@/lib/utils";
+import {
+  ZOOM_MIN as MIN_SCALE,
+  ZOOM_MAX as MAX_SCALE,
+  clampNumber as clamp,
+  clampPanBox,
+  nextZoomStop,
+  pinchScale,
+  zoomAroundPoint,
+} from "@/lib/zoom-math";
 
-const MIN_SCALE = 1;
-const MAX_SCALE = 3;
-// Discrete stops a tap cycles through (fit → 2× → 3× → fit).
-const ZOOM_STOPS = [1, 2, 3];
 // Movement (px) beyond which a pointer sequence is a drag, not a tap.
 const TAP_SLOP = 8;
-
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 type View = { scale: number; tx: number; ty: number };
 type Pointer = { x: number; y: number; startX: number; startY: number };
@@ -64,6 +67,9 @@ export function ProductImageViewer({
   const viewportRef = useRef<HTMLDivElement>(null);
   const pointers = useRef<Map<number, Pointer>>(new Map());
   const pinchStart = useRef<{ dist: number; scale: number } | null>(null);
+  // Midpoint of the two pinch fingers on the previous frame, so a two-finger
+  // drag pans the image even when the pinch distance stays constant (#10).
+  const pinchMid = useRef<{ x: number; y: number } | null>(null);
   const moved = useRef(false);
   const multiTouched = useRef(false);
 
@@ -91,10 +97,8 @@ export function ProductImageViewer({
   const clampPan = useCallback((x: number, y: number, s: number) => {
     const vp = viewportRef.current;
     const img = vp?.querySelector("img");
-    if (!vp || !img || s <= 1) return { x: 0, y: 0 };
-    const maxX = Math.max(0, (img.clientWidth * s - vp.clientWidth) / 2);
-    const maxY = Math.max(0, (img.clientHeight * s - vp.clientHeight) / 2);
-    return { x: clamp(x, -maxX, maxX), y: clamp(y, -maxY, maxY) };
+    if (!vp || !img) return { x: 0, y: 0 };
+    return clampPanBox(x, y, s, img.clientWidth, img.clientHeight, vp.clientWidth, vp.clientHeight);
   }, []);
 
   // Zoom to `targetScale` keeping the given viewport point stationary.
@@ -103,14 +107,12 @@ export function ProductImageViewer({
       const vp = viewportRef.current;
       if (!vp) return;
       const rect = vp.getBoundingClientRect();
-      const { scale, tx, ty } = viewRef.current;
-      const ns = clamp(targetScale, MIN_SCALE, MAX_SCALE);
-      if (ns === scale) return;
       const fx = clientX - rect.left - rect.width / 2;
       const fy = clientY - rect.top - rect.height / 2;
-      const r = ns / scale;
-      const clamped = clampPan(fx * (1 - r) + tx * r, fy * (1 - r) + ty * r, ns);
-      setView({ scale: ns, tx: clamped.x, ty: clamped.y });
+      const next = zoomAroundPoint(viewRef.current, targetScale, fx, fy);
+      if (next === viewRef.current) return; // scale unchanged
+      const clamped = clampPan(next.tx, next.ty, next.scale);
+      setView({ scale: next.scale, tx: clamped.x, ty: clamped.y });
     },
     [clampPan, setView],
   );
@@ -133,9 +135,7 @@ export function ProductImageViewer({
   // A clean tap advances through the discrete zoom stops at the tapped point.
   const cycleZoomAt = useCallback(
     (clientX: number, clientY: number) => {
-      const s = viewRef.current.scale;
-      const i = ZOOM_STOPS.findIndex((v) => Math.abs(v - s) < 0.05);
-      const next = i < 0 ? (s > 1 ? 1 : 2) : ZOOM_STOPS[(i + 1) % ZOOM_STOPS.length];
+      const next = nextZoomStop(viewRef.current.scale);
       setAnimating(true);
       if (next === 1) reset();
       else zoomAround(clientX, clientY, next);
@@ -173,6 +173,7 @@ export function ProductImageViewer({
       multiTouched.current = true;
       const [a, b] = [...pointers.current.values()];
       pinchStart.current = { dist: pdist(a, b), scale: viewRef.current.scale };
+      pinchMid.current = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
     }
   };
 
@@ -182,15 +183,35 @@ export function ProductImageViewer({
     const curr: Pointer = { ...prev, x: e.clientX, y: e.clientY };
     pointers.current.set(e.pointerId, curr);
 
-    // Two-finger pinch.
+    // Two-finger pinch: scale around the midpoint AND translate with it, so a
+    // constant-distance two-finger drag still pans (#10).
     if (pointers.current.size === 2 && pinchStart.current) {
       moved.current = true;
       setAnimating(false);
+      const vp = viewportRef.current;
+      const img = vp?.querySelector("img");
       const [a, b] = [...pointers.current.values()];
       const mx = (a.x + b.x) / 2;
       const my = (a.y + b.y) / 2;
-      const ratio = pdist(a, b) / pinchStart.current.dist;
-      zoomAround(mx, my, pinchStart.current.scale * ratio);
+      const target = pinchScale(pinchStart.current.scale, pinchStart.current.dist, pdist(a, b));
+      if (vp && img) {
+        const rect = vp.getBoundingClientRect();
+        const fx = mx - rect.left - rect.width / 2;
+        const fy = my - rect.top - rect.height / 2;
+        const scaled = zoomAroundPoint(viewRef.current, target, fx, fy);
+        const prevMid = pinchMid.current ?? { x: mx, y: my };
+        const clamped = clampPanBox(
+          scaled.tx + (mx - prevMid.x),
+          scaled.ty + (my - prevMid.y),
+          scaled.scale,
+          img.clientWidth,
+          img.clientHeight,
+          vp.clientWidth,
+          vp.clientHeight,
+        );
+        pinchMid.current = { x: mx, y: my };
+        setView({ scale: scaled.scale, tx: clamped.x, ty: clamped.y });
+      }
       return;
     }
 
@@ -210,7 +231,10 @@ export function ProductImageViewer({
 
   const onPointerUp = (e: React.PointerEvent) => {
     pointers.current.delete(e.pointerId);
-    if (pointers.current.size < 2) pinchStart.current = null;
+    if (pointers.current.size < 2) {
+      pinchStart.current = null;
+      pinchMid.current = null;
+    }
 
     if (pointers.current.size === 0) {
       const wasPinch = multiTouched.current;

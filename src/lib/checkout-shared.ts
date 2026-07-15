@@ -287,6 +287,54 @@ export function newIdempotencyKey(): string {
   return `idem-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+// ── Guest tracking token (client-generated capability) ───────────────────────
+
+/**
+ * A fresh guest tracking token: 32 random bytes as hex. The RAW token is a
+ * capability the client keeps (localStorage + the success URL); ONLY its sha256
+ * hash is ever sent to or stored by the server (see place_order's
+ * p_guest_token_hash). It is never transmitted raw anywhere but the customer's
+ * own browser, so the server can never leak or rotate it.
+ */
+export function newGuestToken(): string {
+  const g = globalThis as { crypto?: { getRandomValues?: (a: Uint8Array) => Uint8Array } };
+  const bytes = new Uint8Array(32);
+  if (g.crypto?.getRandomValues) g.crypto.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Lowercase hex sha256 of a string (Web Crypto; browsers + Node ≥ 20). */
+export async function sha256Hex(input: string): Promise<string> {
+  const g = globalThis as { crypto?: { subtle?: SubtleCrypto } };
+  const data = new TextEncoder().encode(input);
+  const digest = await g.crypto!.subtle!.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Canonical fingerprint of a logical placement attempt. Two submits with the
+ * same lines + customer + zone + method + coupon share ONE idempotency key and
+ * ONE guest token (a safe replay that never duplicates the order); changing any
+ * of them is a new attempt. Mirrors the server's request_hash inputs so a
+ * same-signature retry always matches the stored hash rather than conflicting.
+ */
+export function placementSignature(input: {
+  lines: PlaceLineInput[];
+  customer: CheckoutCustomer;
+  zone: string;
+  method: string;
+  coupon?: string | null;
+}): string {
+  return JSON.stringify({
+    lines: input.lines,
+    customer: input.customer,
+    zone: input.zone,
+    method: input.method,
+    coupon: normalizeCouponCode(input.coupon),
+  });
+}
+
 // ── Server-fn input validation (zod; mirrors the RPC argument bounds) ─────────
 
 const lineSchema = z.object({
@@ -353,6 +401,11 @@ export const placeOrderSchema = z.object({
   idempotencyKey: z.string().min(1).max(200),
   quoteToken: z.string().min(1).max(64).optional(),
   coupon: couponCodeSchema,
+  /** sha256 hex of the client-held guest token; required for guest checkout. */
+  guestTokenHash: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/, "Malformed guest token hash.")
+    .optional(),
 });
 
 export type QuoteOrderInput = z.infer<typeof quoteOrderSchema>;

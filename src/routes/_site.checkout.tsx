@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/states";
 import {
   Copy,
@@ -62,11 +63,13 @@ import {
   isManualMethod,
   cartToQuoteLines,
   cartToPlaceLines,
-  newIdempotencyKey,
+  placementSignature,
+  sha256Hex,
   checkoutErrorMessage,
   type PaymentMethod,
   type QuoteResult,
 } from "@/lib/checkout-shared";
+import { loadOrCreateAttempt, clearCheckoutAttempt } from "@/lib/checkout-attempt";
 import { quoteOrderFn, placeOrderFn } from "@/lib/checkout.api";
 import { submitPaymentEvidenceFn } from "@/lib/evidence.api";
 import { fileToEvidencePayload } from "@/lib/evidence-shared";
@@ -129,6 +132,7 @@ const METHOD_ICON: Record<PaymentMethod, React.ElementType> = {
 function Checkout() {
   const {
     cart,
+    cartHydrated,
     cartSubtotal,
     clearCart,
     deliveryZone,
@@ -223,7 +227,9 @@ function Checkout() {
   const [quote, setQuote] = useState<QuoteResult | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
-  const idemKeyRef = useRef<string>(newIdempotencyKey());
+  // Monotonic request id: only the NEWEST quote may update amount/token/error, so
+  // a slow earlier response can never overwrite a faster later one (#4).
+  const quoteSeq = useRef(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const screenshotRef = useRef<ScreenshotPreview | null>(null);
@@ -265,21 +271,28 @@ function Checkout() {
   const fetchQuote = useCallback(async () => {
     const lines = cartToQuoteLines(cart);
     if (lines.length === 0) return;
+    const seq = ++quoteSeq.current;
     setQuoteLoading(true);
     setQuoteError(null);
     try {
       const result = await quoteOrderFn({
         data: { lines, zone: deliveryZone, coupon: couponCode ?? undefined },
       });
+      if (seq !== quoteSeq.current) return; // a newer quote superseded this one
       if (result.success) {
         setQuote(result.quote);
       } else {
+        // The newest quote failed → drop any stale quote so an older price is
+        // never shown as current; submission is gated on a verified quote below.
+        setQuote(null);
         setQuoteError(result.error);
       }
     } catch {
-      setQuoteError("Could not verify prices. Client-side totals are shown.");
+      if (seq !== quoteSeq.current) return;
+      setQuote(null);
+      setQuoteError("Could not verify prices. Please retry before placing your order.");
     } finally {
-      setQuoteLoading(false);
+      if (seq === quoteSeq.current) setQuoteLoading(false);
     }
   }, [cart, deliveryZone, couponCode]);
 
@@ -304,6 +317,10 @@ function Checkout() {
   const displaySubtotal = serverSubtotal ?? cartSubtotal;
   const displayShipping = serverShipping ?? clientShipping;
   const displayTotal = serverTotal ?? clientTotal;
+
+  // The order may only be placed against a server-verified quote — never a stale
+  // or client-only total. A failed/among-flight quote blocks submission (#4).
+  const pricingVerified = quote !== null && !quoteError;
 
   const baseSubtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
   const customChargesTotal = cart.reduce(
@@ -334,6 +351,24 @@ function Checkout() {
       : submitting
         ? STEPS.length
         : STEPS.length - 1;
+
+  // Wait for the persisted cart to hydrate before deciding it's empty — a hard
+  // reload with items in localStorage must not flash "Nothing to checkout" (#5).
+  if (!cartHydrated) {
+    return (
+      <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6" aria-busy="true">
+        <Skeleton className="mb-6 h-10 w-48" />
+        <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+          <div className="space-y-4">
+            <Skeleton className="h-40 w-full rounded-xl" />
+            <Skeleton className="h-64 w-full rounded-xl" />
+          </div>
+          <Skeleton className="h-80 w-full rounded-xl" />
+        </div>
+        <span className="sr-only">Loading your checkout…</span>
+      </div>
+    );
+  }
 
   if (!cart.length) {
     return (
@@ -464,6 +499,12 @@ function Checkout() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (submitting) return;
+    // Never place an order without a fresh, server-verified quote (#4).
+    if (!pricingVerified) {
+      toast.error("We couldn't verify prices. Please retry before placing your order.");
+      void fetchQuote();
+      return;
+    }
     const err = validate();
     setErrors(err);
     if (Object.keys(err).length) {
@@ -479,21 +520,39 @@ function Checkout() {
     try {
       // Place carries per-line measurements (made-to-measure); quote does not.
       const lines = cartToPlaceLines(cart);
+      const customer = {
+        name: name.trim(),
+        phone: phoneValue,
+        district,
+        address: address.trim(),
+        area: locality || undefined,
+      };
+      const couponForOrder = couponStatus?.applied ? (couponCode ?? undefined) : undefined;
+
+      // One persisted attempt per logical placement: retries of the SAME order
+      // reuse this key + guest token (server replays → no duplicate; the tracking
+      // link stays valid). The raw token never leaves the browser — only its hash
+      // is sent. A guest checkout requires it; a signed-in order ignores it.
+      const signature = placementSignature({
+        lines,
+        customer,
+        zone: deliveryZone,
+        method: selectedMethod,
+        coupon: couponForOrder,
+      });
+      const attempt = loadOrCreateAttempt(signature);
+      const guestTokenHash = signedIn ? undefined : await sha256Hex(attempt.guestToken);
+
       const result = await placeOrderFn({
         data: {
           lines,
-          customer: {
-            name: name.trim(),
-            phone: phoneValue,
-            district,
-            address: address.trim(),
-            area: locality || undefined,
-          },
+          customer,
           zone: deliveryZone,
           method: selectedMethod,
-          idempotencyKey: idemKeyRef.current,
+          idempotencyKey: attempt.idempotencyKey,
           quoteToken: quote?.quote_token,
-          coupon: couponStatus?.applied ? (couponCode ?? undefined) : undefined,
+          coupon: couponForOrder,
+          guestTokenHash,
         },
       });
 
@@ -511,7 +570,7 @@ function Checkout() {
                 orderId: result.order.order_id,
                 trxId: trxId.trim().toUpperCase(),
                 senderNumber: phoneValue || undefined,
-                guestToken: result.order.guest_token ?? undefined,
+                guestToken: signedIn ? undefined : attempt.guestToken,
                 screenshot: shot ?? undefined,
               },
             });
@@ -531,15 +590,19 @@ function Checkout() {
           }
         }
 
+        // Definitive success — this attempt is spent; the next checkout is a new
+        // placement. (A guest keeps its token via the success URL below.)
+        clearCheckoutAttempt();
         clearCart();
         // Navigate to order-success with the CAPABILITY only — the success page
         // fetches + verifies the order server-side (never trusts these params).
+        // Signed-in orders carry no guest token (owner-scoped lookup is used).
         navigate({
           to: "/order-success",
           search: {
             order_id: result.order.order_id,
             order_no: result.order.order_no,
-            token: result.order.guest_token ?? undefined,
+            token: signedIn ? undefined : attempt.guestToken,
           },
         });
       } else {
@@ -548,25 +611,27 @@ function Checkout() {
         const message = result.error || checkoutErrorMessage(code);
 
         if (code === "price_changed") {
-          // Re-fetch the quote to get updated prices
+          // Prices drifted — re-fetch and let the customer re-confirm. The SAME
+          // attempt is kept: nothing was committed (the RPC rolled back), and the
+          // lines are unchanged, so the persisted key stays valid for the retry.
           toast.warning(message);
           await fetchQuote();
-          // Mint a new idempotency key for the retry
-          idemKeyRef.current = newIdempotencyKey();
         } else if (code === "out_of_stock" || code === "product_not_purchasable") {
           toast.error(message);
-          // Redirect to cart so the customer can fix their cart
+          // The cart must change to proceed → the next placement is a new attempt.
+          clearCheckoutAttempt();
           navigate({ to: "/cart" });
           return;
         } else {
+          // Any other server error is a definitive, rolled-back failure. We KEEP
+          // the attempt so a retry reuses the same key (never a duplicate order).
           toast.error(message);
-          // Mint a new idempotency key for the next attempt
-          idemKeyRef.current = newIdempotencyKey();
         }
       }
     } catch {
+      // Ambiguous transport failure: the order MAY have committed. Keep the
+      // attempt so a retry replays onto the same order instead of duplicating it.
       toast.error("Something went wrong. Please try again.");
-      idemKeyRef.current = newIdempotencyKey();
     } finally {
       setSubmitting(false);
     }
@@ -735,9 +800,22 @@ function Checkout() {
                 </div>
               </Field>
 
-              <Field label="District" required error={errors.district} fieldRef={refs.district}>
+              <Field
+                label="District"
+                required
+                error={errors.district}
+                fieldRef={refs.district}
+                htmlFor="checkout-district"
+              >
                 <Select value={district} onValueChange={selectDistrict}>
-                  <SelectTrigger aria-label="District">
+                  {/* aria goes on the actual combobox trigger, not the Radix root (#9) */}
+                  <SelectTrigger
+                    id="checkout-district"
+                    aria-label="District"
+                    aria-required
+                    aria-invalid={errors.district ? true : undefined}
+                    aria-describedby={errors.district ? "checkout-district-error" : undefined}
+                  >
                     <SelectValue placeholder="Select district" />
                   </SelectTrigger>
                   <SelectContent>
@@ -755,10 +833,17 @@ function Checkout() {
                 required
                 error={errors.locality}
                 fieldRef={refs.locality}
+                htmlFor="checkout-locality"
               >
                 {district === "Dhaka" ? (
                   <Select value={area} onValueChange={setArea}>
-                    <SelectTrigger aria-label="Area">
+                    <SelectTrigger
+                      id="checkout-locality"
+                      aria-label="Area"
+                      aria-required
+                      aria-invalid={errors.locality ? true : undefined}
+                      aria-describedby={errors.locality ? "checkout-locality-error" : undefined}
+                    >
                       <SelectValue placeholder="Select area" />
                     </SelectTrigger>
                     <SelectContent>
@@ -771,10 +856,14 @@ function Checkout() {
                   </Select>
                 ) : (
                   <Input
+                    id="checkout-locality"
                     value={thana}
                     onChange={(e) => setThana(e.target.value)}
                     placeholder="e.g. Kotwali"
                     disabled={!district}
+                    aria-required
+                    aria-invalid={errors.locality ? true : undefined}
+                    aria-describedby={errors.locality ? "checkout-locality-error" : undefined}
                   />
                 )}
               </Field>
@@ -832,7 +921,7 @@ function Checkout() {
                 aria-label="Payment method"
                 className="grid gap-2 sm:grid-cols-3"
               >
-                {methods.map((m) => {
+                {methods.map((m, i) => {
                   const Icon = METHOD_ICON[m];
                   const selected = selectedMethod === m;
                   return (
@@ -842,6 +931,25 @@ function Checkout() {
                       role="radio"
                       aria-checked={selected}
                       aria-label={METHOD_LABEL[m]}
+                      // Roving tabindex + arrow-key selection (WAI-ARIA radiogroup, #9):
+                      // only the checked radio is in the tab order; arrows move
+                      // selection AND focus, wrapping around.
+                      tabIndex={selected ? 0 : -1}
+                      onKeyDown={(e) => {
+                        const dir =
+                          e.key === "ArrowRight" || e.key === "ArrowDown"
+                            ? 1
+                            : e.key === "ArrowLeft" || e.key === "ArrowUp"
+                              ? -1
+                              : 0;
+                        if (dir === 0) return;
+                        e.preventDefault();
+                        const next = (i + dir + methods.length) % methods.length;
+                        setSelectedMethod(methods[next]);
+                        e.currentTarget.parentElement
+                          ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+                          [next]?.focus();
+                      }}
                       onClick={() => setSelectedMethod(m)}
                       className={cn(
                         "flex items-center gap-2 rounded-lg border-2 p-3 text-left text-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -1155,11 +1263,23 @@ function Checkout() {
             </span>
           </div>
 
-          {/* Quote error warning */}
+          {/* Quote error warning + retry (submission is blocked until verified) */}
           {quoteError && (
-            <p className="rounded-lg border border-gold/40 bg-gold/5 p-2 text-xs text-muted-foreground">
-              {quoteError}
-            </p>
+            <div
+              role="alert"
+              className="flex items-center justify-between gap-2 rounded-lg border border-gold/40 bg-gold/5 p-2 text-xs text-muted-foreground"
+            >
+              <span>{quoteError}</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => fetchQuote()}
+                disabled={quoteLoading}
+              >
+                Retry
+              </Button>
+            </div>
           )}
 
           {/* Notes + payment meta */}
@@ -1190,11 +1310,18 @@ function Checkout() {
             </p>
           )}
 
-          <Button type="submit" size="lg" className="w-full" disabled={submitting || quoteLoading}>
+          <Button
+            type="submit"
+            size="lg"
+            className="w-full"
+            disabled={submitting || quoteLoading || !pricingVerified}
+          >
             {submitting ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" /> Placing order…
               </>
+            ) : quoteLoading ? (
+              "Verifying prices…"
             ) : selectedMethod === "cod" ? (
               "Place Order (Cash on Delivery)"
             ) : (
