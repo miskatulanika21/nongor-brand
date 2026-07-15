@@ -35,10 +35,13 @@ two-finger pan wiring. **Browser retest done** (CDP emulation at 390×844 /
 768×1024 / 1440×900): #6 error states, #7 invalid-success fail-safe, #10 zoom
 (button/keyboard/tap-cycle/focus-return), #9 checkout aria + error-summary focus
 
-- radiogroup arrows, and #5 hydration all verified live; no console errors. Still
-  deferred: #10 **two-finger pinch** touch matrix (pinch math unit-proven), a minor
-  FAB corner-overlap polish, #8 additive server projections, and a real-order
-  staging E2E (`docs/staging-supabase-runbook.md`). Prior context:\_
+- radiogroup arrows, and #5 hydration all verified live; no console errors. The
+  WhatsApp FAB is now **suppressed on `/checkout`** (`isCheckoutRoute` gate in
+  `_site.tsx`) so it can't clip the full-width Place Order button — support stays
+  inline; re-verified FAB absent on checkout, present on the PDP. Still deferred:
+  #10 **two-finger pinch** touch matrix (pinch math unit-proven), #8 additive
+  server projections, and a real-order staging E2E
+  (`docs/staging-supabase-runbook.md`). Prior context:\_
 
 \_Earlier (2026-07-12) — **Stage 6 content & operational modules: CLOSED
 for the content scope (P3/P4/P5/P6 + P7 closure; P1/P2 owner-deferred).**
