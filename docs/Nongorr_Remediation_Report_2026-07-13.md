@@ -19,18 +19,18 @@ hardening, documentation corrections, and full local verification.
 
 ## 0. Status at a glance
 
-| #   | Codex finding (short)                                  | Status                                                |
-| --- | ------------------------------------------------------ | ----------------------------------------------------- |
-| 1   | Guest idempotent-replay redesign (no rotation)         | ✅ Fixed                                              |
-| 2   | Preserve checkout idempotency key on ambiguous failure | ✅ Fixed                                              |
-| 3   | Staging protection fail-closed + link hardening + docs | ✅ Fixed                                              |
-| 4   | Checkout/cart quote races (newest-wins, gated submit)  | ✅ Fixed                                              |
-| 5   | Checkout hydration gate                                | ✅ Fixed                                              |
-| 6   | Distinct tracking/order error states                   | ✅ Fixed                                              |
-| 7   | Post-claim success refresh with owner fallback         | ✅ Fixed                                              |
-| 8   | Order list/detail correctness                          | ◑ Partial (documented)                                |
-| 9   | Checkout a11y (Select aria, radiogroup keys, FAB)      | ✅ Fixed (live FAB retest pending)                    |
-| 10  | Product zoom interaction + two-finger pan + tests      | ◑ Fixed math + wiring; browser gesture matrix pending |
+| #   | Codex finding (short)                                  | Status                                                                       |
+| --- | ------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| 1   | Guest idempotent-replay redesign (no rotation)         | ✅ Fixed                                                                     |
+| 2   | Preserve checkout idempotency key on ambiguous failure | ✅ Fixed                                                                     |
+| 3   | Staging protection fail-closed + link hardening + docs | ✅ Fixed                                                                     |
+| 4   | Checkout/cart quote races (newest-wins, gated submit)  | ✅ Fixed                                                                     |
+| 5   | Checkout hydration gate                                | ✅ Fixed                                                                     |
+| 6   | Distinct tracking/order error states                   | ✅ Fixed                                                                     |
+| 7   | Post-claim success refresh with owner fallback         | ✅ Fixed                                                                     |
+| 8   | Order list/detail correctness                          | ◑ Partial (documented)                                                       |
+| 9   | Checkout a11y (Select aria, radiogroup keys, FAB)      | ✅ Fixed (browser-verified; minor FAB corner overlap noted)                  |
+| 10  | Product zoom interaction + two-finger pan + tests      | ✅ Browser-verified (button/keyboard/tap-cycle/focus); pinch pan unit-tested |
 
 "Partial" items ship real improvements with the residual work explicitly
 enumerated in §3 — they are **documented deferrals, not silent gaps**.
@@ -251,21 +251,53 @@ tests `src/lib/__tests__/zoom-math.test.ts` (12).
 identical replay unchanged / scope-bound rejection / missing-hash rejection /
 wrong-payload rejection). No row persisted.
 
-**Not yet run (honest gap):** the live browser retest at 390×844 / 768×1024 /
-1440×900, the #10 touch-gesture matrix, and a real end-to-end guest order on an
-isolated staging Supabase. The client-held-token contract is unit- and
-DB-proven, but a full success→track→claim→detail live trace remains outstanding
-and is the top item in §3.
+**Live browser retest (done, 2026-07-16, CDP device-emulation at 390×844,
+768×1024, 1440×900):**
+
+- **#6 error states** — `/track` empty submit sets `aria-invalid` on both fields,
+  shows distinct inline errors, focuses the first invalid field, and does not
+  navigate; a wrong order/code returns a neutral **"Order not found"** (never
+  reveals existence). `/orders` unauthenticated → "Sign in to see your orders";
+  `/orders/<bad-uuid>` → "Order not found" (client guard, no server call);
+  `/orders/<valid-uuid>` unauthenticated → "Sign in to view this order" — proving
+  the unauthenticated vs. not-found distinction end to end.
+- **#7** — a synthetic invalid success URL (bad guest token, not signed in) →
+  safe **"We couldn't load your order summary"** with no order data exposed.
+- **#10** — image viewer: button zoom (→125%), keyboard `+` (→156%) and
+  `ArrowRight` pan (translateX −60), `0` reset (→100%), single-tap cycle
+  fit→2× (`scale(2)`), and **Escape returns focus to the "Open image viewer"
+  trigger**. The group's `aria-label` documents the interaction model.
+- **#9** — District `SelectTrigger` carries the aria on the real element
+  (`id="checkout-district"`, `aria-required`); on a blocked submit it gains
+  `aria-invalid="true"` + `aria-describedby`, an error **summary** (`role=alert`)
+  takes focus listing all fields, and the payment `role="radiogroup"` roves
+  tabindex with `ArrowDown` moving COD→bKash. Client validation blocked the empty
+  submit (no order placed).
+- **#5** — `/checkout` hydrated with the persisted cart (badge = 1); no
+  "Nothing to checkout" flash.
+- **FAB (#9):** clears all content except, in the extreme scroll position where
+  the Place Order button pins to the viewport bottom, it clips the button's
+  top-right corner — the button center/label stay clickable
+  (`elementFromPoint` returns the button). Minor cosmetic overlap, non-blocking.
+- Console: no JS errors, no passive-listener flood — only a benign CSP
+  report-only advisory (a known Stage-7 CSP item).
+
+**Still not run (honest gap):** the #10 **two-finger pinch/pan** touch matrix
+(synthetic pointer pinch is unreliable; the pinch math is unit-proven instead)
+and a real end-to-end guest order on an isolated staging Supabase — the
+client-held-token contract is unit- and DB-proven, but a full
+success→track→claim→detail live trace remains outstanding (§3).
 
 ---
 
 ## 3. Remaining work (documented deferrals & risks)
 
-1. **Live browser retest** at the three viewports — verify checkout submit
-   gating, error panels, and the WhatsApp FAB offset (#9) in a real viewport.
-2. **#10 touch matrix** — real/emulated pinch, two-finger pan, and tap-cycle on a
-   product page, plus image-fixture checks. Math is proven; DOM gestures are not
-   yet browser-verified.
+1. **#10 two-finger pinch/pan matrix** — verify pinch scale + midpoint pan on a
+   real touch device (synthetic pointer pinch is unreliable; the math is
+   unit-proven). Button/keyboard/tap-cycle/focus are browser-verified (§2).
+2. **FAB corner overlap (#9)** — optional polish: nudge the Place Order button's
+   bottom padding (or the FAB offset) so the FAB never clips the button corner in
+   the extreme bottom-pinned scroll position. The tap target is already clickable.
 3. **#8 additive displays** — all-item search, real status-history timeline,
    per-item SKU / product link, courier consignment + tracking link + ETA. These
    require new server projections.

@@ -4,15 +4,21 @@ Reflects what the code does today (Stages 2–6 closed for their shipped scope;
 checkout + order management, customer accounts, courier & shipments, and the
 Stage-6 content/reports modules all live — 67 migrations). Updated each stage.
 
-> **2026-07-13 remediation (branch, not merged).** Two customer flows changed
-> shape: **order-success** no longer trusts URL params — it fetches a
-> server-verified receipt via `track_order` (guest) / `get_my_order` (signed-in)
-> using the URL purely as a capability, and `place_order`'s idempotent-replay
-> branch now returns the full contract + re-issues a guest token
-> (`20260713090000_order_replay_receipt.sql`). The **cart store** hydrates the
-> cart independently of the wishlist partition and exposes `cartHydrated`; the
-> cart page guards its quote fetch with a request sequence. See
-> `docs/Nongorr_Remediation_Report_2026-07-13.md`.
+> **2026-07-16 Codex order-workflow remediation (merged & deployed, `b17e589`).**
+> The guest tracking token is now **client-held**: the browser mints the raw
+> token and sends only its SHA-256 hash (`sha256Hex`), the server stores the
+> hash, and `place_order`'s idempotent-replay branch returns the **original order
+> unchanged with no rotation** (migration `20260713120000_guest_token_client_held.sql`,
+> 9-arg RPC with a trailing `p_guest_token_hash`; supersedes the earlier
+> rotation-based `20260713090000_order_replay_receipt.sql`). Checkout persists the
+> idempotency key + guest token per placement signature and reuses them across
+> ambiguous retries. **order-success** never trusts URL params — it fetches a
+> server-verified receipt via `track_order` (guest), falling back to
+> `get_my_order` (signed-in owner) after a claim invalidates the guest token. The
+> **cart store** hydrates independently of the wishlist partition and exposes
+> `cartHydrated`; cart and checkout guard their quote fetch with a `quoteSeq`
+> sequence and gate submit on a verified price. Order/track reads carry a typed
+> `OrderReadReason`. See `docs/Nongorr_Remediation_Report_2026-07-13.md` (rev 2).
 
 ## Request → response security wrapper
 
