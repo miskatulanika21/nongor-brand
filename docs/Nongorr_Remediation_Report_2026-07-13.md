@@ -29,7 +29,7 @@ hardening, documentation corrections, and full local verification.
 | 6   | Distinct tracking/order error states                   | ✅ Fixed                                                                     |
 | 7   | Post-claim success refresh with owner fallback         | ✅ Fixed                                                                     |
 | 8   | Order list/detail correctness                          | ◑ Partial (documented)                                                       |
-| 9   | Checkout a11y (Select aria, radiogroup keys, FAB)      | ✅ Fixed (browser-verified; minor FAB corner overlap noted)                  |
+| 9   | Checkout a11y (Select aria, radiogroup keys, FAB)      | ✅ Fixed (browser-verified; FAB suppressed on checkout)                      |
 | 10  | Product zoom interaction + two-finger pan + tests      | ✅ Browser-verified (button/keyboard/tap-cycle/focus); pinch pan unit-tested |
 
 "Partial" items ship real improvements with the residual work explicitly
@@ -275,10 +275,15 @@ wrong-payload rejection). No row persisted.
   submit (no order placed).
 - **#5** — `/checkout` hydrated with the persisted cart (badge = 1); no
   "Nothing to checkout" flash.
-- **FAB (#9):** clears all content except, in the extreme scroll position where
-  the Place Order button pins to the viewport bottom, it clips the button's
-  top-right corner — the button center/label stay clickable
-  (`elementFromPoint` returns the button). Minor cosmetic overlap, non-blocking.
+- **FAB (#9):** the initial retest found that, in the extreme scroll position
+  where the Place Order button pins to the viewport bottom, the FAB clipped the
+  button's top-right corner (center/label still clickable). **Now fixed** — the
+  WhatsApp FAB is suppressed on the `/checkout` route (`isCheckoutRoute` gate in
+  `src/routes/_site.tsx`), the same "reduce distraction near the pay action"
+  pattern used by top e-commerce checkouts; support stays inline (7 WhatsApp
+  links + FAQ/contact on the page). Re-verified: FAB absent on `/checkout`,
+  present on the PDP; the Place Order button is unobstructed at the viewport
+  bottom.
 - Console: no JS errors, no passive-listener flood — only a benign CSP
   report-only advisory (a known Stage-7 CSP item).
 
@@ -295,13 +300,10 @@ success→track→claim→detail live trace remains outstanding (§3).
 1. **#10 two-finger pinch/pan matrix** — verify pinch scale + midpoint pan on a
    real touch device (synthetic pointer pinch is unreliable; the math is
    unit-proven). Button/keyboard/tap-cycle/focus are browser-verified (§2).
-2. **FAB corner overlap (#9)** — optional polish: nudge the Place Order button's
-   bottom padding (or the FAB offset) so the FAB never clips the button corner in
-   the extreme bottom-pinned scroll position. The tap target is already clickable.
-3. **#8 additive displays** — all-item search, real status-history timeline,
+2. **#8 additive displays** — all-item search, real status-history timeline,
    per-item SKU / product link, courier consignment + tracking link + ETA. These
    require new server projections.
-4. **Staging E2E** — provision an isolated Supabase (branch/local) and run a real
+3. **Staging E2E** — provision an isolated Supabase (branch/local) and run a real
    disposable guest order through success → track → claim → owner detail to
    exercise the client-held-token contract end to end.
 

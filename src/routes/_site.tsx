@@ -65,6 +65,12 @@ export const Route = createFileRoute("/_site")({
 function SiteLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isAuthRoute = pathname === "/login";
+  // Checkout is a focused, single-CTA flow: the full-width "Place Order" button
+  // spans the mobile viewport, so a bottom-right FAB would clip its corner.
+  // Suppress the FAB here (support stays inline: WhatsApp / FAQ / contact links
+  // in the payment section) — the same "reduce distraction near the pay action"
+  // pattern top e-commerce checkouts use.
+  const isCheckoutRoute = pathname === "/checkout";
   const { sessionSummary, announcement, publicSettings } = useRouteContext({ from: "/_site" }) as {
     sessionSummary: {
       isAuthenticated: boolean;
@@ -95,7 +101,7 @@ function SiteLayout() {
         {isAuthRoute ? <AuthFooter /> : <SiteFooter settings={publicSettings} />}
         {/* Only render a real WhatsApp link when a real number is configured.
             Hidden while any Radix dialog/sheet is open (see .site-whatsapp-fab). */}
-        {showWhatsappFab && !isAuthRoute && (
+        {showWhatsappFab && !isAuthRoute && !isCheckoutRoute && (
           <a
             href={`https://wa.me/${whatsappNumber}`}
             target="_blank"
