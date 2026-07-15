@@ -1,6 +1,6 @@
 # Nongorr Test Credentials
 
-Below are the default credentials configured for testing the various roles and permissions in the system. All test accounts have been created and synchronized with the staging database.
+Below are the default credentials configured for testing the various roles and permissions in the system. All test accounts have been created in the live Supabase project (`xomjxtmhkglhuiccekld`) that `.env` points at — there is no separate staging database yet. Verified 2026-07-16: all six accounts exist, are email-confirmed, and hold the roles listed; none have any orders yet.
 
 ## Credentials Table
 
@@ -13,7 +13,7 @@ Below are the default credentials configured for testing the various roles and p
 
 ---
 
-## Staging QA Credentials (Legacy / Auto-tests)
+## QA Credentials (Legacy / Auto-tests)
 
 For Playwright E2E automation and legacy QA scripts, the following credentials are also available:
 
