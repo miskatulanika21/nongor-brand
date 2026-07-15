@@ -1,13 +1,16 @@
 import { createFileRoute, Link, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { trackOrderFn } from "@/lib/orders.api";
-import { CustomerStatusBadge, fmtDate } from "@/components/admin/order-status";
+import { CustomerStatusBadge, fmtDate, fmtDateTime } from "@/components/admin/order-status";
 import { MeasurementsList } from "@/components/orders/MeasurementsList";
 import { ClaimOrderCard } from "@/components/orders/ClaimOrderCard";
 import { OrderItemThumb } from "@/components/orders/OrderItemThumb";
 import {
   CUSTOMER_STEPS,
+  ORDER_STATUS_META,
   customerProgress,
+  courierProviderLabel,
+  courierTrackingUrl,
   orderReadReasonMessage,
   type TrackOrderResult,
 } from "@/lib/orders-shared";
@@ -27,6 +30,8 @@ import {
   Package,
   Check,
   AlertTriangle,
+  Truck,
+  ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -295,8 +300,9 @@ function OrderTimeline({
   orderNo: string;
   token: string;
 }) {
-  const { order, items } = result;
+  const { order, items, history, courier } = result;
   const { stepIndex, exception } = customerProgress(order.status);
+  const trackingUrl = courier ? courierTrackingUrl(courier) : null;
 
   const copyLink = async () => {
     if (typeof window === "undefined") return;
@@ -333,11 +339,26 @@ function OrderTimeline({
               <div className="flex gap-3">
                 <OrderItemThumb image={i.image} name={i.name} className="h-20 w-16" />
                 <div className="flex-1 text-sm">
-                  <p className="font-medium text-foreground">{i.name}</p>
+                  {i.productSlug ? (
+                    <Link
+                      to="/product/$slug"
+                      params={{ slug: i.productSlug }}
+                      className="font-medium text-foreground underline-offset-2 hover:text-primary hover:underline"
+                    >
+                      {i.name}
+                    </Link>
+                  ) : (
+                    <p className="font-medium text-foreground">{i.name}</p>
+                  )}
                   <p className="text-xs text-muted-foreground">
                     {i.qty} × {formatBDT(i.unitPrice)}
                     {i.variantSize ? ` · ${i.variantSize}` : ""}
                   </p>
+                  {i.sku && (
+                    <p className="text-xs text-muted-foreground">
+                      SKU: <span className="font-mono">{i.sku}</span>
+                    </p>
+                  )}
                 </div>
                 <span className="text-sm font-medium">{formatBDT(i.unitPrice * i.qty)}</span>
               </div>
@@ -412,7 +433,72 @@ function OrderTimeline({
             })}
           </ol>
         )}
+
+        {/* Real, timestamped status history (#8). */}
+        {history.length > 0 && (
+          <div className="mt-6 border-t border-border pt-4">
+            <h3 className="mb-3 text-sm font-medium text-muted-foreground">Status history</h3>
+            <ol className="space-y-2">
+              {history.map((h, i) => (
+                <li key={i} className="flex items-baseline justify-between gap-3 text-sm">
+                  <span className="text-foreground">
+                    {ORDER_STATUS_META[h.toStatus]?.customerLabel ?? h.toStatus}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {fmtDateTime(h.createdAt)}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
       </div>
+
+      {/* Courier / shipment (#8) */}
+      {courier && (
+        <div className="rounded-xl border border-border bg-card p-5 text-sm">
+          <h2 className="mb-3 flex items-center gap-2 font-display text-xl">
+            <Truck className="h-5 w-5 text-primary" /> Courier
+          </h2>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <p className="text-muted-foreground">
+              Provider:{" "}
+              <span className="text-foreground">{courierProviderLabel(courier.provider)}</span>
+            </p>
+            {courier.courierStatus && (
+              <p className="capitalize text-muted-foreground">
+                Status:{" "}
+                <span className="text-foreground">{courier.courierStatus.replace(/_/g, " ")}</span>
+              </p>
+            )}
+            {courier.trackingCode && (
+              <p className="text-muted-foreground">
+                Tracking code:{" "}
+                <span className="font-mono text-foreground">{courier.trackingCode}</span>
+              </p>
+            )}
+            {courier.consignmentId && (
+              <p className="text-muted-foreground">
+                Consignment:{" "}
+                <span className="font-mono text-foreground">{courier.consignmentId}</span>
+              </p>
+            )}
+            {courier.bookedAt && (
+              <p className="text-muted-foreground">
+                Booked: <span className="text-foreground">{fmtDateTime(courier.bookedAt)}</span>
+              </p>
+            )}
+          </div>
+          {trackingUrl && (
+            <Button variant="outline" size="sm" className="mt-3" asChild>
+              <a href={trackingUrl} target="_blank" rel="noreferrer">
+                Track with {courierProviderLabel(courier.provider)}{" "}
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            </Button>
+          )}
+        </div>
+      )}
 
       <div className="rounded-xl border border-gold/40 bg-gold/5 p-5 text-center">
         <p className="text-sm text-muted-foreground">Need help with this order?</p>

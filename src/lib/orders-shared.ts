@@ -679,6 +679,51 @@ export interface MyOrderListItem {
   placedAt: string;
   itemCount: number;
   firstItem: { name: string; image: string | null } | null;
+  /** Every line's name — lets the order list search match ALL items (#8). */
+  itemNames: string[];
+}
+
+/**
+ * Courier/shipment info surfaced to the customer once an order is booked (#8).
+ * Sourced from the latest real shipment (has a consignment or tracking code);
+ * `null` until an order is actually handed to a courier.
+ */
+export interface OrderCourierInfo {
+  provider: string;
+  consignmentId: string | null;
+  trackingCode: string | null;
+  courierStatus: string | null;
+  bookedAt: string | null;
+}
+
+const COURIER_PROVIDER_LABEL: Record<string, string> = {
+  steadfast: "SteadFast",
+  pathao: "Pathao",
+  redx: "RedX",
+  paperfly: "Paperfly",
+  manual: "Manual courier",
+};
+
+/** Friendly courier name for display (falls back to a capitalized slug). */
+export function courierProviderLabel(provider: string): string {
+  const key = provider.trim().toLowerCase();
+  return (
+    COURIER_PROVIDER_LABEL[key] ??
+    (provider ? provider[0].toUpperCase() + provider.slice(1) : "Courier")
+  );
+}
+
+/**
+ * Public tracking URL for a courier, when the provider exposes one keyed by the
+ * tracking code. Returns null when we can't build a reliable link (the UI then
+ * shows the code/consignment instead of a broken link).
+ */
+export function courierTrackingUrl(courier: OrderCourierInfo): string | null {
+  const key = courier.provider.trim().toLowerCase();
+  if (key === "steadfast" && courier.trackingCode) {
+    return `https://steadfast.com.bd/t/${encodeURIComponent(courier.trackingCode)}`;
+  }
+  return null;
 }
 
 export interface MyOrdersResult {
@@ -694,6 +739,10 @@ export interface MyOrderLine {
   lineTotal: number;
   variantSize: string | null;
   customMeasurements: CustomMeasurements | null;
+  /** Product page slug (null if the product was since removed). */
+  productSlug: string | null;
+  /** Product code / SKU. */
+  sku: string | null;
 }
 
 export interface MyOrderHistoryEntry {
@@ -721,6 +770,7 @@ export interface MyOrderDetail {
   items: MyOrderLine[];
   payment: { method: PaymentMethod; status: PaymentStatus; trxId: string | null } | null;
   history: MyOrderHistoryEntry[];
+  courier: OrderCourierInfo | null;
 }
 
 /** Guest tracking projection (api.track_order) — no PII beyond the order line. */
@@ -739,8 +789,11 @@ export interface TrackOrderResult {
     unitPrice: number;
     variantSize: string | null;
     customMeasurements: CustomMeasurements | null;
+    productSlug: string | null;
+    sku: string | null;
   }>;
   history: MyOrderHistoryEntry[];
+  courier: OrderCourierInfo | null;
 }
 
 // ── Customer progress timeline (the 17 statuses → a 7-step happy path) ────────

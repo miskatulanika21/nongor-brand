@@ -92,6 +92,15 @@ BEGIN
   IF (trk->'items'->0->'custom_measurements') <> '{"bust":"36","waist":"30"}'::jsonb THEN
     RAISE EXCEPTION 'FAIL: s1 track measurements'; END IF;
 
+  -- #8: track projects the product link (slug) + SKU (code), and courier is null
+  -- until a shipment exists.
+  IF (trk->'items'->0->>'sku') <> 'p4-prod' THEN
+    RAISE EXCEPTION 'FAIL: s1 track sku %', trk->'items'->0; END IF;
+  IF (trk->'items'->0->>'product_slug') IS NULL THEN
+    RAISE EXCEPTION 'FAIL: s1 track product_slug missing %', trk->'items'->0; END IF;
+  IF (trk->'courier') IS DISTINCT FROM 'null'::jsonb THEN
+    RAISE EXCEPTION 'FAIL: s1 courier should be null pre-booking %', trk->'courier'; END IF;
+
   -- march to delivered
   PERFORM api.transition_order(oid, 'processing',    '00000000-0000-0000-0000-0000000000b1'::uuid);
   PERFORM api.transition_order(oid, 'ready_to_ship', '00000000-0000-0000-0000-0000000000b1'::uuid);
@@ -112,10 +121,40 @@ BEGIN
 END $$;
 
 -- ============================================================
+-- §1b — #8: a booked courier surfaces in the customer projection. Isolated on a
+-- fresh guest order so it never interferes with the §1 return flow.
+-- ============================================================
+DO $$
+DECLARE r jsonb; oid uuid; ono text; hash text; trk jsonb;
+  cu jsonb := jsonb_build_object('name','Ship','phone','01755550000','district','Dhaka','address','9 Rd');
+BEGIN
+  r := api.place_order('[{"code":"p4-prod","qty":1}]'::jsonb, cu, 'dhaka', 'cod', 's1b-idem', NULL, NULL,
+    p_guest_token_hash => encode(extensions.digest('tok-s1b','sha256'),'hex'));
+  oid := (r->>'order_id')::uuid; ono := r->>'order_no';
+  SELECT guest_token_hash INTO hash FROM public.orders WHERE id = oid;
+
+  INSERT INTO public.shipments (order_id, provider, shipment_kind, booking_status, consignment_id, tracking_code, courier_status)
+  VALUES (oid, 'steadfast', 'forward', 'success', 'CID-S1B', 'TRK-S1B', 'in_transit');
+
+  trk := api.track_order(ono, hash);
+  IF (trk->'courier'->>'provider') <> 'steadfast'
+     OR (trk->'courier'->>'tracking_code') <> 'TRK-S1B'
+     OR (trk->'courier'->>'consignment_id') <> 'CID-S1B'
+     OR (trk->'courier'->>'courier_status') <> 'in_transit' THEN
+    RAISE EXCEPTION 'FAIL: s1b courier projection %', trk->'courier'; END IF;
+
+  -- with no booked shipment, courier collapses back to null
+  DELETE FROM public.shipments WHERE order_id = oid;
+  trk := api.track_order(ono, hash);
+  IF (trk->'courier') IS DISTINCT FROM 'null'::jsonb THEN
+    RAISE EXCEPTION 'FAIL: s1b no-shipment courier not null %', trk->'courier'; END IF;
+END $$;
+
+-- ============================================================
 -- §2 — owner-scoped read (get_my_order) + custom line + empty-measures→NULL
 -- ============================================================
 DO $$
-DECLARE r jsonb; oid uuid; my jsonb;
+DECLARE r jsonb; oid uuid; my jsonb; lst jsonb;
   cu jsonb := jsonb_build_object('name','Owner','phone','01722222222','district','Dhaka','address','2 Rd');
 BEGIN
   -- a signed-in customer places a custom order with real measurements
@@ -128,6 +167,16 @@ BEGIN
   my := api.get_my_order(oid, '00000000-0000-0000-0000-0000000000b2'::uuid);
   IF (my->'items'->0->'custom_measurements') <> '{"hip":"40","sleeve":"22"}'::jsonb THEN
     RAISE EXCEPTION 'FAIL: s2 get_my_order measurements'; END IF;
+  -- #8: owner detail carries the product SKU + slug; the list carries every
+  -- item name so search can match ALL items, not just the first.
+  IF (my->'items'->0->>'sku') <> 'p4-cust' THEN
+    RAISE EXCEPTION 'FAIL: s2 get_my_order sku %', my->'items'->0; END IF;
+  IF (my->'items'->0->>'product_slug') IS NULL THEN
+    RAISE EXCEPTION 'FAIL: s2 get_my_order product_slug missing %', my->'items'->0; END IF;
+  lst := api.list_my_orders('00000000-0000-0000-0000-0000000000b2'::uuid, 20, 0);
+  IF jsonb_typeof(lst->'orders'->0->'item_names') <> 'array'
+     OR jsonb_array_length(lst->'orders'->0->'item_names') < 1 THEN
+    RAISE EXCEPTION 'FAIL: s2 list_my_orders item_names %', lst->'orders'->0; END IF;
   BEGIN PERFORM api.get_my_order(oid, '00000000-0000-0000-0000-0000000000b1'::uuid);
         RAISE EXCEPTION 'FAIL: s2 cross-user read allowed';
   EXCEPTION WHEN OTHERS THEN

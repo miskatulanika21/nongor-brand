@@ -9,7 +9,7 @@ Docker replay). Site is in the **editing / pre-launch** phase (no real
 customers); the owner explicitly authorized applying the order-RPC migration to
 prod and pushing to `main`. Full change list + verification in
 `docs/Nongorr_Remediation_Report_2026-07-13.md` (rev 2). Shipped (typecheck +
-lint + format clean + **631 Vitest** green + build ✓): the ten Codex findings.
+lint + format clean + **636 Vitest** green + build ✓): the ten Codex findings.
 **#1 guest idempotent replay redesigned around a client-held capability token**
 — the browser mints the raw token and sends only its SHA-256 hash; the server
 stores the hash and the replay returns the **original order unchanged (no
@@ -27,20 +27,25 @@ verified price. **#5** checkout `cartHydrated` skeleton gate. **#6** typed
 rate-limited / network / unavailable states + accessible retry (never reveals a
 non-owned order). **#7** success page falls back to owner-scoped `get_my_order`
 after a claim invalidates the guest token. **#8** order list/detail correctness
-(placeholder onError, capitalized payment, pluralized copy, pagination notice,
-per-unit price, item-name search) — additive courier/SKU/real-history displays
-deferred. **#9** District/Area `SelectTrigger` real aria + payment
-`role=radiogroup` roving tabindex/arrow keys. **#10** DOM-free `zoom-math` +
-two-finger pan wiring. **Browser retest done** (CDP emulation at 390×844 /
-768×1024 / 1440×900): #6 error states, #7 invalid-success fail-safe, #10 zoom
-(button/keyboard/tap-cycle/focus-return), #9 checkout aria + error-summary focus
 
-- radiogroup arrows, and #5 hydration all verified live; no console errors. The
+- **enrichment** (migration `20260716120000`, applied to prod): `list_my_orders`
+  `item_names` → all-item search; `get_my_order`/`track_order` per-item
+  `product_slug`/`sku` (product link + SKU) and a `courier` object (provider /
+  consignment / tracking code / status / booked-at) → courier card; the detail +
+  track pages now render the **real** `order_status_history` timeline. **#9**
+  District/Area `SelectTrigger` real aria + payment `role=radiogroup` roving
+  tabindex/arrow keys. **#10** DOM-free `zoom-math` + two-finger pinch/pan wiring,
+  covered by `ProductImageViewer.test.tsx` (dispatched-pointer). **Browser retest
+  done** (CDP emulation at 390×844 / 768×1024 / 1440×900): #6 error states, #7
+  invalid-success fail-safe, #10 zoom (button/keyboard/tap-cycle/focus-return), #9
+  checkout aria + error-summary focus
+
+* radiogroup arrows, and #5 hydration all verified live; no console errors. The
   WhatsApp FAB is now **suppressed on `/checkout`** (`isCheckoutRoute` gate in
   `_site.tsx`) so it can't clip the full-width Place Order button — support stays
-  inline; re-verified FAB absent on checkout, present on the PDP. Still deferred:
-  #10 **two-finger pinch** touch matrix (pinch math unit-proven), #8 additive
-  server projections, and a real-order staging E2E
+  inline; re-verified FAB absent on checkout, present on the PDP. **636 Vitest**
+  green. Still deferred: an authenticated in-browser walk of the enriched order
+  detail (RPC DB-verified; render typed/additive) and a real-order staging E2E
   (`docs/staging-supabase-runbook.md`). Prior context:\_
 
 \_Earlier (2026-07-12) — **Stage 6 content & operational modules: CLOSED

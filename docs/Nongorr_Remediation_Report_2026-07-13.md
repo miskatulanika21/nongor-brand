@@ -19,18 +19,18 @@ hardening, documentation corrections, and full local verification.
 
 ## 0. Status at a glance
 
-| #   | Codex finding (short)                                  | Status                                                                       |
-| --- | ------------------------------------------------------ | ---------------------------------------------------------------------------- |
-| 1   | Guest idempotent-replay redesign (no rotation)         | ✅ Fixed                                                                     |
-| 2   | Preserve checkout idempotency key on ambiguous failure | ✅ Fixed                                                                     |
-| 3   | Staging protection fail-closed + link hardening + docs | ✅ Fixed                                                                     |
-| 4   | Checkout/cart quote races (newest-wins, gated submit)  | ✅ Fixed                                                                     |
-| 5   | Checkout hydration gate                                | ✅ Fixed                                                                     |
-| 6   | Distinct tracking/order error states                   | ✅ Fixed                                                                     |
-| 7   | Post-claim success refresh with owner fallback         | ✅ Fixed                                                                     |
-| 8   | Order list/detail correctness                          | ◑ Partial (documented)                                                       |
-| 9   | Checkout a11y (Select aria, radiogroup keys, FAB)      | ✅ Fixed (browser-verified; FAB suppressed on checkout)                      |
-| 10  | Product zoom interaction + two-finger pan + tests      | ✅ Browser-verified (button/keyboard/tap-cycle/focus); pinch pan unit-tested |
+| #   | Codex finding (short)                                  | Status                                                                 |
+| --- | ------------------------------------------------------ | ---------------------------------------------------------------------- |
+| 1   | Guest idempotent-replay redesign (no rotation)         | ✅ Fixed                                                               |
+| 2   | Preserve checkout idempotency key on ambiguous failure | ✅ Fixed                                                               |
+| 3   | Staging protection fail-closed + link hardening + docs | ✅ Fixed                                                               |
+| 4   | Checkout/cart quote races (newest-wins, gated submit)  | ✅ Fixed                                                               |
+| 5   | Checkout hydration gate                                | ✅ Fixed                                                               |
+| 6   | Distinct tracking/order error states                   | ✅ Fixed                                                               |
+| 7   | Post-claim success refresh with owner fallback         | ✅ Fixed                                                               |
+| 8   | Order list/detail correctness                          | ✅ Fixed (all-item search, real status history, SKU/link, courier)     |
+| 9   | Checkout a11y (Select aria, radiogroup keys, FAB)      | ✅ Fixed (browser-verified; FAB suppressed on checkout)                |
+| 10  | Product zoom interaction + two-finger pan + tests      | ✅ Fixed (browser + component tests incl. two-finger pinch/pan wiring) |
 
 "Partial" items ship real improvements with the residual work explicitly
 enumerated in §3 — they are **documented deferrals, not silent gaps**.
@@ -177,22 +177,42 @@ client-held token) first, then falls back to the owner read
 
 Files: `src/routes/_site.order-success.tsx`.
 
-### #8 — Order list/detail correctness _(partial — documented)_
+### #8 — Order list/detail correctness
 
-**Done:** placeholder-image `onError` fallback (`OrderItemThumb`), capitalized
-payment status, pluralized `item(s)` copy, a "showing latest N of M" pagination
-notice on the list, search matches the order number **and** the first item name,
-`{qty} × {unitPrice}` per line, and variant size shown when present.
+**First pass (correctness):** placeholder-image `onError` fallback
+(`OrderItemThumb`), capitalized payment status, pluralized `item(s)` copy, a
+"showing latest N of M" pagination notice, `{qty} × {unitPrice}` per line, and
+variant size when present.
 
-**Deferred (documented, §3):** searching **all** item names (only the first item
-is currently in the list projection), a **real** status-history timeline (the
-detail timeline is still synthesized from the current status), and per-item
-SKU / product link / courier consignment + tracking-link display. These need
-additive server projections, not corrections to existing behavior.
+**Enrichment pass (2026-07-16, migration
+`20260716120000_customer_order_projection_enrich.sql`):** the three customer read
+RPCs were additively enriched (same signatures, CREATE OR REPLACE, applied to
+prod and verified in a rolled-back `DO` block; the SQL regression tests live in
+`pass4_db.test.sql` §1/§1b/§2):
 
-Files: `src/components/orders/OrderItemThumb.tsx` (new),
-`src/routes/_site.orders.index.tsx`, `src/routes/_site.orders.$id.tsx`,
-`src/routes/_site.track.tsx`.
+- **All-item search** — `list_my_orders` now returns `item_names` (every line);
+  the order list searches across all of them, not just the first.
+- **Real status-history timeline** — `get_my_order`/`track_order` already
+  returned the true `order_status_history`; the detail and track pages now render
+  it (customer status labels + real timestamps) instead of only the synthesized
+  step tracker.
+- **Per-item SKU + product link** — items carry `product_slug` (→ links to the
+  product page) and `sku` (`products.code`).
+- **Courier** — a `courier` object (provider, consignment, tracking code, courier
+  status, booked-at) from the latest booked shipment, shown as a courier card
+  with a "Track with {provider}" link where a public URL exists (SteadFast).
+
+Files: `supabase/migrations/20260716120000_customer_order_projection_enrich.sql`
+(new), `src/lib/orders-shared.ts` (`itemNames`, `productSlug`/`sku`,
+`OrderCourierInfo`, `courierProviderLabel`/`courierTrackingUrl`),
+`src/lib/server/orders.server.ts`, `src/routes/_site.orders.index.tsx`,
+`src/routes/_site.orders.$id.tsx`, `src/routes/_site.track.tsx`,
+`src/components/orders/OrderItemThumb.tsx`, `supabase/tests/pass4_db.test.sql`.
+
+**Not live-walked:** the enriched **authenticated** order detail (real courier
+card + history) wasn't clicked through in-browser — it needs a signed-in customer
+with a booked-courier order; the RPC output is DB-verified against prod and the
+render is a typed, additive conditional. See §3.
 
 ### #9 — Checkout accessibility
 
@@ -212,10 +232,10 @@ not yet re-verified in-browser (§3).
 
 Files: `src/routes/_site.checkout.tsx`.
 
-### #10 — Product zoom interaction _(math + wiring fixed; browser matrix pending)_
+### #10 — Product zoom interaction
 
 **Root cause.** Two-finger movement scaled but did **not** translate (no pan while
-pinching), and the gesture math was untested.
+pinching), and the gesture math/wiring was untested.
 
 **Fix.** Extracted DOM-free gesture math to `src/lib/zoom-math.ts`
 (`nextZoomStop` tap-cycle fit→2×→3×→fit, `pinchScale`, `clampPanBox` so pan can
@@ -225,12 +245,17 @@ two-finger move, applies **both** the pinch scale **and** the midpoint
 translation through `clampPanBox` — so a constant-distance two-finger drag is a
 pure pan. The interaction model is documented at the top of `zoom-math.ts`.
 
-**Pending:** the full **browser** gesture matrix (real touch pinch/pan/tap-cycle
-on a device or emulated touch) and image-fixture verification (§3). The math is
-unit-proven; the DOM wiring is browser-verified only for wheel/keyboard so far.
+**Coverage.** Browser-verified (button zoom, keyboard `+`/`ArrowRight`/`0`,
+single-tap cycle → 2×, Escape focus-return). Added
+`ProductImageViewer.test.tsx` (5 tests) that mocks layout and dispatches real
+pointer events to pin the **DOM wiring** the math tests can't: two-finger pinch
+scales, and a **constant-distance two-finger drag pans while zoomed** (clamped
+inside the rendered image, never NaN), plus the +/−/0 and close controls. Only a
+real-hardware touch pass remains optional.
 
-Files: `src/lib/zoom-math.ts` (new), `src/components/site/ProductImageViewer.tsx`,
-tests `src/lib/__tests__/zoom-math.test.ts` (12).
+Files: `src/lib/zoom-math.ts`, `src/components/site/ProductImageViewer.tsx`,
+tests `src/lib/__tests__/zoom-math.test.ts` (12) +
+`src/components/site/__tests__/ProductImageViewer.test.tsx` (5).
 
 ---
 
@@ -241,15 +266,21 @@ tests `src/lib/__tests__/zoom-math.test.ts` (12).
 - `npm run typecheck` → **0 errors**
 - `npx eslint .` → **0 errors** (pre-existing warning baseline only)
 - `prettier --check` on changed files → clean
-- `npm run test` → **631 passed / 631** (55 files) — includes the new
-  checkout-attempt (10), staging-guard (18), zoom-math (12), and
-  order-read-reason (3) suites
+- `npm run test` → **636 passed / 636** (56 files) — includes the new
+  checkout-attempt (10), staging-guard (18), zoom-math (12), order-read-reason
+  (3), and ProductImageViewer pointer/pinch (5) suites
 - `npm run build` → ✓
 
-**Database (production, non-persisting):** migration `20260713120000` applied via
-`apply_migration`; correctness proven in a rolled-back `DO` block (fresh insert /
-identical replay unchanged / scope-bound rejection / missing-hash rejection /
-wrong-payload rejection). No row persisted.
+**Database (production, non-persisting):** two additive migrations applied via
+`apply_migration`, each proven in a rolled-back `DO` block (no row persisted):
+`20260713120000` (client-held guest token — fresh insert / identical replay
+unchanged / scope-bound rejection / missing-hash rejection / wrong-payload
+rejection) and `20260716120000` (enriched customer projections — `product_slug`
+
+- `sku` resolve, `item_names` populated, `courier` populates from a synthetic
+  shipment and collapses to null when unbooked). The `pass4_db.test.sql` §1/§1b/§2
+  assertions covering the new fields were also replayed against prod in a
+  rolled-back block.
 
 **Live browser retest (done, 2026-07-16, CDP device-emulation at 390×844,
 768×1024, 1440×900):**
@@ -287,30 +318,36 @@ wrong-payload rejection). No row persisted.
 - Console: no JS errors, no passive-listener flood — only a benign CSP
   report-only advisory (a known Stage-7 CSP item).
 
-**Still not run (honest gap):** the #10 **two-finger pinch/pan** touch matrix
-(synthetic pointer pinch is unreliable; the pinch math is unit-proven instead)
-and a real end-to-end guest order on an isolated staging Supabase — the
-client-held-token contract is unit- and DB-proven, but a full
-success→track→claim→detail live trace remains outstanding (§3).
+**Still not run (honest gap):** an **authenticated** in-browser walk of the
+enriched order detail (real courier card + status history — needs a signed-in
+customer with a booked-courier order; the projection is DB-verified and the
+render is typed/additive), an optional real-hardware touch pass for #10 (the DOM
+wiring is now covered by dispatched-pointer component tests), and a real
+end-to-end guest order on an isolated staging Supabase — the client-held-token
+contract is unit- and DB-proven, but a full success→track→claim→detail live
+trace remains outstanding (§3).
 
 ---
 
 ## 3. Remaining work (documented deferrals & risks)
 
-1. **#10 two-finger pinch/pan matrix** — verify pinch scale + midpoint pan on a
-   real touch device (synthetic pointer pinch is unreliable; the math is
-   unit-proven). Button/keyboard/tap-cycle/focus are browser-verified (§2).
-2. **#8 additive displays** — all-item search, real status-history timeline,
-   per-item SKU / product link, courier consignment + tracking link + ETA. These
-   require new server projections.
-3. **Staging E2E** — provision an isolated Supabase (branch/local) and run a real
+1. **Authenticated live walk of the enriched order detail (#8)** — sign in as a
+   customer with a booked-courier order and confirm the courier card + real
+   status-history render in-browser. The RPCs are DB-verified against prod and the
+   render is typed/additive, so this is confirmation, not a known risk.
+2. **Staging E2E** — provision an isolated Supabase (branch/local) and run a real
    disposable guest order through success → track → claim → owner detail to
-   exercise the client-held-token contract end to end.
+   exercise the client-held-token contract end to end. This is the one item still
+   blocked purely on infra (no Docker on this PC; a cloud branch is paid).
+3. **Optional:** a real-hardware touch pass for #10 (pinch/pan is now covered by
+   dispatched-pointer component tests), and an ETA field on the courier card once
+   the courier integration surfaces one (the schema has no ETA column today).
 
 ---
 
 ## 4. Suggested next steps
 
-1. Stand up the staging Supabase and run the #10/#8/E2E live checks above.
-2. Land the additive order-content projections (#8) as one reviewable change.
-3. Re-verify #9 FAB and checkout a11y in-browser at the three viewports.
+1. Stand up the staging Supabase and run the guest-order E2E + the authenticated
+   order-detail walk above.
+2. If/when the courier integration exposes a delivery ETA, add it to the
+   `courier` projection and the courier card.
