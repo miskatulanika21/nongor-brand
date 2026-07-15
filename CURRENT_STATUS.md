@@ -3,38 +3,42 @@
 Authoritative record of verified project state. Code and live-environment
 behavior are the source of truth; this file is updated after every stage.
 
-\_Last updated: 2026-07-13 — **Customer-experience remediation (post-Stage-6;
-on branch `fix/customer-experience-remediation`, NOT yet merged/deployed).**
-Driven by two external QA reports; full change list + verification in
-`docs/Nongorr_Remediation_Report_2026-07-13.md`. Shipped (typecheck + lint +
-**588 Vitest** green): **AUD-01** real product zoom — new `ProductImageViewer`
-(wheel / pinch / tap-cycle→300%, image-clamped pan, drag + keyboard pan,
-announced zoom %, ≥44px controls, focus-return; verified in-browser);
-**AUD-02/03** programmatic form labels + `aria-invalid`/`describedby` + an
-announced validation summary across checkout / contact / profile / addresses /
-measurements / security; **AUD-04/AUD-09** stale account-sync copy corrected +
-404 New-Arrivals filter token; **order #1** `/orders/:id` now reachable (split
-into an `<Outlet/>` layout + `orders.index`, login preserves the detail URL);
-**#5** accessible payment-screenshot upload (focusable button + 320px wrap);
-**#10** track requires both fields with typed not-found/rate-limit/network
-errors + a `role=status` live region; **#6/#7/#8** store re-architecture — cart
-hydrates independent of the wishlist partition + a `cartHydrated` skeleton gate
-(no false-empty flash), a `quoteSeq` guard (no stale-quote overwrite), and a
-canonical `lineKey` dedup for add / save / move (with `store-cart.test.tsx`);
-content: shared `paymentMethodLabel`, status-filter labels, and Bangladesh
-(UTC+6) dates. **Order-workflow #2/#3/#4 — migration + frontend, CI-validated,
-NOT applied to prod:** `20260713090000_order_replay_receipt.sql` makes
-`api.place_order` replay return the full placement contract and re-issue a guest
-tracking token (pass4 §10 test); `/order-success` now renders a **server-verified
-receipt** fetched via `track_order` (guest) / `get_my_order` (signed-in) — the
-URL is a capability, never trusted display data — showing real items/totals with
-an invalid/expired state. **Staging path wired** for the real-order E2E gate
-(`docs/staging-supabase-runbook.md`, guarded `staging:*` npm scripts + a
-prod-ref block); it needs a free second Supabase project (no Docker on this PC;
-cloud branch is paid). Deferred: remaining #9 (saved-address radio / full 44px
-audit / WhatsApp FAB overlap), order-detail courier + real status-history
-timeline, and the payment-unconfigured business decision (AUD-04 payment-policy
-copy). Prior context:\_
+\_Last updated: 2026-07-16 — **Codex (GPT-5) order-workflow remediation —
+MERGED & DEPLOYED** (`main` @ `b17e589`; CI all-green incl. the migrations-local
+Docker replay). Site is in the **editing / pre-launch** phase (no real
+customers); the owner explicitly authorized applying the order-RPC migration to
+prod and pushing to `main`. Full change list + verification in
+`docs/Nongorr_Remediation_Report_2026-07-13.md` (rev 2). Shipped (typecheck +
+lint + format clean + **631 Vitest** green + build ✓): the ten Codex findings.
+**#1 guest idempotent replay redesigned around a client-held capability token**
+— the browser mints the raw token and sends only its SHA-256 hash; the server
+stores the hash and the replay returns the **original order unchanged (no
+rotation)**, scope/actor-bound. Migration `20260713120000_guest_token_client_held.sql`
+(9-arg `api.place_order`, trailing `p_guest_token_hash`) **applied to prod** and
+verified in a rolled-back `DO` block (no row persisted); prod migration-history
+version reconciled `074047`→`120000` so it orders after
+`20260713090000_order_replay_receipt`, and prod carries only the 9-arg overload.
+**#2** idempotency key + guest token persisted per placement signature and reused
+across ambiguous retries (no duplicate orders). **#3** staging guard fails
+closed + `staging-link` drops `shell:true` / pins `supabase@2.33.9` + runbook
+corrections. **#4** `quoteSeq` newest-wins on cart + checkout, submit gated on a
+verified price. **#5** checkout `cartHydrated` skeleton gate. **#6** typed
+`OrderReadReason` threaded server→UI with distinct unauthenticated / not-found /
+rate-limited / network / unavailable states + accessible retry (never reveals a
+non-owned order). **#7** success page falls back to owner-scoped `get_my_order`
+after a claim invalidates the guest token. **#8** order list/detail correctness
+(placeholder onError, capitalized payment, pluralized copy, pagination notice,
+per-unit price, item-name search) — additive courier/SKU/real-history displays
+deferred. **#9** District/Area `SelectTrigger` real aria + payment
+`role=radiogroup` roving tabindex/arrow keys. **#10** DOM-free `zoom-math` +
+two-finger pan wiring. **Browser retest done** (CDP emulation at 390×844 /
+768×1024 / 1440×900): #6 error states, #7 invalid-success fail-safe, #10 zoom
+(button/keyboard/tap-cycle/focus-return), #9 checkout aria + error-summary focus
+
+- radiogroup arrows, and #5 hydration all verified live; no console errors. Still
+  deferred: #10 **two-finger pinch** touch matrix (pinch math unit-proven), a minor
+  FAB corner-overlap polish, #8 additive server projections, and a real-order
+  staging E2E (`docs/staging-supabase-runbook.md`). Prior context:\_
 
 \_Earlier (2026-07-12) — **Stage 6 content & operational modules: CLOSED
 for the content scope (P3/P4/P5/P6 + P7 closure; P1/P2 owner-deferred).**

@@ -4,15 +4,21 @@ Stage-by-stage plan with exit criteria. Derived from
 `nongorr-phase-2-antigravity-prompt.md` (V3). Update after each stage; keep in
 sync with `CURRENT_STATUS.md`.
 
-> **2026-07-13 — customer-experience remediation** (branch
-> `fix/customer-experience-remediation`, not yet merged). A cross-cutting pass
-> from two external QA reports: product-zoom rebuild, form-a11y, the order
-> detail route (`/orders/:id`), track validation, a cart-store re-architecture
-> (hydration / quote-race / dedup), and the order-workflow receipt work
-> (`place_order` replay contract + a server-verified `/order-success`). It does
-> not open/close a numbered stage — see `docs/Nongorr_Remediation_Report_2026-07-13.md`
-> for the full scope and the still-deferred items (real-order E2E needs the
-> staging project in `docs/staging-supabase-runbook.md`).
+> **2026-07-16 — Codex (GPT-5) order-workflow remediation** (MERGED & DEPLOYED,
+> `main` @ `b17e589`, CI all-green incl. migrations-local). A cross-cutting pass
+> addressing the ten Codex findings: guest idempotent replay redesigned around a
+> **client-held capability token** (SHA-256 hash stored server-side, replay
+> returns the original order unchanged — no rotation; migration
+> `20260713120000_guest_token_client_held.sql`, 9-arg `place_order`, applied to
+> prod during the editing phase and verified in a rolled-back transaction),
+> idempotency-key persistence, staging guard fail-closed, checkout/cart
+> quote-race guard + submit gating, hydration gate, typed order/track error
+> states, owner-scoped success fallback, order list/detail correctness, checkout
+> a11y (Select aria + payment radiogroup), and DOM-free zoom math. 631 tests;
+> browser-retested at 390/768/1440. It does not open/close a numbered stage —
+> see `docs/Nongorr_Remediation_Report_2026-07-13.md` (rev 2) for full scope and
+> the still-deferred items (#10 pinch matrix, #8 additive projections, real-order
+> E2E needs the staging project in `docs/staging-supabase-runbook.md`).
 
 ## Stage 1.5 — Security closure (current)
 
