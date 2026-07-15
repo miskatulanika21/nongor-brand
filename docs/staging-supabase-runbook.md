@@ -170,6 +170,17 @@ go through the committed-migration + CI + controlled-apply path already in use
 committed in the same session). Do **not** run `npm run staging:*` against prod;
 the guard blocks it, but the discipline matters.
 
+> ⚠️ **MCP `apply_migration` version drift → "Supabase Preview" red.** Applying a
+> migration through the Supabase MCP tool records it in
+> `supabase_migrations.schema_migrations` under the tool's **own** timestamp, not
+> your `supabase/migrations/<version>_<name>.sql` filename. The Supabase branching
+> "Supabase Preview" check then fails with _"Remote migration versions not found
+> in local migrations directory."_ After every MCP `apply_migration`, reconcile
+> the recorded version to the repo filename, e.g.
+> `UPDATE supabase_migrations.schema_migrations SET version='<file-version>' WHERE name='<name>' AND version='<mcp-version>';`
+> Verify remote == local by diffing `schema_migrations.version` against the
+> `ls supabase/migrations` timestamps (both counts equal, no orphans either way).
+
 ---
 
 ## 6. Safety mechanisms in this repo
