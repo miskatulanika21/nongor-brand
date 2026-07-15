@@ -4,7 +4,13 @@ import { trackOrderFn } from "@/lib/orders.api";
 import { CustomerStatusBadge, fmtDate } from "@/components/admin/order-status";
 import { MeasurementsList } from "@/components/orders/MeasurementsList";
 import { ClaimOrderCard } from "@/components/orders/ClaimOrderCard";
-import { CUSTOMER_STEPS, customerProgress, type TrackOrderResult } from "@/lib/orders-shared";
+import { OrderItemThumb } from "@/components/orders/OrderItemThumb";
+import {
+  CUSTOMER_STEPS,
+  customerProgress,
+  orderReadReasonMessage,
+  type TrackOrderResult,
+} from "@/lib/orders-shared";
 import { paymentMethodLabel } from "@/lib/checkout-shared";
 import { formatBDT, BRAND } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
@@ -19,7 +25,6 @@ import {
   MessageCircle,
   PackageSearch,
   Package,
-  PackageOpen,
   Check,
   AlertTriangle,
 } from "lucide-react";
@@ -90,25 +95,21 @@ function Track() {
         } else if (res.success) {
           // Reached the server but no order matched the capability pair.
           setState({ phase: "missing" });
+        } else if (res.reason === "not_found") {
+          // Wrong number/token → non-oracular "not found" (never reveals whether
+          // some other customer's order exists).
+          setState({ phase: "missing" });
         } else {
-          // A genuine failure (rate limit, bad origin, backend error) is NOT a
-          // "not found" — surface the real reason instead of misleading the user.
-          const msg = res.error ?? "";
-          if (/couldn't find|not found|no order|match/i.test(msg)) setState({ phase: "missing" });
-          else
-            setState({
-              phase: "error",
-              message: msg || "Something went wrong. Please try again in a moment.",
-            });
+          // A genuine failure (rate limit, bad origin, backend outage) is NOT a
+          // "not found" — surface the real, distinct reason with a retry (#6).
+          setState({
+            phase: "error",
+            message: orderReadReasonMessage(res.reason ?? "unavailable"),
+          });
         }
       })
       .catch(
-        () =>
-          live &&
-          setState({
-            phase: "error",
-            message: "Network error. Please check your connection and try again.",
-          }),
+        () => live && setState({ phase: "error", message: orderReadReasonMessage("network") }),
       );
     return () => {
       live = false;
@@ -330,22 +331,11 @@ function OrderTimeline({
           {items.map((i, idx) => (
             <div key={idx} className="space-y-2">
               <div className="flex gap-3">
-                {i.image ? (
-                  <img
-                    src={i.image}
-                    alt={i.name}
-                    loading="lazy"
-                    className="h-20 w-16 rounded object-cover"
-                  />
-                ) : (
-                  <div className="grid h-20 w-16 place-items-center rounded bg-muted text-muted-foreground">
-                    <PackageOpen className="h-5 w-5" />
-                  </div>
-                )}
+                <OrderItemThumb image={i.image} name={i.name} className="h-20 w-16" />
                 <div className="flex-1 text-sm">
                   <p className="font-medium text-foreground">{i.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    Qty {i.qty}
+                    {i.qty} × {formatBDT(i.unitPrice)}
                     {i.variantSize ? ` · ${i.variantSize}` : ""}
                   </p>
                 </div>

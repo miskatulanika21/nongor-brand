@@ -47,7 +47,8 @@ DECLARE
 BEGIN
   SELECT id INTO pid FROM public.products WHERE code = 'p4-prod';
 
-  r := api.place_order(lines, cu, 'dhaka', 'bkash', 's1-idem', NULL, NULL);
+  r := api.place_order(lines, cu, 'dhaka', 'bkash', 's1-idem', NULL, NULL,
+    p_guest_token_hash => encode(extensions.digest('tok-s1','sha256'),'hex'));
   oid := (r->>'order_id')::uuid; ono := r->>'order_no';
   IF (r->>'status') <> 'pending_payment' THEN RAISE EXCEPTION 'FAIL: s1 place status %', r; END IF;
   IF private.available_qty(pid, NULL) <> 48 THEN RAISE EXCEPTION 'FAIL: s1 reserve'; END IF;
@@ -158,7 +159,8 @@ DO $$
 DECLARE r jsonb; oid uuid; hash text;
   cu jsonb := jsonb_build_object('name','Rej','phone','01733333333','district','Dhaka','address','3 Rd');
 BEGIN
-  r := api.place_order('[{"code":"p4-prod","qty":1}]'::jsonb, cu, 'dhaka', 'bkash', 's3-idem', NULL, NULL);
+  r := api.place_order('[{"code":"p4-prod","qty":1}]'::jsonb, cu, 'dhaka', 'bkash', 's3-idem', NULL, NULL,
+    p_guest_token_hash => encode(extensions.digest('tok-s3','sha256'),'hex'));
   oid := (r->>'order_id')::uuid;
   SELECT guest_token_hash INTO hash FROM public.orders WHERE id = oid;
 
@@ -184,7 +186,8 @@ DECLARE r jsonb; oid uuid; pid uuid;
   cu jsonb := jsonb_build_object('name','Cod','phone','01744444444','district','Dhaka','address','4 Rd');
 BEGIN
   SELECT id INTO pid FROM public.products WHERE code = 'p4-prod';
-  r := api.place_order('[{"code":"p4-prod","qty":1}]'::jsonb, cu, 'dhaka', 'cod', 's4-idem', NULL, NULL);
+  r := api.place_order('[{"code":"p4-prod","qty":1}]'::jsonb, cu, 'dhaka', 'cod', 's4-idem', NULL, NULL,
+    p_guest_token_hash => encode(extensions.digest('tok-s4','sha256'),'hex'));
   oid := (r->>'order_id')::uuid;
   IF (r->>'status') <> 'pending_confirmation' THEN RAISE EXCEPTION 'FAIL: s4 place %', r; END IF;
 
@@ -206,14 +209,16 @@ DECLARE rx jsonb; ry jsonb; ox uuid; oy uuid; hx text; hy text; det jsonb;
   cu jsonb := jsonb_build_object('name','Dup','phone','01755555555','district','Dhaka','address','5 Rd');
 BEGIN
   -- order X: verified with TRX-DUP
-  rx := api.place_order('[{"code":"p4-prod","qty":1}]'::jsonb, cu, 'dhaka', 'bkash', 's5-x', NULL, NULL);
+  rx := api.place_order('[{"code":"p4-prod","qty":1}]'::jsonb, cu, 'dhaka', 'bkash', 's5-x', NULL, NULL,
+    p_guest_token_hash => encode(extensions.digest('tok-s5x','sha256'),'hex'));
   ox := (rx->>'order_id')::uuid;
   SELECT guest_token_hash INTO hx FROM public.orders WHERE id = ox;
   PERFORM api.submit_payment_evidence(ox, 'TRX-DUP', '01755555555', 'guest:'||hx, NULL);
   PERFORM api.verify_payment(ox, '00000000-0000-0000-0000-0000000000b1'::uuid);
 
   -- order Y: submits the SAME trx (same method) → duplicate warning true
-  ry := api.place_order('[{"code":"p4-prod","qty":1}]'::jsonb, cu, 'dhaka', 'bkash', 's5-y', NULL, NULL);
+  ry := api.place_order('[{"code":"p4-prod","qty":1}]'::jsonb, cu, 'dhaka', 'bkash', 's5-y', NULL, NULL,
+    p_guest_token_hash => encode(extensions.digest('tok-s5y','sha256'),'hex'));
   oy := (ry->>'order_id')::uuid;
   SELECT guest_token_hash INTO hy FROM public.orders WHERE id = oy;
   ry := api.submit_payment_evidence(oy, 'trx-dup', '01755555555', 'guest:'||hy, NULL);  -- case-insensitive
@@ -261,7 +266,8 @@ DO $$
 DECLARE r jsonb; oid uuid; v integer; got text;
   cu jsonb := jsonb_build_object('name','Grd','phone','01766666666','district','Dhaka','address','6 Rd');
 BEGIN
-  r := api.place_order('[{"code":"p4-prod","qty":1}]'::jsonb, cu, 'dhaka', 'cod', 's7-idem', NULL, NULL);
+  r := api.place_order('[{"code":"p4-prod","qty":1}]'::jsonb, cu, 'dhaka', 'cod', 's7-idem', NULL, NULL,
+    p_guest_token_hash => encode(extensions.digest('tok-s7','sha256'),'hex'));
   oid := (r->>'order_id')::uuid;
 
   -- illegal jump pending_confirmation → delivered
@@ -334,65 +340,109 @@ BEGIN
 END $$;
 
 -- ============================================================
--- §10 — idempotent-replay recovery contract (order-workflow #2)
---   A guest retry must return the FULL placement contract (totals) AND a
---   working tracking credential; the signed-in replay returns totals with no
---   guest token; a mismatched payload on the same key still conflicts.
+-- §10 — client-held guest token: idempotent replay does NOT rotate
+--   (order-workflow #1 + #2). The client generates the token and sends only its
+--   hash; place_order returns NO token. A replay preserves totals, issues no
+--   token, and — critically — leaves guest_token_hash UNCHANGED so a saved or
+--   shared tracking link (and concurrent retries) stay valid. Scope is bound to
+--   the original actor; a guest placement without a token hash is rejected; a
+--   mismatched payload on the same key still conflicts.
+--
+--   Concurrency note: true parallelism can't be expressed in one SQL transaction,
+--   but the safety proof is structural — the unique idempotency key serializes
+--   writers, and the replay branch performs NO writes (asserted below via the
+--   unchanged hash), so no ordering of concurrent retries can invalidate a token.
 -- ============================================================
 DO $$
 DECLARE
-  r1 jsonb; r2 jsonb; oid uuid; ono text; tok1 text; tok2 text; h_before text; h_after text;
+  r1 jsonb; r2 jsonb; oid uuid; ono text; h_before text; h_after text;
+  raw text := 'client-token-s10-raw-value-0123456789';
+  cli_hash text := encode(extensions.digest('client-token-s10-raw-value-0123456789','sha256'),'hex');
   cu jsonb := jsonb_build_object('name','Replay','phone','01788888888','district','Dhaka','address','8 Rd');
   lines jsonb := '[{"code":"p4-prod","qty":1}]'::jsonb;
 BEGIN
-  -- fresh guest place: full totals + a token whose hash is what's stored
-  r1  := api.place_order(lines, cu, 'dhaka', 'cod', 's10-idem', NULL, NULL);
-  oid := (r1->>'order_id')::uuid; ono := r1->>'order_no'; tok1 := r1->>'guest_token';
-  IF tok1 IS NULL THEN RAISE EXCEPTION 'FAIL: s10 fresh missing guest_token %', r1; END IF;
+  -- fresh guest place: full totals, NO server token; the stored hash is the
+  -- client's own, and the client's raw token tracks the order.
+  r1  := api.place_order(lines, cu, 'dhaka', 'cod', 's10-idem', NULL, NULL, p_guest_token_hash => cli_hash);
+  oid := (r1->>'order_id')::uuid; ono := r1->>'order_no';
   IF (r1->>'replayed')::bool THEN RAISE EXCEPTION 'FAIL: s10 fresh flagged replayed'; END IF;
+  IF (r1->'guest_token') <> 'null'::jsonb THEN RAISE EXCEPTION 'FAIL: s10 fresh leaked a token %', r1; END IF;
   IF (r1->>'subtotal')::int <> 500 THEN RAISE EXCEPTION 'FAIL: s10 fresh subtotal %', r1; END IF;
   IF (r1->>'total')::int <= 500 THEN RAISE EXCEPTION 'FAIL: s10 fresh total (no shipping) %', r1; END IF;
   SELECT guest_token_hash INTO h_before FROM public.orders WHERE id = oid;
-  IF encode(extensions.digest(tok1,'sha256'),'hex') <> h_before THEN
-    RAISE EXCEPTION 'FAIL: s10 token1 does not hash to stored hash'; END IF;
-  IF api.track_order(ono, h_before) IS NULL THEN RAISE EXCEPTION 'FAIL: s10 token1 not trackable'; END IF;
+  IF h_before <> cli_hash THEN RAISE EXCEPTION 'FAIL: s10 stored hash is not the client hash'; END IF;
+  -- the client's raw token hashes (server-side, in track wrapper) to the stored hash
+  IF encode(extensions.digest(raw,'sha256'),'hex') <> h_before THEN
+    RAISE EXCEPTION 'FAIL: s10 raw token does not hash to stored hash'; END IF;
+  IF api.track_order(ono, h_before) IS NULL THEN RAISE EXCEPTION 'FAIL: s10 token not trackable'; END IF;
 
-  -- REPLAY (same key + payload): full contract + a re-issued, working token
-  r2 := api.place_order(lines, cu, 'dhaka', 'cod', 's10-idem', NULL, NULL);
+  -- REPLAY (same key + payload): totals preserved, NO token, hash UNCHANGED.
+  r2 := api.place_order(lines, cu, 'dhaka', 'cod', 's10-idem', NULL, NULL, p_guest_token_hash => cli_hash);
   IF NOT (r2->>'replayed')::bool THEN RAISE EXCEPTION 'FAIL: s10 replay not flagged %', r2; END IF;
   IF (r2->>'order_id') <> (r1->>'order_id') THEN RAISE EXCEPTION 'FAIL: s10 replay different order'; END IF;
   IF (r2->>'total')::int <> (r1->>'total')::int THEN RAISE EXCEPTION 'FAIL: s10 replay lost total %', r2; END IF;
   IF (r2->>'subtotal')::int <> (r1->>'subtotal')::int THEN RAISE EXCEPTION 'FAIL: s10 replay lost subtotal'; END IF;
-  tok2 := r2->>'guest_token';
-  IF tok2 IS NULL THEN RAISE EXCEPTION 'FAIL: s10 replay lost guest_token (credential loss) %', r2; END IF;
+  IF (r2->'guest_token') <> 'null'::jsonb THEN RAISE EXCEPTION 'FAIL: s10 replay leaked a token %', r2; END IF;
   SELECT guest_token_hash INTO h_after FROM public.orders WHERE id = oid;
-  IF h_after = h_before THEN RAISE EXCEPTION 'FAIL: s10 replay did not rotate the token'; END IF;
-  IF encode(extensions.digest(tok2,'sha256'),'hex') <> h_after THEN
-    RAISE EXCEPTION 'FAIL: s10 token2 does not hash to rotated hash'; END IF;
-  IF api.track_order(ono, h_after) IS NULL THEN RAISE EXCEPTION 'FAIL: s10 re-issued token not trackable'; END IF;
+  IF h_after <> h_before THEN RAISE EXCEPTION 'FAIL: s10 replay ROTATED the hash (link invalidated)'; END IF;
+  -- the ORIGINAL link still works after the replay
+  IF api.track_order(ono, h_before) IS NULL THEN RAISE EXCEPTION 'FAIL: s10 original link broke after replay'; END IF;
+
+  -- a REPLAY under a signed-in actor (different scope) is rejected
+  BEGIN
+    PERFORM api.place_order(lines, cu, 'dhaka', 'cod', 's10-idem',
+      '00000000-0000-0000-0000-0000000000b2'::uuid, NULL, p_guest_token_hash => cli_hash);
+    RAISE EXCEPTION 'FAIL: s10 cross-scope replay allowed';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'idempotency_conflict' THEN RAISE EXCEPTION 'FAIL: s10 scope err=%', SQLERRM; END IF;
+  END;
 
   -- same key, DIFFERENT payload → still a conflict (identity is preserved)
   BEGIN
-    PERFORM api.place_order('[{"code":"p4-prod","qty":2}]'::jsonb, cu, 'dhaka', 'cod', 's10-idem', NULL, NULL);
+    PERFORM api.place_order('[{"code":"p4-prod","qty":2}]'::jsonb, cu, 'dhaka', 'cod', 's10-idem',
+      NULL, NULL, p_guest_token_hash => cli_hash);
     RAISE EXCEPTION 'FAIL: s10 mismatched payload did not conflict';
   EXCEPTION WHEN OTHERS THEN
     IF SQLERRM <> 'idempotency_conflict' THEN RAISE EXCEPTION 'FAIL: s10 conflict err=%', SQLERRM; END IF;
   END;
+
+  -- a guest placement with NO token hash is rejected (would be untrackable)
+  BEGIN
+    PERFORM api.place_order(lines, cu, 'dhaka', 'cod', 's10-notoken', NULL, NULL);
+    RAISE EXCEPTION 'FAIL: s10 guest without token hash allowed';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'guest_token_required' THEN RAISE EXCEPTION 'FAIL: s10 notoken err=%', SQLERRM; END IF;
+  END;
+
+  -- a malformed token hash is rejected
+  BEGIN
+    PERFORM api.place_order(lines, cu, 'dhaka', 'cod', 's10-badtoken', NULL, NULL,
+      p_guest_token_hash => 'not-a-valid-sha256');
+    RAISE EXCEPTION 'FAIL: s10 malformed token hash allowed';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'guest_token_required' THEN RAISE EXCEPTION 'FAIL: s10 badtoken err=%', SQLERRM; END IF;
+  END;
 END $$;
 
--- §10b — signed-in replay: totals preserved, no guest token leaked
+-- §10b — signed-in replay: totals preserved, never a guest token, deletion-safe
 DO $$
 DECLARE
-  r1 jsonb; r2 jsonb;
+  r1 jsonb; r2 jsonb; oid uuid; th text;
   cu jsonb := jsonb_build_object('name','ReplayU','phone','01799999999','district','Dhaka','address','9 Rd');
 BEGIN
+  -- a signed-in order carries NO guest token hash even if the client sends one
   r1 := api.place_order('[{"code":"p4-prod","qty":1}]'::jsonb, cu, 'dhaka', 'cod', 's10u-idem',
-    '00000000-0000-0000-0000-0000000000b2'::uuid, NULL);
+    '00000000-0000-0000-0000-0000000000b2'::uuid, NULL,
+    p_guest_token_hash => encode(extensions.digest('ignored','sha256'),'hex'));
+  oid := (r1->>'order_id')::uuid;
+  SELECT guest_token_hash INTO th FROM public.orders WHERE id = oid;
+  IF th IS NOT NULL THEN RAISE EXCEPTION 'FAIL: s10u signed-in order stored a guest hash (deletion risk)'; END IF;
+
   r2 := api.place_order('[{"code":"p4-prod","qty":1}]'::jsonb, cu, 'dhaka', 'cod', 's10u-idem',
     '00000000-0000-0000-0000-0000000000b2'::uuid, NULL);
   IF NOT (r2->>'replayed')::bool THEN RAISE EXCEPTION 'FAIL: s10u replay not flagged %', r2; END IF;
   IF (r2->>'total')::int <> (r1->>'total')::int THEN RAISE EXCEPTION 'FAIL: s10u replay lost total'; END IF;
-  IF (r2->>'guest_token') IS NOT NULL THEN
+  IF (r2->'guest_token') <> 'null'::jsonb THEN
     RAISE EXCEPTION 'FAIL: s10u signed-in replay leaked a guest token'; END IF;
 END $$;
 

@@ -289,10 +289,12 @@ BEGIN
     RAISE EXCEPTION 'FAIL: quote %', q; END IF;
   tok := q->>'quote_token';
 
-  -- place a guest COD order with the matching token
-  r := api.place_order(lines2, cust, 'dhaka', 'cod', 'p3-idem-1', NULL, tok);
+  -- place a guest COD order with the matching token (client supplies its hash;
+  -- the response carries NO token — the client holds the raw one).
+  r := api.place_order(lines2, cust, 'dhaka', 'cod', 'p3-idem-1', NULL, tok,
+    p_guest_token_hash => encode(extensions.digest('tok-p3idem','sha256'),'hex'));
   IF (r->>'total')::int <> 1080 OR (r->>'status') <> 'pending_confirmation'
-     OR (r->>'guest_token') IS NULL OR (r->>'replayed')::bool THEN RAISE EXCEPTION 'FAIL: place %', r; END IF;
+     OR (r->'guest_token') <> 'null'::jsonb OR (r->>'replayed')::bool THEN RAISE EXCEPTION 'FAIL: place %', r; END IF;
   IF NOT EXISTS (SELECT 1 FROM public.order_items WHERE order_id=(r->>'order_id')::uuid AND qty=2 AND unit_price=500)
      OR NOT EXISTS (SELECT 1 FROM public.inventory_reservations WHERE order_id=(r->>'order_id')::uuid AND status='active' AND qty=2)
      OR NOT EXISTS (SELECT 1 FROM public.payments WHERE order_id=(r->>'order_id')::uuid AND amount=1080 AND status='pending')
@@ -363,7 +365,8 @@ BEGIN
   -- place a custom order: succeeds (no out_of_stock), records unit=2100, creates
   -- NO reservation, and never touches ready-size stock.
   av_before := private.available_qty(pid, NULL);
-  r := api.place_order('[{"code":"o-cust","size":"Custom","qty":2}]'::jsonb, cust, 'dhaka', 'bkash', 'p3-cust-1', NULL, NULL);
+  r := api.place_order('[{"code":"o-cust","size":"Custom","qty":2}]'::jsonb, cust, 'dhaka', 'bkash', 'p3-cust-1', NULL, NULL,
+    p_guest_token_hash => encode(extensions.digest('tok-p3cust','sha256'),'hex'));
   IF (r->>'status') <> 'pending_payment' OR (r->>'total')::int <> 4200 THEN
     RAISE EXCEPTION 'FAIL: custom place %', r; END IF;
   IF NOT EXISTS (SELECT 1 FROM public.order_items WHERE order_id=(r->>'order_id')::uuid
@@ -383,7 +386,8 @@ BEGIN
 
   -- GAP-07: the reservation/hold window honours site_settings.order_hold_hours.
   UPDATE public.site_settings SET order_hold_hours = 48 WHERE id = 1;
-  r := api.place_order('[{"code":"o-ord","qty":1}]'::jsonb, cust, 'dhaka', 'cod', 'p3-hold-48', NULL, NULL);
+  r := api.place_order('[{"code":"o-ord","qty":1}]'::jsonb, cust, 'dhaka', 'cod', 'p3-hold-48', NULL, NULL,
+    p_guest_token_hash => encode(extensions.digest('tok-p3hold','sha256'),'hex'));
   SELECT round(extract(epoch FROM (reservation_expires_at - now())) / 3600) INTO hrs
     FROM public.orders WHERE id = (r->>'order_id')::uuid;
   IF hrs <> 48 THEN RAISE EXCEPTION 'FAIL: order_hold_hours ignored (got % h, want 48)', hrs; END IF;
@@ -423,7 +427,8 @@ BEGIN
 
   -- place percent: discount 200, coupon_code stored, usage row + counter bump,
   -- balanced-total invariant holds.
-  r := api.place_order(lines, cust, 'dhaka', 'cod', 'p5-pct', NULL, NULL, 'SAVE10');
+  r := api.place_order(lines, cust, 'dhaka', 'cod', 'p5-pct', NULL, NULL, 'SAVE10',
+    encode(extensions.digest('tok-p5pct','sha256'),'hex'));
   IF (r->>'discount')::int <> 200 OR (r->>'total')::int <> 1880 OR (r->>'coupon') <> 'SAVE10' THEN
     RAISE EXCEPTION 'FAIL: place percent %', r; END IF;
   IF NOT EXISTS (SELECT 1 FROM public.orders WHERE id=(r->>'order_id')::uuid
@@ -436,13 +441,15 @@ BEGIN
   IF n <> 1 THEN RAISE EXCEPTION 'FAIL: percent usage_count=% (want 1)', n; END IF;
 
   -- fixed: 300 off → total 1780.
-  r := api.place_order(lines, cust, 'dhaka', 'cod', 'p5-fix', NULL, NULL, 'FLAT300');
+  r := api.place_order(lines, cust, 'dhaka', 'cod', 'p5-fix', NULL, NULL, 'FLAT300',
+    encode(extensions.digest('tok-p5fix','sha256'),'hex'));
   IF (r->>'discount')::int <> 300 OR (r->>'total')::int <> 1780 THEN
     RAISE EXCEPTION 'FAIL: place fixed %', r; END IF;
 
   -- free_shipping: discount 0, shipping waived to 0, total 2000; usage records the
   -- 80 waived.
-  r := api.place_order(lines, cust, 'dhaka', 'cod', 'p5-free', NULL, NULL, 'FREESHIP');
+  r := api.place_order(lines, cust, 'dhaka', 'cod', 'p5-free', NULL, NULL, 'FREESHIP',
+    encode(extensions.digest('tok-p5free','sha256'),'hex'));
   IF (r->>'discount')::int <> 0 OR (r->>'shipping_fee')::int <> 0 OR (r->>'total')::int <> 2000 THEN
     RAISE EXCEPTION 'FAIL: place free_shipping %', r; END IF;
   IF NOT EXISTS (SELECT 1 FROM public.coupon_usages WHERE coupon_code='FREESHIP' AND amount=80) THEN
@@ -467,7 +474,8 @@ BEGIN
     IF got <> 'coupon_not_eligible' THEN RAISE EXCEPTION 'FAIL: newbie=%', got; END IF; END;
 
   -- global usage_limit: ONCE (limit 1) — first redeems, second is exhausted.
-  r := api.place_order(lines, cust, 'dhaka', 'cod', 'p5-once1', NULL, NULL, 'ONCE');
+  r := api.place_order(lines, cust, 'dhaka', 'cod', 'p5-once1', NULL, NULL, 'ONCE',
+    encode(extensions.digest('tok-p5once','sha256'),'hex'));
   IF (r->>'discount')::int <> 100 THEN RAISE EXCEPTION 'FAIL: ONCE first redeem %', r; END IF;
   BEGIN PERFORM api.place_order(lines, cust, 'dhaka', 'cod', 'p5-once2', NULL, NULL, 'ONCE');
         RAISE EXCEPTION 'FAIL: usage_limit exceeded accepted';
@@ -523,9 +531,9 @@ DO $$
 BEGIN
   IF NOT has_function_privilege('anon', 'api.quote_order(jsonb,text,text,uuid)', 'EXECUTE') THEN
     RAISE EXCEPTION 'FAIL: anon cannot call quote_order'; END IF;
-  IF has_function_privilege('anon', 'api.place_order(jsonb,jsonb,text,text,text,uuid,text,text)', 'EXECUTE') THEN
+  IF has_function_privilege('anon', 'api.place_order(jsonb,jsonb,text,text,text,uuid,text,text,text)', 'EXECUTE') THEN
     RAISE EXCEPTION 'FAIL: anon can call place_order'; END IF;
-  IF has_function_privilege('authenticated', 'api.place_order(jsonb,jsonb,text,text,text,uuid,text,text)', 'EXECUTE') THEN
+  IF has_function_privilege('authenticated', 'api.place_order(jsonb,jsonb,text,text,text,uuid,text,text,text)', 'EXECUTE') THEN
     RAISE EXCEPTION 'FAIL: authenticated can call place_order'; END IF;
   IF has_function_privilege('anon', 'api.list_coupons(uuid)', 'EXECUTE')
      OR has_function_privilege('authenticated', 'api.upsert_coupon(uuid,jsonb)', 'EXECUTE')

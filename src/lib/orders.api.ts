@@ -32,6 +32,18 @@ async function messageFromOrderError(e: unknown): Promise<string> {
   return "Could not complete the change. Please try again.";
 }
 
+/**
+ * Classify a customer read failure into a distinct, non-oracular reason (#6).
+ * A genuine "not found" and an "exists but not yours" both surface as
+ * `order_not_found` from the RPC → `not_found`, so existence is never revealed.
+ * Anything else is treated as a transient backend problem (`unavailable`).
+ */
+async function reasonFromOrderError(e: unknown): Promise<"not_found" | "unavailable"> {
+  const { OrderError } = await import("@/lib/server/orders.server");
+  if (e instanceof OrderError && e.code === "order_not_found") return "not_found";
+  return "unavailable";
+}
+
 // ── Reads ────────────────────────────────────────────────────────────────────
 
 export const listOrdersFn = createServerFn({ method: "GET" })
@@ -213,6 +225,7 @@ export const listMyOrdersFn = createServerFn({ method: "GET" })
     if (!idn.ok) {
       return {
         success: false as const,
+        reason: "unauthenticated" as const,
         error: "Please sign in to view your orders.",
         orders: [],
         total: 0,
@@ -224,8 +237,11 @@ export const listMyOrdersFn = createServerFn({ method: "GET" })
       const res = await listMyOrders(idn.identity.userId, data.limit, data.offset);
       return { success: true as const, orders: res.orders, total: res.total };
     } catch {
+      // Signed in, but the read failed — a backend problem, NOT a signed-out
+      // state (#6). The UI must offer retry, not a sign-in prompt.
       return {
         success: false as const,
+        reason: "unavailable" as const,
         error: "Could not load your orders.",
         orders: [],
         total: 0,
@@ -244,7 +260,12 @@ export const getMyOrderFn = createServerFn({ method: "GET" })
     const supabase = createServerSupabaseClient();
     const idn = await getAuthenticatedIdentity({ strict: false, client: supabase });
     if (!idn.ok) {
-      return { success: false as const, error: "Please sign in to view this order.", order: null };
+      return {
+        success: false as const,
+        reason: "unauthenticated" as const,
+        error: "Please sign in to view this order.",
+        order: null,
+      };
     }
 
     const { getMyOrder } = await import("@/lib/server/orders.server");
@@ -252,7 +273,12 @@ export const getMyOrderFn = createServerFn({ method: "GET" })
       const order = await getMyOrder(data.orderId, idn.identity.userId);
       return { success: true as const, order };
     } catch (e) {
-      return { success: false as const, error: await messageFromOrderError(e), order: null };
+      return {
+        success: false as const,
+        reason: await reasonFromOrderError(e),
+        error: await messageFromOrderError(e),
+        order: null,
+      };
     }
   });
 
@@ -266,19 +292,34 @@ export const trackOrderFn = createServerFn({ method: "POST" })
 
     const env = getPublicSupabaseEnv();
     if (!checkCsrfOrigin(env.siteUrl)) {
-      return { success: false as const, error: "Invalid request origin.", result: null };
+      return {
+        success: false as const,
+        reason: "origin_rejected" as const,
+        error: "Invalid request origin.",
+        result: null,
+      };
     }
     const rl = await checkIndependentRateLimit("trackOrder", { ip: getClientIp() });
-    if (!rl.allowed) return { success: false as const, error: rateLimitMessage(), result: null };
+    if (!rl.allowed) {
+      return {
+        success: false as const,
+        reason: "rate_limited" as const,
+        error: rateLimitMessage(),
+        result: null,
+      };
+    }
 
     const { trackOrder } = await import("@/lib/server/orders.server");
     try {
       const result = await trackOrder(data.orderNo, data.token);
       return { success: true as const, result };
-    } catch {
-      // Any failure (wrong number/token) collapses to one non-oracular message.
+    } catch (e) {
+      // A wrong number/token both surface as not_found (non-oracular — existence
+      // is never revealed); a genuine backend fault surfaces as unavailable so
+      // the UI can offer a retry instead of "no such order" (#6).
       return {
         success: false as const,
+        reason: await reasonFromOrderError(e),
         error: "We couldn't find an order matching those details.",
         result: null,
       };

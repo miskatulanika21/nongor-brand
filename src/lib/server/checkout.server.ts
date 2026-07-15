@@ -70,6 +70,8 @@ export interface PlaceOrderArgs {
   quoteToken?: string;
   /** Optional coupon code; re-validated + consumed under the coupon row lock. */
   coupon?: string | null;
+  /** sha256 hex of the client-held guest token (guest checkout only). */
+  guestTokenHash?: string | null;
 }
 
 /** Create an order (service-role; api.place_order is REVOKE-d from anon/auth). */
@@ -84,6 +86,7 @@ export async function placeOrder(args: PlaceOrderArgs): Promise<PlaceOrderResult
     p_actor: args.actorId,
     p_quote_token: args.quoteToken ?? null,
     p_coupon_code: args.coupon ?? null,
+    p_guest_token_hash: args.guestTokenHash ?? null,
   });
   if (error) throwCheckoutError(error);
   return data as PlaceOrderResult;

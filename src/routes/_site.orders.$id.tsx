@@ -3,7 +3,15 @@ import { useEffect, useState } from "react";
 import { getMyOrderFn } from "@/lib/orders.api";
 import { CustomerStatusBadge, fmtDate } from "@/components/admin/order-status";
 import { MeasurementsList } from "@/components/orders/MeasurementsList";
-import { CUSTOMER_STEPS, customerProgress, type MyOrderDetail } from "@/lib/orders-shared";
+import { OrderItemThumb } from "@/components/orders/OrderItemThumb";
+import {
+  CUSTOMER_STEPS,
+  customerProgress,
+  orderReadReasonMessage,
+  orderReadReasonRetryable,
+  type MyOrderDetail,
+  type OrderReadReason,
+} from "@/lib/orders-shared";
 import { paymentMethodLabel } from "@/lib/checkout-shared";
 import { formatBDT, BRAND } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
@@ -11,14 +19,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/states";
 import { cn } from "@/lib/utils";
-import {
-  MapPin,
-  MessageCircle,
-  Check,
-  AlertTriangle,
-  PackageSearch,
-  PackageOpen,
-} from "lucide-react";
+import { MapPin, MessageCircle, Check, AlertTriangle, PackageSearch } from "lucide-react";
 
 export const Route = createFileRoute("/_site/orders/$id")({
   head: ({ params }) => ({
@@ -37,19 +38,35 @@ const UUID_RE = /^[0-9a-f-]{36}$/i;
 type LoadState =
   | { phase: "loading" }
   | { phase: "ready"; order: MyOrderDetail }
-  | { phase: "missing"; needsAuth: boolean };
+  | { phase: "error"; reason: OrderReadReason };
 
-function NotFoundPanel({ needsAuth, next }: { needsAuth: boolean; next: string }) {
+function OrderErrorPanel({
+  reason,
+  next,
+  onRetry,
+}: {
+  reason: OrderReadReason;
+  next: string;
+  onRetry: () => void;
+}) {
+  const needsAuth = reason === "unauthenticated";
+  const retryable = orderReadReasonRetryable(reason);
+  const title = needsAuth
+    ? "Sign in to view this order"
+    : reason === "not_found"
+      ? "Order not found"
+      : "We couldn't load this order";
+  const description = needsAuth
+    ? "This order is tied to an account. Sign in to view it, or track a guest order with its tracking code."
+    : reason === "not_found"
+      ? "We couldn't find this order on your account."
+      : orderReadReasonMessage(reason);
   return (
-    <div className="mx-auto max-w-2xl px-4 py-16">
+    <div className="mx-auto max-w-2xl px-4 py-16" role="alert">
       <EmptyState
         icon={<PackageSearch className="h-6 w-6" />}
-        title={needsAuth ? "Sign in to view this order" : "Order not found"}
-        description={
-          needsAuth
-            ? "This order is tied to an account. Sign in to view it, or track a guest order with its tracking code."
-            : "We couldn't find this order on your account."
-        }
+        title={title}
+        description={description}
         action={
           <div className="flex flex-wrap justify-center gap-2">
             {needsAuth && (
@@ -59,6 +76,7 @@ function NotFoundPanel({ needsAuth, next }: { needsAuth: boolean; next: string }
                 </Link>
               </Button>
             )}
+            {retryable && <Button onClick={onRetry}>Retry</Button>}
             <Button variant="outline" asChild>
               <Link to="/orders">My Orders</Link>
             </Button>
@@ -75,25 +93,28 @@ function NotFoundPanel({ needsAuth, next }: { needsAuth: boolean; next: string }
 function OrderDetails() {
   const { id } = Route.useParams();
   const [state, setState] = useState<LoadState>({ phase: "loading" });
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let live = true;
     setState({ phase: "loading" });
     if (!UUID_RE.test(id)) {
-      setState({ phase: "missing", needsAuth: false });
+      setState({ phase: "error", reason: "not_found" });
       return;
     }
     void getMyOrderFn({ data: { orderId: id } })
       .then((res) => {
         if (!live) return;
         if (res.success) setState({ phase: "ready", order: res.order });
-        else setState({ phase: "missing", needsAuth: /sign in/i.test(res.error ?? "") });
+        // A distinct reason (#6): only `unauthenticated` prompts sign-in; a
+        // backend fault is `unavailable` (retryable), never a false "not found".
+        else setState({ phase: "error", reason: res.reason ?? "unavailable" });
       })
-      .catch(() => live && setState({ phase: "missing", needsAuth: false }));
+      .catch(() => live && setState({ phase: "error", reason: "network" }));
     return () => {
       live = false;
     };
-  }, [id]);
+  }, [id, reloadKey]);
 
   if (state.phase === "loading") {
     return (
@@ -104,8 +125,14 @@ function OrderDetails() {
       </div>
     );
   }
-  if (state.phase === "missing")
-    return <NotFoundPanel needsAuth={state.needsAuth} next={`/orders/${id}`} />;
+  if (state.phase === "error")
+    return (
+      <OrderErrorPanel
+        reason={state.reason}
+        next={`/orders/${id}`}
+        onRetry={() => setReloadKey((k) => k + 1)}
+      />
+    );
 
   const { order, items, payment } = state.order;
   const { stepIndex, exception } = customerProgress(order.status);
@@ -127,22 +154,11 @@ function OrderDetails() {
           {items.map((i, idx) => (
             <div key={idx} className="space-y-2">
               <div className="flex gap-3">
-                {i.image ? (
-                  <img
-                    src={i.image}
-                    alt={i.name}
-                    loading="lazy"
-                    className="h-20 w-16 rounded object-cover"
-                  />
-                ) : (
-                  <div className="grid h-20 w-16 place-items-center rounded bg-muted text-muted-foreground">
-                    <PackageOpen className="h-5 w-5" />
-                  </div>
-                )}
+                <OrderItemThumb image={i.image} name={i.name} className="h-20 w-16" />
                 <div className="flex-1 text-sm">
                   <p className="font-medium text-foreground">{i.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    Qty {i.qty}
+                    {i.qty} × {formatBDT(i.unitPrice)}
                     {i.variantSize ? ` · ${i.variantSize}` : ""}
                   </p>
                 </div>
@@ -191,7 +207,14 @@ function OrderDetails() {
           <h3 className="mb-2 font-display text-lg">Payment</h3>
           <p className="text-muted-foreground">
             {paymentMethodLabel(order.paymentMethod)}
-            {payment ? ` · ${payment.status}` : ""}
+            {payment ? (
+              <>
+                {" · "}
+                <span className="capitalize">{payment.status}</span>
+              </>
+            ) : (
+              ""
+            )}
           </p>
           {payment?.trxId && (
             <p className="mt-1">

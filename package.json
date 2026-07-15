@@ -20,9 +20,9 @@
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run test && npm run build",
     "staging:link": "node scripts/staging-link.mjs",
     "staging:guard": "node scripts/staging-guard.mjs",
-    "staging:migrations": "node scripts/staging-guard.mjs && npx supabase migration list --linked",
-    "staging:push": "node scripts/staging-guard.mjs && npx supabase db push",
-    "staging:reset": "node scripts/staging-guard.mjs && npx supabase db reset --linked"
+    "staging:migrations": "node scripts/staging-guard.mjs && npx -y supabase@2.33.9 migration list --linked",
+    "staging:push": "node scripts/staging-guard.mjs && npx -y supabase@2.33.9 db push",
+    "staging:reset": "node scripts/staging-guard.mjs && npx -y supabase@2.33.9 db reset --linked"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

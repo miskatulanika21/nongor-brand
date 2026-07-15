@@ -1,8 +1,8 @@
 # Staging Supabase Runbook
 
 **Purpose.** Give Nongorr a **disposable, isolated** Supabase environment so the
-migration-and-order items (#2 idempotent-replay token, #3 server-verified
-success receipt, #4 verified product summary) and the full order E2E (place →
+migration-and-order items (#1/#2 client-held guest token + no-rotation replay,
+#3 server-verified success receipt, #4 verified product summary) and the full order E2E (place →
 success → track → claim → `/orders/:id`) can be built and verified **without ever
 touching production**.
 
@@ -68,9 +68,9 @@ npm run staging:push        # guard → supabase db push  (replays all migration
 npm run staging:migrations  # verify parity: every local migration shows Applied
 ```
 
-> Note: local has 71 migration files; production reports 73 applied rows (old
-> historical bookkeeping — the _tail_ matches). After `staging:push`, confirm the
-> schema is equivalent with the `*_db.test.sql` suites (§4) rather than the raw count.
+> Note: production may report a slightly different applied-migration count than
+> the local file list (historical bookkeeping rows). After `staging:push`, confirm
+> the schema is equivalent with the `*_db.test.sql` suites (§4) rather than the raw count.
 
 ### 2.5 Seed disposable catalog fixtures
 
@@ -78,9 +78,13 @@ The order flow needs at least one buyable product. Point the seed script at
 staging (it reads the same env vars the app does):
 
 ```bash
-# temporary: use staging creds for this shell only
+# temporary: use staging creds for this shell only. seed-catalog refuses to run
+# without SEED_CONFIRM=1 (and, if set, asserts EXPECTED_SUPABASE_REF matches the
+# project ref) — this is the guard against accidentally seeding the wrong project.
 SUPABASE_SERVICE_ROLE_KEY=<staging-service-role> \
 VITE_SUPABASE_URL=<staging-url> \
+EXPECTED_SUPABASE_REF=<staging-ref> \
+SEED_CONFIRM=1 \
   npm run seed-catalog
 ```
 
@@ -91,9 +95,14 @@ the admin board during E2E.
 
 ## 3. Running the app against staging (E2E)
 
-Vite loads `.env.local` **even in `--mode staging`, and it wins** — so do NOT
-rely on a `--mode staging` flag while `.env.local` holds prod values. Use the
-explicit, unambiguous swap:
+Vite env precedence (highest → lowest) is:
+`.env.[mode].local` › `.env.[mode]` › `.env.local` › `.env`. So a `.env.staging`
+mode file **does** override `.env.local` for the keys it defines — but `.env.local`
+is still loaded, so **any key you forget to set in `.env.staging` silently keeps
+its production value** (a mixed prod/staging config, which is dangerous). To
+remove all ambiguity, don't rely on `--mode staging`; use the explicit full swap
+below (and note a stray `.env.local` or `.env.staging.local` could still override
+it — the swap sidesteps that entirely):
 
 ```bash
 # 1. Back up the prod-pointing local env
@@ -112,7 +121,10 @@ mv .env.local.prod.bak .env.local
 
 Because staging is a throwaway project, placing real orders, uploading payment
 evidence, and creating accounts here is safe. Clean up between runs with
-`npm run staging:reset` (wipes + replays migrations + re-seeds).
+`npm run staging:reset` — this **wipes the DB and replays every migration** (and
+runs `supabase/seed.sql` if present). It does **NOT** run the TypeScript catalog
+seed (`scripts/seed-catalog.ts`), so **re-run the §2.5 seed command after a
+reset** to restore buyable products.
 
 ---
 
@@ -137,10 +149,14 @@ npm run staging:push
 
 Run the SQL suites against staging directly (optional — CI already does this on
 Docker). You need the staging DB connection string (Dashboard → Settings →
-Database → Connection string, "URI"), then:
+Database → Connection string, "URI"). The **place_order + client-held-token
+replay** contract lives in `pass4_db.test.sql` (§10) with the pricing/coupon
+placement in `pass3_db.test.sql`, so run those (each is a self-contained
+`BEGIN…ROLLBACK`, so they leave no data behind):
 
 ```bash
-psql "$STAGING_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/stage7_db.test.sql
+psql "$STAGING_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/pass3_db.test.sql
+psql "$STAGING_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/pass4_db.test.sql
 ```
 
 ---
@@ -158,10 +174,16 @@ the guard blocks it, but the discipline matters.
 
 ## 6. Safety mechanisms in this repo
 
-- `scripts/staging-guard.mjs` — refuses to run if the linked project is the prod
-  ref (`xomjxtmhkglhuiccekld`) or doesn't match `STAGING_PROJECT_REF`. Every
-  `staging:*` destructive script runs it first.
-- `scripts/staging-link.mjs` — refuses to link the prod ref.
+- `scripts/staging-guard.mjs` — **fails closed**. It passes ONLY when: `.env.staging`
+  exists with a well-formed, non-placeholder, non-prod `STAGING_PROJECT_REF`; a
+  project is linked whose ref is well-formed, non-prod, and **exactly equals**
+  `STAGING_PROJECT_REF`; and `.env.staging`'s `VITE_SUPABASE_URL` resolves to that
+  same staging ref (and not the prod ref). Any missing/ambiguous/malformed value
+  aborts. Every `staging:*` destructive script runs it first. Unit-tested in
+  `src/lib/__tests__/staging-guard.test.ts`.
+- `scripts/staging-link.mjs` — refuses the prod/placeholder/malformed ref, invokes
+  the CLI **without `shell: true`** (array args → no shell injection), and pins the
+  Supabase CLI to the same version CI uses (`2.33.9`).
 - `.env.staging` is gitignored; only `.env.staging.example` is committed.
 
 ## 7. Teardown
