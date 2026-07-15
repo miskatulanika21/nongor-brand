@@ -32,6 +32,7 @@ import {
   type MyOrderDetail,
   type MyOrderLine,
   type MyOrderHistoryEntry,
+  type OrderCourierInfo,
   type TrackOrderResult,
   type ClaimGuestOrderResult,
   type CustomMeasurements,
@@ -488,6 +489,7 @@ interface RawMyListItem {
   placed_at: string;
   item_count: number;
   first_item: { name: string; image: string | null } | null;
+  item_names: string[] | null;
 }
 
 function mapMyListItem(r: RawMyListItem): MyOrderListItem {
@@ -500,6 +502,7 @@ function mapMyListItem(r: RawMyListItem): MyOrderListItem {
     placedAt: r.placed_at,
     itemCount: r.item_count,
     firstItem: r.first_item,
+    itemNames: r.item_names ?? [],
   };
 }
 
@@ -529,6 +532,8 @@ interface RawMyLine {
   line_total: number;
   variant_size: string | null;
   custom_measurements: Record<string, unknown> | null;
+  product_slug: string | null;
+  sku: string | null;
 }
 
 function mapMyLine(l: RawMyLine): MyOrderLine {
@@ -540,6 +545,8 @@ function mapMyLine(l: RawMyLine): MyOrderLine {
     lineTotal: l.line_total,
     variantSize: l.variant_size,
     customMeasurements: normalizeRawMeasures(l.custom_measurements),
+    productSlug: l.product_slug ?? null,
+    sku: l.sku ?? null,
   };
 }
 
@@ -550,6 +557,25 @@ interface RawMyHistory {
 
 function mapMyHistory(h: RawMyHistory): MyOrderHistoryEntry {
   return { toStatus: h.to_status, createdAt: h.created_at };
+}
+
+interface RawCourier {
+  provider: string;
+  consignment_id: string | null;
+  tracking_code: string | null;
+  courier_status: string | null;
+  booked_at: string | null;
+}
+
+function mapCourier(c: RawCourier | null): OrderCourierInfo | null {
+  if (!c || !c.provider) return null;
+  return {
+    provider: c.provider,
+    consignmentId: c.consignment_id ?? null,
+    trackingCode: c.tracking_code ?? null,
+    courierStatus: c.courier_status ?? null,
+    bookedAt: c.booked_at ?? null,
+  };
 }
 
 interface RawMyOrderDetail {
@@ -571,6 +597,7 @@ interface RawMyOrderDetail {
   items: RawMyLine[] | null;
   payment: { method: PaymentMethod; status: PaymentStatus; trx_id: string | null } | null;
   history: RawMyHistory[] | null;
+  courier: RawCourier | null;
 }
 
 /** Owner-scoped detail for one of the user's orders (api.get_my_order). */
@@ -602,6 +629,7 @@ export async function getMyOrder(orderId: string, actorId: string): Promise<MyOr
       ? { method: raw.payment.method, status: raw.payment.status, trxId: raw.payment.trx_id }
       : null,
     history: (raw.history ?? []).map(mapMyHistory),
+    courier: mapCourier(raw.courier),
   };
 }
 
@@ -612,6 +640,8 @@ interface RawTrackItem {
   unit_price: number;
   variant_size: string | null;
   custom_measurements: Record<string, unknown> | null;
+  product_slug: string | null;
+  sku: string | null;
 }
 
 interface RawTrackResult {
@@ -624,6 +654,7 @@ interface RawTrackResult {
   };
   items: RawTrackItem[] | null;
   history: RawMyHistory[] | null;
+  courier: RawCourier | null;
 }
 
 /**
@@ -653,8 +684,11 @@ export async function trackOrder(orderNo: string, token: string): Promise<TrackO
       unitPrice: i.unit_price,
       variantSize: i.variant_size,
       customMeasurements: normalizeRawMeasures(i.custom_measurements),
+      productSlug: i.product_slug ?? null,
+      sku: i.sku ?? null,
     })),
     history: (raw.history ?? []).map(mapMyHistory),
+    courier: mapCourier(raw.courier),
   };
 }
 

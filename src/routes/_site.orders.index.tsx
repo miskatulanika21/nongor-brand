@@ -68,7 +68,8 @@ function Orders() {
       if (statusFilter !== "all" && o.status !== statusFilter) return false;
       if (q) {
         const matchNo = o.orderNo.toLowerCase().includes(q);
-        const matchItem = (o.firstItem?.name ?? "").toLowerCase().includes(q);
+        // Search across ALL item names, not just the first line (#8).
+        const matchItem = o.itemNames.some((n) => n.toLowerCase().includes(q));
         if (!matchNo && !matchItem) return false;
       }
       return true;
