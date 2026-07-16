@@ -57,6 +57,22 @@ the workflow's `workflow_dispatch` (`url` input) — this is the drill/verify pa
 > the credential-gated specs run against an isolated Supabase branch (see
 > `e2e/README.md`).
 
+**Protected previews (owner-gated setup).** Vercel guards **preview**
+deployments (and generated URLs) behind SSO by default, so unauthenticated
+automation lands on a "Login – Vercel" wall. The production domain
+(`nongor-brand.vercel.app`) is public and smokes without any of this. To smoke
+protected previews:
+
+1. Vercel → project **nongor-brand** → Settings → **Deployment Protection** →
+   **Protection Bypass for Automation** → generate the secret.
+2. Mirror it as a GitHub Actions repo secret named
+   `VERCEL_AUTOMATION_BYPASS_SECRET`.
+
+The smoke then sends it as the `x-vercel-protection-bypass` header and reaches
+the real app. **Until the secret is set, the workflow SKIPS a protected preview**
+(with an actionable notice) rather than failing red — production smoke is
+unaffected.
+
 ---
 
 ## 2. Deploy model & production promotion

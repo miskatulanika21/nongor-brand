@@ -51,6 +51,7 @@ jobs:
           ENV_URL: ${{ github.event.deployment_status.environment_url }}
           TGT_URL: ${{ github.event.deployment_status.target_url }}
           INPUT_URL: ${{ inputs.url }}
+          BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           # Manual dispatch wins. Otherwise prefer the live deployment URL
           # (environment_url); only fall back to target_url if it is the SITE and
@@ -70,6 +71,21 @@ jobs:
           fi
           # Strip any trailing slash so Playwright's baseURL joins cleanly.
           URL="${URL%/}"
+
+          # Vercel protects preview deployments behind SSO by default. If the URL
+          # is protected (401) AND no automation-bypass secret is configured,
+          # SKIP with an actionable notice instead of failing red — the bypass is
+          # owner-gated setup. With the secret present, the smoke sends the bypass
+          # header and proceeds. Public URLs (prod domain) return 2xx and run.
+          if [ -z "$BYPASS" ]; then
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 20 "$URL" || echo "000")
+            if [ "$CODE" = "401" ]; then
+              echo "::notice title=Smoke skipped (protected preview)::$URL is behind Vercel Deployment Protection (401) and no VERCEL_AUTOMATION_BYPASS_SECRET is set. Add the bypass secret (Vercel → Deployment Protection → Protection Bypass for Automation, mirrored as a repo secret) to smoke protected previews. Production (public domain) is unaffected."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
           echo "Smoking: $URL"
           echo "url=$URL" >> "$GITHUB_OUTPUT"
 
@@ -95,6 +111,9 @@ jobs:
         if: steps.target.outputs.skip != 'true'
         env:
           E2E_BASE_URL: ${{ steps.target.outputs.url }}
+          # Sent as the x-vercel-protection-bypass header when set, so the smoke
+          # reaches protected preview deployments. Empty/unset for public URLs.
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: bun run test:smoke
 
       - name: Upload Playwright report

@@ -27,6 +27,22 @@ const BASE = process.env.E2E_BASE_URL;
 
 test.skip(!BASE, "set E2E_BASE_URL to run the post-deploy smoke suite");
 
+// Vercel protects preview deployments (and generated URLs) behind SSO by
+// default. When a Protection Bypass for Automation secret is provided, send it
+// on every request so the smoke reaches the real app instead of the Vercel
+// login wall. Public URLs (the production domain) ignore the header. The
+// workflow skips protected previews when this secret is absent — see
+// docs/stage-7-cicd-and-rollback.md §2.
+const BYPASS = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+if (BYPASS) {
+  test.use({
+    extraHTTPHeaders: {
+      "x-vercel-protection-bypass": BYPASS,
+      "x-vercel-set-bypass-cookie": "true",
+    },
+  });
+}
+
 // The smoke gates a deploy, so keep individual steps snappy but tolerant of a
 // cold serverless start on the first hit.
 test.describe("post-deploy smoke", () => {
