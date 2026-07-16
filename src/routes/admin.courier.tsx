@@ -393,12 +393,14 @@ function CourierPage() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
+                          {/* `providers` already includes the seeded "manual"
+                              row (20260707150000_stage5_courier_schema.sql), so
+                              this list must not append its own Manual item. */}
                           {providers.map((p) => (
                             <SelectItem key={p.id} value={p.id}>
                               {p.display_name}
                             </SelectItem>
                           ))}
-                          <SelectItem value="manual">Manual</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
