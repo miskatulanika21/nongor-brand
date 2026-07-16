@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { absUrl } from "@/lib/site-config";
 import {
   Select,
   SelectContent,
@@ -45,10 +46,10 @@ export const Route = createFileRoute("/_site/contact")({
         content:
           "Reach Nongorr Studio for order support, size guidance, custom orders, payment, and delivery help.",
       },
-      { property: "og:url", content: "/contact" },
+      { property: "og:url", content: absUrl("/contact") },
       { property: "og:type", content: "website" },
     ],
-    links: [{ rel: "canonical", href: "/contact" }],
+    links: [{ rel: "canonical", href: absUrl("/contact") }],
     scripts: [
       {
         type: "application/ld+json",
@@ -56,7 +57,7 @@ export const Route = createFileRoute("/_site/contact")({
           "@context": "https://schema.org",
           "@type": "ContactPage",
           name: "Contact Nongorr Studio",
-          url: "/contact",
+          url: absUrl("/contact"),
           description:
             "Contact Nongorr Studio for order support, size guidance, custom orders, payment and delivery help.",
         }),

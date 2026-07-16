@@ -15,6 +15,7 @@ import { bustSiteContext } from "@/lib/site-context-cache";
 import { setLoggedInHint } from "@/lib/auth-state";
 import { useNoticeToast } from "@/lib/auth-notices";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { absUrl } from "@/lib/site-config";
 import {
   LayoutDashboard,
   Package,
@@ -48,7 +49,7 @@ export const Route = createFileRoute("/_site/account")({
       },
       { name: "robots", content: "noindex,nofollow" },
     ],
-    links: [{ rel: "canonical", href: "/account" }],
+    links: [{ rel: "canonical", href: absUrl("/account") }],
   }),
   beforeLoad: async ({ location }) => {
     // Customer-only guard. Active staff/admin/owner are redirected to /admin;

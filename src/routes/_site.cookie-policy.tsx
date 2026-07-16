@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { PageHero, Prose } from "@/components/PageHero";
 import { CmsPolicyPage } from "@/components/CmsPolicyPage";
 import { getSitePage } from "@/lib/pages.api";
+import { absUrl } from "@/lib/site-config";
 
 // TODO: Final legal/business review required before production launch.
 
@@ -20,10 +21,10 @@ export const Route = createFileRoute("/_site/cookie-policy")({
         content:
           "An honest summary of the browser storage Nongorr currently uses and what is not connected yet.",
       },
-      { property: "og:url", content: "/cookie-policy" },
+      { property: "og:url", content: absUrl("/cookie-policy") },
       { property: "og:type", content: "website" },
     ],
-    links: [{ rel: "canonical", href: "/cookie-policy" }],
+    links: [{ rel: "canonical", href: absUrl("/cookie-policy") }],
   }),
   // CMS-published content (Stage 6 P4); the JSX below stays as the fallback.
   loader: () => getSitePage({ data: { slug: "cookie-policy" } }),

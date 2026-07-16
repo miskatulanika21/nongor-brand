@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/accordion";
 import { BRAND } from "@/lib/brand";
 import logo from "@/assets/nongorr-logo-transparent.webp";
+import { absUrl } from "@/lib/site-config";
 import {
   ShieldCheck,
   Lock,
@@ -51,10 +52,10 @@ export const Route = createFileRoute("/_site/privacy-policy")({
         content:
           "Your trust matters. Learn how Nongorr carefully handles your personal and payment information.",
       },
-      { property: "og:url", content: "/privacy-policy" },
+      { property: "og:url", content: absUrl("/privacy-policy") },
       { property: "og:type", content: "website" },
     ],
-    links: [{ rel: "canonical", href: "/privacy-policy" }],
+    links: [{ rel: "canonical", href: absUrl("/privacy-policy") }],
   }),
   component: PrivacyPolicy,
 });

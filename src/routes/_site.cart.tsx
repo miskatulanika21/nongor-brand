@@ -40,6 +40,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { absUrl } from "@/lib/site-config";
 import {
   DELIVERY_ZONES,
   FREE_DELIVERY_THRESHOLD,
@@ -59,7 +60,7 @@ export const Route = createFileRoute("/_site/cart")({
       },
       { name: "robots", content: "noindex,nofollow" },
     ],
-    links: [{ rel: "canonical", href: "/cart" }],
+    links: [{ rel: "canonical", href: absUrl("/cart") }],
   }),
   loader: () => listProductCards(),
   component: Cart,

@@ -3,6 +3,7 @@ import { PageHero, Prose } from "@/components/PageHero";
 import { CmsPolicyPage } from "@/components/CmsPolicyPage";
 import { getSitePage } from "@/lib/pages.api";
 import { BRAND } from "@/lib/brand";
+import { absUrl } from "@/lib/site-config";
 
 // TODO: Final legal/business review required before production launch.
 
@@ -24,10 +25,10 @@ export const Route = createFileRoute("/_site/payment-policy")({
         property: "og:description",
         content: "Manual bKash payment, TrxID entry and manual verification for Nongorr orders.",
       },
-      { property: "og:url", content: "/payment-policy" },
+      { property: "og:url", content: absUrl("/payment-policy") },
       { property: "og:type", content: "website" },
     ],
-    links: [{ rel: "canonical", href: "/payment-policy" }],
+    links: [{ rel: "canonical", href: absUrl("/payment-policy") }],
   }),
   // CMS-published content (Stage 6 P4); the JSX below stays as the fallback.
   loader: () => getSitePage({ data: { slug: "payment-policy" } }),

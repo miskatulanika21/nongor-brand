@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/accordion";
 import { BRAND } from "@/lib/brand";
 import logo from "@/assets/nongorr-logo-transparent.webp";
+import { absUrl } from "@/lib/site-config";
 import {
   Clock,
   RefreshCw,
@@ -51,10 +52,10 @@ export const Route = createFileRoute("/_site/return-policy")({
         content:
           "Shop with confidence. Clear, customer-friendly return and exchange rules for kurti, saree, three piece, girls dress and cosmetics.",
       },
-      { property: "og:url", content: "/return-policy" },
+      { property: "og:url", content: absUrl("/return-policy") },
       { property: "og:type", content: "website" },
     ],
-    links: [{ rel: "canonical", href: "/return-policy" }],
+    links: [{ rel: "canonical", href: absUrl("/return-policy") }],
   }),
   component: ReturnPolicy,
 });
