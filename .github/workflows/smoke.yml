@@ -1,0 +1,127 @@
+name: Post-deploy smoke
+
+# Runs the read-only Playwright smoke suite against a freshly-deployed URL.
+#
+# Two entry points:
+#   1. deployment_status — Vercel's GitHub integration creates a GitHub
+#      Deployment + Status for every preview and production deploy. When one
+#      reports `success` we smoke its URL. This gives every PR preview and every
+#      production promotion an automatic gate. (deployment_status workflows run
+#      from the DEFAULT branch, so this file must live on main to fire.)
+#   2. workflow_dispatch — manual run against any URL, used for the rollback
+#      drill and ad-hoc prod re-checks. See docs/stage-7-cicd-and-rollback.md.
+#
+# The suite is READ-ONLY (GETs + the STABLE quote_order RPC), so it is safe to
+# point at production. It never needs secrets.
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Base URL to smoke (e.g. https://nongor-brand.vercel.app)"
+        required: true
+        type: string
+
+# Never smoke the same target twice concurrently; cancel a superseded run.
+concurrency:
+  group: smoke-${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url || inputs.url || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  BUN_VERSION: "1.3.14"
+
+jobs:
+  smoke:
+    name: Smoke deployed URL
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Only run on a SUCCESSFUL deployment (skip pending/failure/error states),
+    # or on a manual dispatch. Non-success deployment_status events are no-ops.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.deployment_status.state == 'success' }}
+    steps:
+      - name: Resolve target URL
+        id: target
+        env:
+          # Prefer the live deployment URL (environment_url); fall back to
+          # target_url; for manual runs use the provided input.
+          ENV_URL: ${{ github.event.deployment_status.environment_url }}
+          TGT_URL: ${{ github.event.deployment_status.target_url }}
+          INPUT_URL: ${{ inputs.url }}
+          BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          # Manual dispatch wins. Otherwise prefer the live deployment URL
+          # (environment_url); only fall back to target_url if it is the SITE and
+          # not Vercel's dashboard inspector (vercel.com/...), which some
+          # integration versions put in target_url and which is NOT smokeable.
+          URL="$INPUT_URL"
+          if [ -z "$URL" ]; then
+            URL="$ENV_URL"
+          fi
+          if [ -z "$URL" ] && [ -n "$TGT_URL" ] && ! printf '%s' "$TGT_URL" | grep -qi 'vercel\.com'; then
+            URL="$TGT_URL"
+          fi
+          if [ -z "$URL" ]; then
+            echo "::notice title=Smoke skipped::No smokeable deployment URL on this event (only a dashboard/inspector URL was present)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Strip any trailing slash so Playwright's baseURL joins cleanly.
+          URL="${URL%/}"
+
+          # Vercel protects preview deployments behind SSO by default. A protected
+          # URL answers with a 302 to vercel.com/sso-api and a `_vercel_sso_nonce`
+          # cookie (NOT a plain 401). If it is protected AND no automation-bypass
+          # secret is configured, SKIP with an actionable notice instead of
+          # failing red — the bypass is owner-gated setup. With the secret present
+          # the smoke sends the bypass header and proceeds. Public URLs (the prod
+          # domain) return 2xx with no SSO markers and run normally.
+          if [ -z "$BYPASS" ]; then
+            HDRS=$(curl -s -D - -o /dev/null -m 20 "$URL" 2>/dev/null || true)
+            if printf '%s' "$HDRS" | grep -qiE 'location:[[:space:]]*https://vercel\.com/sso|_vercel_sso_nonce'; then
+              echo "::notice title=Smoke skipped (protected preview)::$URL is behind Vercel Deployment Protection and no VERCEL_AUTOMATION_BYPASS_SECRET is set. Add the bypass secret (Vercel → Deployment Protection → Protection Bypass for Automation, mirrored as a repo secret) to smoke protected previews. Production (public domain) is unaffected."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          echo "Smoking: $URL"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        if: steps.target.outputs.skip != 'true'
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        if: steps.target.outputs.skip != 'true'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        if: steps.target.outputs.skip != 'true'
+        run: bun install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        if: steps.target.outputs.skip != 'true'
+        run: bunx playwright install --with-deps chromium
+
+      - name: Run smoke suite
+        if: steps.target.outputs.skip != 'true'
+        env:
+          E2E_BASE_URL: ${{ steps.target.outputs.url }}
+          # Sent as the x-vercel-protection-bypass header when set, so the smoke
+          # reaches protected preview deployments. Empty/unset for public URLs.
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: bun run test:smoke
+
+      - name: Upload Playwright report
+        if: ${{ failure() && steps.target.outputs.skip != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke-report
+          path: playwright-report/
+          retention-days: 7
