@@ -41,6 +41,13 @@ jobs:
 
       # Core checks — all MANDATORY. Separate steps so a failure points at the
       # exact gate. No step is allowed to fail silently.
+      # Structural, no-secrets guard on supabase/migrations: valid names,
+      # strictly-increasing unique versions, forward-only (no down/rollback
+      # files). Cheap and fast — the migrations-local job proves they APPLY;
+      # this catches ordering/naming/drift-symptom mistakes instantly.
+      - name: Migration ordering guard
+        run: bun run check:migrations
+
       - name: Typecheck
         run: bun run typecheck
 
