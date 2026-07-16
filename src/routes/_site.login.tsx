@@ -27,6 +27,7 @@ import {
 import { loginSchema, registerSchema, emailSchema } from "@/lib/validation";
 import { isOAuthProviderEnabled, type OAuthProvider } from "@/lib/auth-config";
 import { Eye, EyeOff, Loader2, ShieldCheck, CheckCircle2, AlertCircle } from "lucide-react";
+import { absUrl } from "@/lib/site-config";
 
 /** Generic, non-revealing notices surfaced after a guard redirect. */
 const NOTICES: Record<string, string> = {
@@ -55,7 +56,7 @@ export const Route = createFileRoute("/_site/login")({
       },
       { name: "robots", content: "noindex,nofollow" },
     ],
-    links: [{ rel: "canonical", href: "/login" }],
+    links: [{ rel: "canonical", href: absUrl("/login") }],
   }),
   beforeLoad: async ({ search }) => {
     // Redirect already-authenticated users to their server-resolved destination.

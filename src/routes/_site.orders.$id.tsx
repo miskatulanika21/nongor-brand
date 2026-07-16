@@ -22,6 +22,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/states";
 import { cn } from "@/lib/utils";
+import { absUrl } from "@/lib/site-config";
 import {
   MapPin,
   MessageCircle,
@@ -39,7 +40,7 @@ export const Route = createFileRoute("/_site/orders/$id")({
       { name: "description", content: "Order details for your Nongorr purchase." },
       { name: "robots", content: "noindex,nofollow" },
     ],
-    links: [{ rel: "canonical", href: `/orders/${params.id}` }],
+    links: [{ rel: "canonical", href: absUrl(`/orders/${params.id}`) }],
   }),
   component: OrderDetails,
 });

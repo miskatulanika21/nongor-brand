@@ -80,6 +80,7 @@ import {
   type SavedAddress,
 } from "@/lib/account-ui";
 import { upsertAddressFn } from "@/lib/account.api";
+import { absUrl } from "@/lib/site-config";
 
 export const Route = createFileRoute("/_site/checkout")({
   head: () => ({
@@ -92,7 +93,7 @@ export const Route = createFileRoute("/_site/checkout")({
       },
       { name: "robots", content: "noindex,nofollow" },
     ],
-    links: [{ rel: "canonical", href: "/checkout" }],
+    links: [{ rel: "canonical", href: absUrl("/checkout") }],
   }),
   component: Checkout,
 });

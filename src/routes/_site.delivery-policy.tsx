@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { PageHero, Prose } from "@/components/PageHero";
 import { CmsPolicyPage } from "@/components/CmsPolicyPage";
 import { getSitePage } from "@/lib/pages.api";
+import { absUrl } from "@/lib/site-config";
 
 // TODO: Final legal/business review required before production launch.
 
@@ -20,10 +21,10 @@ export const Route = createFileRoute("/_site/delivery-policy")({
         content:
           "Delivery charges, estimates and courier information for Nongorr orders across Bangladesh.",
       },
-      { property: "og:url", content: "/delivery-policy" },
+      { property: "og:url", content: absUrl("/delivery-policy") },
       { property: "og:type", content: "website" },
     ],
-    links: [{ rel: "canonical", href: "/delivery-policy" }],
+    links: [{ rel: "canonical", href: absUrl("/delivery-policy") }],
   }),
   // CMS-published content (Stage 6 P4); the JSX below stays as the fallback.
   loader: () => getSitePage({ data: { slug: "delivery-policy" } }),

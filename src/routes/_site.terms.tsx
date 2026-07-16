@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/accordion";
 import { BRAND } from "@/lib/brand";
 import logo from "@/assets/nongorr-logo-transparent.webp";
+import { absUrl } from "@/lib/site-config";
 import {
   FileCheck,
   Building2,
@@ -57,10 +58,10 @@ export const Route = createFileRoute("/_site/terms")({
         content:
           "Please read carefully. The terms that keep your Nongorr shopping experience clear, safe, and trustworthy.",
       },
-      { property: "og:url", content: "/terms" },
+      { property: "og:url", content: absUrl("/terms") },
       { property: "og:type", content: "website" },
     ],
-    links: [{ rel: "canonical", href: "/terms" }],
+    links: [{ rel: "canonical", href: absUrl("/terms") }],
   }),
   component: Terms,
 });

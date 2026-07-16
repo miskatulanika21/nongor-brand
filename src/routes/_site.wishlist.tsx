@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { Heart, ShoppingBag, X, Share2, BellOff } from "lucide-react";
 import { toast } from "sonner";
+import { absUrl } from "@/lib/site-config";
 
 export const Route = createFileRoute("/_site/wishlist")({
   loader: () => listProductCards(),
@@ -40,7 +41,7 @@ export const Route = createFileRoute("/_site/wishlist")({
       },
       { name: "robots", content: "noindex,nofollow" },
     ],
-    links: [{ rel: "canonical", href: "/wishlist" }],
+    links: [{ rel: "canonical", href: absUrl("/wishlist") }],
   }),
   component: Wishlist,
 });

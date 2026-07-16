@@ -11,6 +11,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { BRAND } from "@/lib/brand";
+import { absUrl } from "@/lib/site-config";
 
 export const Route = createFileRoute("/_site/custom-size-policy")({
   head: () => ({
@@ -22,7 +23,7 @@ export const Route = createFileRoute("/_site/custom-size-policy")({
           "Learn how Nongorr's custom-size kurti tailoring works, measurement guidelines and our made-to-order policy.",
       },
     ],
-    links: [{ rel: "canonical", href: "/custom-size-policy" }],
+    links: [{ rel: "canonical", href: absUrl("/custom-size-policy") }],
   }),
   component: CustomSizePolicy,
 });

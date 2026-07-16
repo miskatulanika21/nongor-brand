@@ -10,6 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { BRAND } from "@/lib/brand";
 import logo from "@/assets/nongorr-logo-transparent.webp";
+import { absUrl } from "@/lib/site-config";
 import {
   Search,
   Sparkles,
@@ -196,10 +197,10 @@ export const Route = createFileRoute("/_site/faq")({
         content:
           "Answers on ordering, payment, delivery, custom size, returns & exchange, cosmetics authenticity, account and support.",
       },
-      { property: "og:url", content: "/faq" },
+      { property: "og:url", content: absUrl("/faq") },
       { property: "og:type", content: "website" },
     ],
-    links: [{ rel: "canonical", href: "/faq" }],
+    links: [{ rel: "canonical", href: absUrl("/faq") }],
     scripts: [
       {
         type: "application/ld+json",

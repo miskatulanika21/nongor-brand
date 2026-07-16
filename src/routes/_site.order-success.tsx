@@ -18,6 +18,7 @@ import type {
 } from "@/lib/orders-shared";
 import { Copy, Truck, MessageCircle, Check, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import { absUrl } from "@/lib/site-config";
 
 export const Route = createFileRoute("/_site/order-success")({
   head: () => ({
@@ -30,7 +31,7 @@ export const Route = createFileRoute("/_site/order-success")({
       },
       { name: "robots", content: "noindex,nofollow" },
     ],
-    links: [{ rel: "canonical", href: "/order-success" }],
+    links: [{ rel: "canonical", href: absUrl("/order-success") }],
   }),
   // The URL carries a CAPABILITY only (order id/no + guest token). Every value
   // shown on the page is fetched + verified server-side from that capability —

@@ -65,6 +65,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
+import { absUrl } from "@/lib/site-config";
 
 interface ReviewItem {
   id: string;
@@ -92,16 +93,16 @@ export const Route = createFileRoute("/_site/product/$slug")({
           { name: "description", content: loaderData.product.description },
           { property: "og:title", content: `${loaderData.product.name} · Nongorr` },
           { property: "og:description", content: loaderData.product.description },
-          { property: "og:image", content: loaderData.product.image },
-          { property: "og:url", content: `/product/${params.slug}` },
+          { property: "og:image", content: absUrl(loaderData.product.image) },
+          { property: "og:url", content: absUrl(`/product/${params.slug}`) },
           { property: "og:type", content: "product" },
           { name: "twitter:card", content: "summary_large_image" },
           { name: "twitter:title", content: loaderData.product.name },
           { name: "twitter:description", content: loaderData.product.description },
-          { name: "twitter:image", content: loaderData.product.image },
+          { name: "twitter:image", content: absUrl(loaderData.product.image) },
         ]
       : [],
-    links: loaderData ? [{ rel: "canonical", href: `/product/${params.slug}` }] : [],
+    links: loaderData ? [{ rel: "canonical", href: absUrl(`/product/${params.slug}`) }] : [],
     scripts: loaderData
       ? [
           {
@@ -129,7 +130,7 @@ export const Route = createFileRoute("/_site/product/$slug")({
                   loaderData.product.stock > 0
                     ? "https://schema.org/InStock"
                     : "https://schema.org/OutOfStock",
-                url: `/product/${params.slug}`,
+                url: absUrl(`/product/${params.slug}`),
               },
             }),
           },
@@ -145,13 +146,13 @@ export const Route = createFileRoute("/_site/product/$slug")({
                   "@type": "ListItem",
                   position: 3,
                   name: loaderData.product.category,
-                  item: `/shop?category=${encodeURIComponent(loaderData.product.category)}`,
+                  item: absUrl(`/shop?category=${encodeURIComponent(loaderData.product.category)}`),
                 },
                 {
                   "@type": "ListItem",
                   position: 4,
                   name: loaderData.product.name,
-                  item: `/product/${params.slug}`,
+                  item: absUrl(`/product/${params.slug}`),
                 },
               ],
             }),
