@@ -47,11 +47,14 @@ the schedule frequency if order volume grows.
 demand. Each run:
 
 1. Dumps prod via the exact backup path (`scripts/backup-db.sh`).
-2. Boots a **throwaway local Supabase stack** (managed base + repo migrations).
-3. Restores the dump into it — `session_replication_role = replica` disables FK
-   checks + triggers, so cross-schema FKs (`orders → auth.users`) and load order
-   don't matter; app data (`data.sql`) is strict, auth data is best-effort
-   (GoTrue schema can drift between prod and the pinned CLI).
+2. Boots a **throwaway local Supabase stack** for the managed base (auth,
+   storage, roles, extensions).
+3. Restores the backup's **own** `schema.sql` (drops + recreates the app schemas)
+   then loads `data.sql` with `session_replication_role = replica` (FK checks +
+   triggers off, so load order / cross-schema FKs don't matter). Restoring prod's
+   schema — not the repo's — is what a real DR does and makes the drill **immune
+   to prod↔repo drift**. Auth data is best-effort (GoTrue schema can differ from
+   the pinned CLI).
 4. Runs read-only invariants (`supabase/tests/restore_verify.sql`): schemas,
    core tables, the 4 `api` RPCs and RLS are present; the catalog came back; and
    `api.catalog_facets()` executes against the restored rows.
@@ -59,6 +62,18 @@ demand. Each run:
 
 A green drill continuously proves the real backup mechanism restores. Run it
 manually any time: **Actions → Restore drill → Run workflow**.
+
+**Verified 2026-07-16** (run `29480429916`): dump → restore → verify **green**,
+**RTO ≈ 1s** on the current data, `restore_verify OK — 10 products, 2 orders,
+2 order_items; schemas+tables+RPCs+RLS intact, catalog_facets() live.` The first
+run also surfaced real drift — see the note below.
+
+> **⚠ Prod↔repo drift found by the drill (open):** production `public.audit_logs`
+> has `id uuid` + an `ip_address inet` column, but the committed migration
+> (`20260620144019_create_audit_logs.sql`) defines `id bigint` with no
+> `ip_address`. Prod is ahead of source control — reconcile by committing a
+> migration that matches prod (forward-only). The drill is drift-immune (it
+> restores prod's schema), so this does not block backups/restore.
 
 **RTO (recovery-time objective):** the app is stateless (Vercel), so app recovery
 is seconds; **data** recovery = dump + restore time, tracked by the drill summary
@@ -165,8 +180,9 @@ survive separately.
 - [x] Written runbook (this doc) with the 4-scenario DR decision tree.
 - [x] Backup tooling built: DB dump + storage backup (**storage verified live**).
 - [x] Automated, scheduled **restore drill** that restores + verifies + records RTO.
-- [ ] First green drill run recorded (owner: run **Restore drill** once the secrets in §7 are set; paste the RTO here).
-- [ ] Backup secrets configured (§7).
+- [x] First green drill run recorded — run `29480429916`, **RTO ≈ 1s**, `restore_verify` passed (10 products / 2 orders / RPCs + RLS intact). Backup workflow also verified green (DB dump).
+- [ ] Backup secrets configured (§7) — enables the full encrypted backup + storage snapshot (drill needs none of these).
+- [ ] Reconcile the `audit_logs` prod↔repo drift the drill found (§2 note).
 
 Related: `docs/stage-7-cicd-and-rollback.md` (P5 rollback), `docs/stage-7-hardening-launch-plan.md` (P6),
 `docs/stage-7-secrets-and-rotation.md`.
