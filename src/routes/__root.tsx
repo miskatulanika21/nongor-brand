@@ -100,10 +100,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           "@context": "https://schema.org",
           "@type": "WebSite",
           name: "Nongorr",
-          url: "/",
+          url: absUrl("/"),
           potentialAction: {
             "@type": "SearchAction",
-            target: "/shop?q={search_term_string}",
+            target: absUrl("/shop?q={search_term_string}"),
             "query-input": "required name=search_term_string",
           },
         }),

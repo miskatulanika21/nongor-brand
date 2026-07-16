@@ -52,7 +52,7 @@ export const Route = createFileRoute("/_site/")({
           slogan: BRAND.tagline,
           email: BRAND.email,
           telephone: BRAND.phone,
-          url: "/",
+          url: absUrl("/"),
           sameAs: [BRAND.instagram, BRAND.facebook].filter(Boolean),
           areaServed: {
             "@type": "Country",

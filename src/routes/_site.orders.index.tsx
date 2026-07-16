@@ -20,6 +20,7 @@ import {
 import { EmptyState } from "@/components/states";
 import { OrderItemThumb } from "@/components/orders/OrderItemThumb";
 import { Eye, MessageCircle, PackageSearch, Search } from "lucide-react";
+import { absUrl } from "@/lib/site-config";
 
 export const Route = createFileRoute("/_site/orders/")({
   head: () => ({
@@ -31,7 +32,7 @@ export const Route = createFileRoute("/_site/orders/")({
       },
       { name: "robots", content: "noindex,nofollow" },
     ],
-    links: [{ rel: "canonical", href: "/orders" }],
+    links: [{ rel: "canonical", href: absUrl("/orders") }],
   }),
   // Identity-gated server read. A failure carries a distinct reason (#6): only an
   // `unauthenticated` reason means "sign in" — a backend/network failure must NOT

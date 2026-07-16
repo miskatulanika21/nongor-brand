@@ -44,6 +44,7 @@ import {
 import { formatBDT, BRAND } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 import type { ProductCardView } from "@/components/ProductCard";
+import { absUrl } from "@/lib/site-config";
 
 const PRICE_MAX = 8000;
 type ShopSearch = { category?: string; q?: string; filter?: string };
@@ -73,10 +74,10 @@ export const Route = createFileRoute("/_site/shop")({
         content:
           "Browse Nongorr's kurti, saree, three piece, girls dress and beauty collection with smart filters.",
       },
-      { property: "og:url", content: "/shop" },
+      { property: "og:url", content: absUrl("/shop") },
       { property: "og:type", content: "website" },
     ],
-    links: [{ rel: "canonical", href: "/shop" }],
+    links: [{ rel: "canonical", href: absUrl("/shop") }],
     scripts: [
       {
         type: "application/ld+json",
@@ -84,7 +85,7 @@ export const Route = createFileRoute("/_site/shop")({
           "@context": "https://schema.org",
           "@type": "CollectionPage",
           name: "Shop · Nongorr",
-          url: "/shop",
+          url: absUrl("/shop"),
           description:
             "Browse Nongorr's kurti, saree, three piece, girls dress and beauty collection.",
         }),

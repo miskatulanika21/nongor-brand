@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { BRAND } from "@/lib/brand";
 import { getSizeCharts } from "@/lib/sizes.api";
 import { toGuideChart, type PublicSizeChart } from "@/lib/sizes-shared";
+import { absUrl } from "@/lib/site-config";
 
 // Fixed-size charts are CMS-managed since Stage 6 P5 (admin → Size Settings);
 // the arrays below are the static FALLBACK used only when no chart is live.
@@ -46,9 +47,9 @@ export const Route = createFileRoute("/_site/size-guide")({
         content:
           "Custom measurement instructions and fixed size charts for kurti, three piece, girls dress and saree.",
       },
-      { property: "og:url", content: "/size-guide" },
+      { property: "og:url", content: absUrl("/size-guide") },
     ],
-    links: [{ rel: "canonical", href: "/size-guide" }],
+    links: [{ rel: "canonical", href: absUrl("/size-guide") }],
     scripts: [
       {
         type: "application/ld+json",

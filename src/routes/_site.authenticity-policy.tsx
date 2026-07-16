@@ -3,6 +3,7 @@ import { PageHero, Prose } from "@/components/PageHero";
 import { CmsPolicyPage } from "@/components/CmsPolicyPage";
 import { getSitePage } from "@/lib/pages.api";
 import { BRAND } from "@/lib/brand";
+import { absUrl } from "@/lib/site-config";
 
 // TODO: Final legal/business review required before production launch.
 
@@ -25,10 +26,10 @@ export const Route = createFileRoute("/_site/authenticity-policy")({
         content:
           "Nongorr's cautious authenticity commitment for cosmetics, with checking and complaint guidance.",
       },
-      { property: "og:url", content: "/authenticity-policy" },
+      { property: "og:url", content: absUrl("/authenticity-policy") },
       { property: "og:type", content: "website" },
     ],
-    links: [{ rel: "canonical", href: "/authenticity-policy" }],
+    links: [{ rel: "canonical", href: absUrl("/authenticity-policy") }],
   }),
   // CMS-published content (Stage 6 P4); the JSX below stays as the fallback.
   loader: () => getSitePage({ data: { slug: "authenticity-policy" } }),

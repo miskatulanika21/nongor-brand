@@ -5,6 +5,7 @@ import { ProductGrid } from "@/components/ProductGrid";
 import { Button } from "@/components/ui/button";
 import { BRAND } from "@/lib/brand";
 import { ArrowRight } from "lucide-react";
+import { absUrl } from "@/lib/site-config";
 
 const TITLE = "Eid 2026 Fashion Guide: Eid Clothes & Dresses for Women";
 const DESC =
@@ -19,15 +20,15 @@ export const Route = createFileRoute("/_site/eid-style-guide")({
       { name: "description", content: DESC },
       { property: "og:title", content: TITLE },
       { property: "og:description", content: DESC },
-      { property: "og:url", content: "/eid-style-guide" },
+      { property: "og:url", content: absUrl("/eid-style-guide") },
       { property: "og:type", content: "article" },
-      { property: "og:image", content: OG_IMAGE },
+      { property: "og:image", content: absUrl(OG_IMAGE) },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: TITLE },
       { name: "twitter:description", content: DESC },
-      { name: "twitter:image", content: OG_IMAGE },
+      { name: "twitter:image", content: absUrl(OG_IMAGE) },
     ],
-    links: [{ rel: "canonical", href: "/eid-style-guide" }],
+    links: [{ rel: "canonical", href: absUrl("/eid-style-guide") }],
     scripts: [
       {
         type: "application/ld+json",

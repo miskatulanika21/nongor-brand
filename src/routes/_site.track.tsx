@@ -34,6 +34,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
+import { absUrl } from "@/lib/site-config";
 
 export const Route = createFileRoute("/_site/track")({
   validateSearch: (s: Record<string, unknown>): { o?: string; t?: string } => {
@@ -51,7 +52,7 @@ export const Route = createFileRoute("/_site/track")({
       },
       { name: "robots", content: "noindex,nofollow" },
     ],
-    links: [{ rel: "canonical", href: "/track" }],
+    links: [{ rel: "canonical", href: absUrl("/track") }],
   }),
   component: Track,
 });

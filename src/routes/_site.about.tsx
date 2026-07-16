@@ -7,6 +7,7 @@ import founderPortrait from "@/assets/founder-portrait.webp";
 import founderLifestyle from "@/assets/founder-lifestyle.webp";
 import logo from "@/assets/nongorr-logo-transparent.webp";
 import sizeChart from "@/assets/size-chart.webp";
+import { absUrl } from "@/lib/site-config";
 import {
   Quote,
   Ruler,
@@ -37,13 +38,13 @@ export const Route = createFileRoute("/_site/about")({
         content:
           "Meet founder Miskatul Afrin Anika and the story behind Nongorr — a premium women's boutique rooted in Bangladeshi craft.",
       },
-      { property: "og:url", content: "/about" },
+      { property: "og:url", content: absUrl("/about") },
       { property: "og:type", content: "website" },
-      { property: "og:image", content: founderPortrait },
+      { property: "og:image", content: absUrl(founderPortrait) },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:image", content: founderPortrait },
+      { name: "twitter:image", content: absUrl(founderPortrait) },
     ],
-    links: [{ rel: "canonical", href: "/about" }],
+    links: [{ rel: "canonical", href: absUrl("/about") }],
     scripts: [
       {
         type: "application/ld+json",
@@ -51,7 +52,7 @@ export const Route = createFileRoute("/_site/about")({
           "@context": "https://schema.org",
           "@type": "AboutPage",
           name: "About Nongorr",
-          url: "/about",
+          url: absUrl("/about"),
           about: {
             "@type": "Organization",
             name: "Nongorr",
