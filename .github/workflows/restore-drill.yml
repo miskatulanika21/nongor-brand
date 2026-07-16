@@ -89,35 +89,34 @@ jobs:
           echo "Restoring into $DB_URL"
 
           START=$(date +%s)
-          # Load prod rows on top of the freshly-migrated stack. session_replication_role
-          # = replica disables FK checks + triggers so load order and cross-schema
-          # FKs (orders → auth.users) don't matter; we TRUNCATE first to avoid PK
-          # collisions with migration seed data. App data (data.sql) is STRICT.
+          # Rebuild the app schemas from the BACKUP's OWN schema.sql — a real DR
+          # restores prod's schema, not the repo's. This also makes the drill
+          # immune to prod/repo drift (e.g. audit_logs.id / ip_address). Supabase
+          # keeps extensions in the `extensions` schema, so dropping `public` here
+          # does NOT remove pgcrypto/uuid-ossp etc.
           psql "$DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
-          SET session_replication_role = replica;
-          DO $$
-          DECLARE r record;
-          BEGIN
-            FOR r IN SELECT format('%I.%I', schemaname, tablename) AS t
-                     FROM pg_tables WHERE schemaname IN ('public','api','private') LOOP
-              EXECUTE 'TRUNCATE TABLE ' || r.t || ' CASCADE';
-            END LOOP;
-            TRUNCATE auth.identities CASCADE;
-            TRUNCATE auth.users CASCADE;
-          END $$;
-          \i backup/data.sql
+          DROP SCHEMA IF EXISTS api CASCADE;
+          DROP SCHEMA IF EXISTS private CASCADE;
+          DROP SCHEMA IF EXISTS public CASCADE;
+          CREATE SCHEMA public;
+          GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
           SQL
 
-          # auth.users/identities is BEST-EFFORT: the local CLI's bundled GoTrue
-          # schema can differ from prod's, so a column mismatch here must not fail
-          # the drill — orders already restored (FK checks are disabled). A real
-          # DR restores into a Supabase project whose auth schema matches.
+          # Recreate prod's exact schema, then load rows with FK checks + triggers
+          # disabled (replica) so load order / cross-schema FKs don't matter.
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -f backup/schema.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -c "SET session_replication_role = replica;" -f backup/data.sql
+
+          # Customer identities are BEST-EFFORT: the local CLI's bundled GoTrue
+          # schema can differ from prod's, so a column mismatch must not fail the
+          # drill — app data already restored (FK checks disabled). A real DR
+          # restores into a Supabase project whose auth schema matches.
           psql "$DB_URL" -c "SET session_replication_role = replica;" -f backup/auth.sql \
             || echo "::warning title=Auth data partial::auth.sql load was partial (GoTrue schema drift between prod and the local CLI) — app data restored regardless."
 
           END=$(date +%s)
           echo "RTO_SECONDS=$((END - START))" >> "$GITHUB_ENV"
-          echo "Data restore completed in $((END - START))s."
+          echo "Restore completed in $((END - START))s."
 
       - name: Verify the restored copy (read-only invariants)
         run: |
