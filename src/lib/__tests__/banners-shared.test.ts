@@ -120,4 +120,38 @@ describe("toPublicBanner(s)", () => {
   it("returns [] for a non-array payload", () => {
     expect(toPublicBanners({ rows: [] })).toEqual([]);
   });
+
+  it("maps and clamps the focal point + zoom, defaulting to centre / 1", () => {
+    // Present + valid.
+    const b = toPublicBanner({ ...raw, focal_x: 0.2, focal_y: 0.8, zoom: 2 });
+    expect(b!.focalX).toBe(0.2);
+    expect(b!.focalY).toBe(0.8);
+    expect(b!.zoom).toBe(2);
+    // Numeric strings (jsonb numerics arrive as strings) + out-of-range clamp.
+    const c = toPublicBanner({ ...raw, focal_x: "1.5", focal_y: "-3", zoom: "9" });
+    expect(c!.focalX).toBe(1);
+    expect(c!.focalY).toBe(0);
+    expect(c!.zoom).toBe(3);
+    // Absent → centre / no zoom.
+    const d = toPublicBanner(raw);
+    expect(d!.focalX).toBe(0.5);
+    expect(d!.focalY).toBe(0.5);
+    expect(d!.zoom).toBe(1);
+  });
+});
+
+describe("banner focal input", () => {
+  it("clamps focal_x/focal_y/zoom into range and defaults sensibly", () => {
+    expect(bannerInputSchema.parse(base)).toMatchObject({ focal_x: 0.5, focal_y: 0.5, zoom: 1 });
+    expect(bannerInputSchema.parse({ ...base, focal_x: 2, focal_y: -1, zoom: 99 })).toMatchObject({
+      focal_x: 1,
+      focal_y: 0,
+      zoom: 3,
+    });
+    // A garbage value never blocks the save — it falls back to the default.
+    expect(bannerInputSchema.parse({ ...base, focal_x: "abc", zoom: "x" })).toMatchObject({
+      focal_x: 0.5,
+      zoom: 1,
+    });
+  });
 });

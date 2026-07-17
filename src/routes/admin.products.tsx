@@ -59,7 +59,10 @@ import {
   ArrowDown,
   X,
   ImagePlus,
+  Crop,
 } from "lucide-react";
+import { ImageFramer } from "@/components/admin/ImageFramer";
+import { focalStyle } from "@/lib/image-focal";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -850,6 +853,9 @@ function ProductForm({
 }
 
 /** Renumber sort_order by position and guarantee exactly one primary. */
+/** Focal defaults for a newly added gallery image (centre, no zoom). */
+const DEFAULT_FOCAL_FIELDS = { focalX: 0.5, focalY: 0.5, zoom: 1 };
+
 function normalizeGallery(items: GalleryImage[]): GalleryImage[] {
   const ordered = items.map((it, i) => ({ ...it, sortOrder: i }));
   if (ordered.length === 0) return ordered;
@@ -874,6 +880,7 @@ function GallerySection({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [library, setLibrary] = useState<MediaAsset[] | null>(null);
   const [loadingLib, setLoadingLib] = useState(false);
+  const [framingUrl, setFramingUrl] = useState<string | null>(null);
 
   const urls = new Set(items.map((i) => i.url));
   const isFull = items.length >= MAX_GALLERY_IMAGES;
@@ -891,7 +898,10 @@ function GallerySection({
     setItems((prev) =>
       prev.some((p) => p.url === url) || prev.length >= MAX_GALLERY_IMAGES
         ? prev
-        : normalizeGallery([...prev, { url, alt: null, isPrimary: false, sortOrder: prev.length }]),
+        : normalizeGallery([
+            ...prev,
+            { url, alt: null, isPrimary: false, sortOrder: prev.length, ...DEFAULT_FOCAL_FIELDS },
+          ]),
     );
   const remove = (url: string) =>
     setItems((prev) => normalizeGallery(prev.filter((p) => p.url !== url)));
@@ -899,6 +909,10 @@ function GallerySection({
     setItems((prev) => normalizeGallery(prev.map((p) => ({ ...p, isPrimary: p.url === url }))));
   const setAlt = (url: string, alt: string) =>
     setItems((prev) => prev.map((p) => (p.url === url ? { ...p, alt } : p)));
+  const setFocal = (url: string, f: { x: number; y: number; zoom: number }) =>
+    setItems((prev) =>
+      prev.map((p) => (p.url === url ? { ...p, focalX: f.x, focalY: f.y, zoom: f.zoom } : p)),
+    );
   const move = (idx: number, dir: -1 | 1) =>
     setItems((prev) => {
       const next = [...prev];
@@ -914,6 +928,9 @@ function GallerySection({
       url: it.url,
       alt: it.alt?.trim() ? it.alt.trim() : null,
       isPrimary: it.isPrimary,
+      focalX: it.focalX,
+      focalY: it.focalY,
+      zoom: it.zoom,
     }));
     const res = await saveProductGallery({
       data: { code, items: payload, expectedRevision: revision },
@@ -937,69 +954,97 @@ function GallerySection({
       ) : (
         <ul className="space-y-2">
           {items.map((it, idx) => (
-            <li
-              key={it.url}
-              className="flex items-center gap-3 rounded-lg border border-border p-2"
-            >
-              <img src={it.url} alt={it.alt ?? ""} className="h-12 w-12 rounded object-cover" />
-              <div className="min-w-0 flex-1 space-y-1">
-                <p className="truncate text-xs text-muted-foreground">
-                  {it.url.split("/").pop()}
-                  {it.isPrimary && (
-                    <span className="ml-2 text-[0.65rem] text-primary">Primary</span>
-                  )}
-                </p>
-                <Input
-                  value={it.alt ?? ""}
-                  onChange={(e) => setAlt(it.url, e.target.value)}
-                  maxLength={300}
-                  placeholder="Alt text (describe the image for accessibility)"
-                  className="h-7 text-xs"
-                  aria-label={`Alt text for ${it.url.split("/").pop()}`}
+            <li key={it.url} className="rounded-lg border border-border p-2">
+              <div className="flex items-center gap-3">
+                <img
+                  src={it.url}
+                  alt={it.alt ?? ""}
+                  style={focalStyle({ x: it.focalX, y: it.focalY, zoom: it.zoom })}
+                  className="h-12 w-12 rounded object-cover"
                 />
+                <div className="min-w-0 flex-1 space-y-1">
+                  <p className="truncate text-xs text-muted-foreground">
+                    {it.url.split("/").pop()}
+                    {it.isPrimary && (
+                      <span className="ml-2 text-[0.65rem] text-primary">Primary</span>
+                    )}
+                  </p>
+                  <Input
+                    value={it.alt ?? ""}
+                    onChange={(e) => setAlt(it.url, e.target.value)}
+                    maxLength={300}
+                    placeholder="Alt text (describe the image for accessibility)"
+                    className="h-7 text-xs"
+                    aria-label={`Alt text for ${it.url.split("/").pop()}`}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={cn("h-7 w-7", framingUrl === it.url && "text-primary")}
+                  aria-label="Frame image"
+                  title="Set focal point & zoom"
+                  onClick={() => setFramingUrl((u) => (u === it.url ? null : it.url))}
+                >
+                  <Crop className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  aria-label="Move up"
+                  disabled={idx === 0}
+                  onClick={() => move(idx, -1)}
+                >
+                  <ArrowUp className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  aria-label="Move down"
+                  disabled={idx === items.length - 1}
+                  onClick={() => move(idx, 1)}
+                >
+                  <ArrowDown className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={cn("h-7 w-7", it.isPrimary && "text-primary")}
+                  aria-label="Set as primary"
+                  onClick={() => setPrimary(it.url)}
+                >
+                  <Star className={cn("h-3.5 w-3.5", it.isPrimary && "fill-current")} />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  aria-label="Remove image"
+                  onClick={() => remove(it.url)}
+                >
+                  <X className="h-3.5 w-3.5 text-destructive" />
+                </Button>
               </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                aria-label="Move up"
-                disabled={idx === 0}
-                onClick={() => move(idx, -1)}
-              >
-                <ArrowUp className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                aria-label="Move down"
-                disabled={idx === items.length - 1}
-                onClick={() => move(idx, 1)}
-              >
-                <ArrowDown className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className={cn("h-7 w-7", it.isPrimary && "text-primary")}
-                aria-label="Set as primary"
-                onClick={() => setPrimary(it.url)}
-              >
-                <Star className={cn("h-3.5 w-3.5", it.isPrimary && "fill-current")} />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                aria-label="Remove image"
-                onClick={() => remove(it.url)}
-              >
-                <X className="h-3.5 w-3.5 text-destructive" />
-              </Button>
+              {framingUrl === it.url && (
+                <div className="mt-3 border-t border-border pt-3">
+                  <ImageFramer
+                    src={it.url}
+                    focalX={it.focalX}
+                    focalY={it.focalY}
+                    zoom={it.zoom}
+                    onChange={(f) => setFocal(it.url, f)}
+                    heroChrome={false}
+                    previewAspect="4 / 5"
+                  />
+                </div>
+              )}
             </li>
           ))}
         </ul>

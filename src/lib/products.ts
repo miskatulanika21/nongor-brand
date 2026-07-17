@@ -6,6 +6,8 @@
  * reads the live catalog via `catalog.api.ts` → `catalog.server.ts`, and
  * `catalog-map.ts` maps DB rows into this `Product` shape.
  */
+import type { ImageFocal } from "@/lib/image-focal";
+
 export type ProductType =
   | "kurti"
   | "saree"
@@ -52,6 +54,8 @@ export interface Product {
   price: number;
   salePrice?: number | null;
   image: string;
+  /** Focal point + zoom for the primary {@link image} when shown object-cover. */
+  imageFocal?: ImageFocal;
   gallery: string[];
   hasVideo?: boolean;
   rating: number;

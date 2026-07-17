@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { ImageFramer } from "@/components/admin/ImageFramer";
 import { Images, Plus, Pencil, Trash2, Loader2, Star, ImagePlus, Check } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -223,6 +224,9 @@ interface FormState {
   image_alt: string;
   card_title: string;
   card_subtitle: string;
+  focal_x: number;
+  focal_y: number;
+  zoom: number;
   sort_order: string;
   is_active: boolean;
   starts_at: string;
@@ -240,6 +244,9 @@ function toForm(b: AdminBanner | null): FormState {
     image_alt: b?.image_alt ?? "",
     card_title: b?.card_title ?? "",
     card_subtitle: b?.card_subtitle ?? "",
+    focal_x: b?.focal_x ?? 0.5,
+    focal_y: b?.focal_y ?? 0.5,
+    zoom: b?.zoom ?? 1,
     sort_order: b ? String(b.sort_order) : "0",
     is_active: b?.is_active ?? false,
     starts_at: b?.starts_at ? b.starts_at.slice(0, 10) : "",
@@ -296,6 +303,9 @@ function BannerDialog({
       image_alt: form.image_alt.trim() === "" ? null : form.image_alt,
       card_title: form.card_title.trim() === "" ? null : form.card_title,
       card_subtitle: form.card_subtitle.trim() === "" ? null : form.card_subtitle,
+      focal_x: form.focal_x,
+      focal_y: form.focal_y,
+      zoom: form.zoom,
       sort_order: Number(form.sort_order || 0),
       is_active: form.is_active,
       starts_at: form.starts_at || null,
@@ -460,6 +470,27 @@ function BannerDialog({
                     No media yet. Upload images in the Media Library first.
                   </p>
                 )}
+              </div>
+            )}
+
+            {form.image_url && (
+              <div className="mt-3 rounded-xl border border-border bg-muted/30 p-3">
+                <ImageFramer
+                  src={form.image_url}
+                  focalX={form.focal_x}
+                  focalY={form.focal_y}
+                  zoom={form.zoom}
+                  onChange={({ x, y, zoom }) =>
+                    setForm((f) => ({ ...f, focal_x: x, focal_y: y, zoom }))
+                  }
+                  preview={{
+                    eyebrow: form.eyebrow,
+                    title: form.title,
+                    subtitle: form.subtitle,
+                    cardTitle: form.card_title,
+                    cardSubtitle: form.card_subtitle,
+                  }}
+                />
               </div>
             )}
           </div>
