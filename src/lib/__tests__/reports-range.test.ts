@@ -13,7 +13,9 @@ import {
  */
 describe("reportRangeSchema", () => {
   it("accepts a well-formed range", () => {
-    expect(reportRangeSchema.safeParse({ from: "2026-07-10", to: "2026-07-17" }).success).toBe(true);
+    expect(reportRangeSchema.safeParse({ from: "2026-07-10", to: "2026-07-17" }).success).toBe(
+      true,
+    );
   });
 
   it("accepts every preset the UI can produce", () => {
@@ -46,7 +48,9 @@ describe("reportRangeSchema", () => {
   });
 
   it("caps the range at 400 days", () => {
-    expect(reportRangeSchema.safeParse({ from: "2025-07-10", to: "2026-07-10" }).success).toBe(true); // 365
+    expect(reportRangeSchema.safeParse({ from: "2025-07-10", to: "2026-07-10" }).success).toBe(
+      true,
+    ); // 365
     const r = reportRangeSchema.safeParse({ from: "2025-01-01", to: "2026-07-10" }); // ~555
     expect(r.success).toBe(false);
     if (!r.success) expect(r.error.issues[0].message).toMatch(/400 days/);
