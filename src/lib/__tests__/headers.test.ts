@@ -94,6 +94,10 @@ describe("withSecurityHeaders", () => {
     expect(reportOnly).toContain("'nonce-abc123=='");
     expect(reportOnly).toContain("'strict-dynamic'");
     expect(reportOnly).toContain("report-uri /api/csp-report");
+    // upgrade-insecure-requests is a no-op (and console-warns) in a report-only
+    // policy, so it must NOT appear there — only in the enforced policy.
+    expect(reportOnly).not.toContain("upgrade-insecure-requests");
+    expect(enforced).toContain("upgrade-insecure-requests");
   });
 
   it("does not attach CSP to non-HTML even with a nonce", () => {

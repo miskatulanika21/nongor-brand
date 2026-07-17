@@ -77,8 +77,13 @@ function buildCsp(): string {
  * allowlists redundant for scripts, so we drop the analytics host from script-src.
  * style-src keeps `'unsafe-inline'` for now (Tailwind emits inline styles; nonce-ing
  * styles is a separate, more invasive step). Emitted Report-Only until proven.
+ *
+ * `upgrade-insecure-requests` is a no-op in a Report-Only policy — the browser
+ * both ignores it AND logs a console warning about it — so it is only included
+ * when this policy will be enforced (`reportOnly: false`). The permissive
+ * enforced policy (`buildCsp`) always carries it.
  */
-function buildStrictCsp(nonce: string): string {
+function buildStrictCsp(nonce: string, { reportOnly }: { reportOnly: boolean }): string {
   const supabaseOrigin = originOf(process.env.VITE_SUPABASE_URL);
   const supabaseWs = supabaseOrigin ? supabaseOrigin.replace(/^http/, "ws") : null;
   const upstashOrigin = originOf(process.env.UPSTASH_REDIS_REST_URL);
@@ -94,7 +99,7 @@ function buildStrictCsp(nonce: string): string {
     sentry,
   ].filter(Boolean);
 
-  return [
+  const directives = [
     "default-src 'self'",
     "base-uri 'self'",
     "object-src 'none'",
@@ -106,8 +111,10 @@ function buildStrictCsp(nonce: string): string {
     "img-src 'self' data: blob: https:",
     `connect-src ${connectSrc.join(" ")}`,
     "report-uri /api/csp-report",
-    "upgrade-insecure-requests",
-  ].join("; ");
+  ];
+  // Only meaningful (and warning-free) once this policy is enforced.
+  if (!reportOnly) directives.push("upgrade-insecure-requests");
+  return directives.join("; ");
 }
 
 /**
@@ -150,11 +157,14 @@ export function withSecurityHeaders(response: Response, isProd: boolean, nonce?:
     // until then it rides as Report-Only alongside the permissive enforced one.
     const enforceStrict = nonce && process.env.CSP_ENFORCE_STRICT === "true";
     if (enforceStrict) {
-      headers.set("Content-Security-Policy", buildStrictCsp(nonce));
+      headers.set("Content-Security-Policy", buildStrictCsp(nonce, { reportOnly: false }));
     } else {
       headers.set("Content-Security-Policy", buildCsp());
       if (nonce) {
-        headers.set("Content-Security-Policy-Report-Only", buildStrictCsp(nonce));
+        headers.set(
+          "Content-Security-Policy-Report-Only",
+          buildStrictCsp(nonce, { reportOnly: true }),
+        );
       }
     }
   }
