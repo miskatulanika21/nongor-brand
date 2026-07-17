@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Heart, Eye } from "lucide-react";
 import { type Product } from "@/lib/products";
+import { DEFAULT_FOCAL, focalStyle } from "@/lib/image-focal";
 import { formatBDT, discountPct } from "@/lib/brand";
 import { useStore } from "@/lib/store";
 import { StarRating } from "@/components/StarRating";
@@ -155,6 +156,7 @@ export function ProductCard({
               height={500}
               widths={[256, 384, 640]}
               sizes="(max-width: 1024px) 50vw, 25vw"
+              style={focalStyle(product.imageFocal ?? DEFAULT_FOCAL)}
               className="aspect-[4/5] h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
             />
           </Link>
@@ -235,6 +237,7 @@ export function ProductCard({
             height={1000}
             widths={[256, 384, 640]}
             sizes="(max-width: 640px) 40vw, 320px"
+            style={focalStyle(product.imageFocal ?? DEFAULT_FOCAL)}
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
         </Link>

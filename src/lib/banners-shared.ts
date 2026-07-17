@@ -6,6 +6,7 @@
  * delete_banner) and the `banners` table.
  */
 import { z } from "zod";
+import { focalSchemaShape, toFocal } from "@/lib/image-focal";
 
 /** One banner row as returned by api.list_banners / upsert_banner (snake_case). */
 export interface AdminBanner {
@@ -19,6 +20,11 @@ export interface AdminBanner {
   image_alt: string | null;
   card_title: string | null;
   card_subtitle: string | null;
+  /** Focal point, normalized 0..1 (0,0 = top-left; 0.5 = centre). See {@link PublicBanner}. */
+  focal_x: number;
+  focal_y: number;
+  /** Zoom/scale, 1..3 (1 = whole image). See {@link PublicBanner}. */
+  zoom: number;
   sort_order: number;
   is_active: boolean;
   starts_at: string | null;
@@ -41,6 +47,15 @@ export interface PublicBanner {
   imageAlt: string | null;
   cardTitle: string | null;
   cardSubtitle: string | null;
+  /**
+   * Focal point of {@link imageUrl}, normalized 0..1 (x then y; 0,0 = top-left,
+   * 0.5,0.5 = centre). The hero applies it as CSS `object-position` so the point
+   * stays framed under `object-fit: cover` at every breakpoint — no re-crop.
+   */
+  focalX: number;
+  focalY: number;
+  /** Zoom/scale, 1..3 (1 = whole image); magnifies around the focal point. */
+  zoom: number;
 }
 
 // ── Input validation (mirrors the table CHECKs; server re-validates) ─────────
@@ -75,6 +90,7 @@ export const bannerInputSchema = z
     image_alt: optionalText(300),
     card_title: optionalText(120),
     card_subtitle: optionalText(160),
+    ...focalSchemaShape,
     sort_order: z.coerce.number().int().min(0).max(1000).default(0),
     is_active: z.boolean().default(false),
     starts_at: nullableDate,
@@ -150,6 +166,7 @@ export function toPublicBanner(raw: unknown): PublicBanner | null {
   const title = s(raw.title);
   const imageUrl = s(raw.image_url);
   if (!id || !title || !imageUrl) return null;
+  const focal = toFocal(raw.focal_x, raw.focal_y, raw.zoom);
   return {
     id,
     eyebrow: s(raw.eyebrow),
@@ -161,6 +178,9 @@ export function toPublicBanner(raw: unknown): PublicBanner | null {
     imageAlt: s(raw.image_alt),
     cardTitle: s(raw.card_title),
     cardSubtitle: s(raw.card_subtitle),
+    focalX: focal.x,
+    focalY: focal.y,
+    zoom: focal.zoom,
   };
 }
 

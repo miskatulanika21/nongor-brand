@@ -14,6 +14,7 @@
  *   - `stock` is canonical from size rows when present, else `products.stock`.
  */
 import type { Product, ProductType, Review } from "@/lib/products";
+import { DEFAULT_FOCAL, toFocal, type ImageFocal } from "@/lib/image-focal";
 
 /** Public fallback used only when a product somehow has no media rows. */
 export const PLACEHOLDER_IMAGE = "/og-image.jpg";
@@ -28,6 +29,9 @@ export interface MediaRow {
   alt: string | null;
   is_primary: boolean;
   sort_order: number;
+  focal_x?: number | string | null;
+  focal_y?: number | string | null;
+  zoom?: number | string | null;
 }
 
 export interface SizeRow {
@@ -94,12 +98,21 @@ function firstOf<T>(v: T | T[]): T {
   return Array.isArray(v) ? v[0] : v;
 }
 
-function resolveImages(media: MediaRow[]): { image: string; gallery: string[] } {
+function resolveImages(media: MediaRow[]): {
+  image: string;
+  gallery: string[];
+  imageFocal: ImageFocal;
+} {
   const sorted = [...(media ?? [])].sort((a, b) => a.sort_order - b.sort_order);
   const primary = sorted.find((m) => m.is_primary) ?? sorted[0];
   const image = primary?.url || PLACEHOLDER_IMAGE;
   const urls = sorted.map((m) => m.url).filter(Boolean);
-  return { image, gallery: urls.length ? urls : [image] };
+  // Focal of the PRIMARY image — it is the thumbnail shown object-cover across
+  // shop cards, wishlist, search, etc. Defaults to centre when absent.
+  const imageFocal = primary
+    ? toFocal(primary.focal_x, primary.focal_y, primary.zoom)
+    : DEFAULT_FOCAL;
+  return { image, gallery: urls.length ? urls : [image], imageFocal };
 }
 
 function toSizeStock(sizes: SizeRow[]): Record<string, number> | undefined {
@@ -131,7 +144,7 @@ function toReviews(reviews: ReviewRow[]): Review[] | undefined {
 /** Map a lean card row to a `Product` (description/gallery minimal). */
 export function toCard(row: ProductCardRow): Product {
   const cat = firstOf(row.category);
-  const { image, gallery } = resolveImages(row.media);
+  const { image, gallery, imageFocal } = resolveImages(row.media);
   return {
     id: row.code,
     slug: row.slug,
@@ -141,6 +154,7 @@ export function toCard(row: ProductCardRow): Product {
     price: row.price,
     salePrice: row.sale_price,
     image,
+    imageFocal,
     gallery,
     hasVideo: row.has_video,
     rating: row.rating,
@@ -166,7 +180,7 @@ export function toCard(row: ProductCardRow): Product {
 /** Map a full detail row to a `Product` (gallery, reviews, type-specific). */
 export function toProduct(row: ProductDetailRow): Product {
   const cat = firstOf(row.category);
-  const { image, gallery } = resolveImages(row.media);
+  const { image, gallery, imageFocal } = resolveImages(row.media);
   return {
     id: row.code,
     slug: row.slug,
@@ -176,6 +190,7 @@ export function toProduct(row: ProductDetailRow): Product {
     price: row.price,
     salePrice: row.sale_price,
     image,
+    imageFocal,
     gallery,
     hasVideo: row.has_video,
     rating: row.rating,

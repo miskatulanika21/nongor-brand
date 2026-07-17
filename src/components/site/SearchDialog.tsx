@@ -3,6 +3,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { Search } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { PRODUCT_TYPE_LABEL, type Product } from "@/lib/products";
+import { DEFAULT_FOCAL, focalStyle } from "@/lib/image-focal";
 import { listProductCards } from "@/lib/catalog.api";
 import { PRODUCT_CATEGORIES } from "@/lib/categories";
 import { formatBDT, discountPct } from "@/lib/brand";
@@ -197,6 +198,7 @@ export function SearchDialog({ open, onOpenChange }: Props) {
                     src={p.image}
                     alt={p.name}
                     loading="lazy"
+                    style={focalStyle(p.imageFocal ?? DEFAULT_FOCAL)}
                     className="h-12 w-12 shrink-0 rounded-lg object-cover"
                   />
                   <div className="min-w-0 flex-1">

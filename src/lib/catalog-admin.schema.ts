@@ -9,6 +9,7 @@
  * The DB remains the final authority; these are defense-in-depth + good UX.
  */
 import { z } from "zod";
+import { focalXField, focalYField, zoomField } from "@/lib/image-focal";
 
 export const PRODUCT_STATUSES = ["draft", "active", "hidden", "archived"] as const;
 export type ProductStatus = (typeof PRODUCT_STATUSES)[number];
@@ -222,6 +223,10 @@ export const productGalleryItemSchema = z.object({
   url: z.string().min(1).max(1000),
   alt: z.string().max(300).nullable().optional(),
   isPrimary: z.boolean().optional(),
+  // Focal point + zoom for framing the primary thumbnail. Clamped, default centre.
+  focalX: focalXField,
+  focalY: focalYField,
+  zoom: zoomField,
 });
 
 /** Maximum images per product gallery — enforced in the UI, schema, and DB. */
