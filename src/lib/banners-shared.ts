@@ -19,6 +19,9 @@ export interface AdminBanner {
   image_alt: string | null;
   card_title: string | null;
   card_subtitle: string | null;
+  /** Focal point, normalized 0..1 (0,0 = top-left; 0.5 = centre). See {@link PublicBanner}. */
+  focal_x: number;
+  focal_y: number;
   sort_order: number;
   is_active: boolean;
   starts_at: string | null;
@@ -41,6 +44,13 @@ export interface PublicBanner {
   imageAlt: string | null;
   cardTitle: string | null;
   cardSubtitle: string | null;
+  /**
+   * Focal point of {@link imageUrl}, normalized 0..1 (x then y; 0,0 = top-left,
+   * 0.5,0.5 = centre). The hero applies it as CSS `object-position` so the point
+   * stays framed under `object-fit: cover` at every breakpoint — no re-crop.
+   */
+  focalX: number;
+  focalY: number;
 }
 
 // ── Input validation (mirrors the table CHECKs; server re-validates) ─────────
@@ -53,6 +63,17 @@ const optionalText = (max: number) =>
     )
     .nullable()
     .optional();
+
+/**
+ * Focal coordinate: a normalized 0..1 value that is CLAMPED (not rejected) into
+ * range, defaulting to 0.5 (centre) when absent or unparseable — a stray value
+ * from an older client should never block a save.
+ */
+const focalCoord = z.preprocess((v) => {
+  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+  if (!Number.isFinite(n)) return 0.5;
+  return Math.min(1, Math.max(0, n));
+}, z.number().min(0).max(1));
 
 const nullableDate = z
   .preprocess(
@@ -75,6 +96,8 @@ export const bannerInputSchema = z
     image_alt: optionalText(300),
     card_title: optionalText(120),
     card_subtitle: optionalText(160),
+    focal_x: focalCoord,
+    focal_y: focalCoord,
     sort_order: z.coerce.number().int().min(0).max(1000).default(0),
     is_active: z.boolean().default(false),
     starts_at: nullableDate,
@@ -142,6 +165,12 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 function s(v: unknown): string | null {
   return typeof v === "string" && v.length > 0 ? v : null;
 }
+/** Coerce a focal coordinate to a clamped 0..1 number, defaulting to 0.5 (centre). */
+function focal01(v: unknown): number {
+  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+  if (!Number.isFinite(n)) return 0.5;
+  return Math.min(1, Math.max(0, n));
+}
 
 /** Coerce one api.get_active_banners element into a PublicBanner. */
 export function toPublicBanner(raw: unknown): PublicBanner | null {
@@ -161,7 +190,19 @@ export function toPublicBanner(raw: unknown): PublicBanner | null {
     imageAlt: s(raw.image_alt),
     cardTitle: s(raw.card_title),
     cardSubtitle: s(raw.card_subtitle),
+    focalX: focal01(raw.focal_x),
+    focalY: focal01(raw.focal_y),
   };
+}
+
+/**
+ * Map a normalized focal point (0..1) to a CSS `object-position` string.
+ * SHARED by the storefront hero and the admin live preview so the preview is
+ * pixel-exact — both must frame `object-fit: cover` images identically.
+ */
+export function focalPosition(x: number, y: number): string {
+  const clamp = (n: number) => Math.min(100, Math.max(0, n * 100));
+  return `${clamp(x).toFixed(2)}% ${clamp(y).toFixed(2)}%`;
 }
 
 /** Coerce the api.get_active_banners jsonb array (drops bad rows). */
