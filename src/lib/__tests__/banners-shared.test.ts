@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   bannerInputSchema,
   bannerErrorMessage,
-  focalPosition,
   toPublicBanner,
   toPublicBanners,
 } from "@/lib/banners-shared";
@@ -122,36 +121,37 @@ describe("toPublicBanner(s)", () => {
     expect(toPublicBanners({ rows: [] })).toEqual([]);
   });
 
-  it("maps and clamps the focal point, defaulting to centre", () => {
+  it("maps and clamps the focal point + zoom, defaulting to centre / 1", () => {
     // Present + valid.
-    const b = toPublicBanner({ ...raw, focal_x: 0.2, focal_y: 0.8 });
+    const b = toPublicBanner({ ...raw, focal_x: 0.2, focal_y: 0.8, zoom: 2 });
     expect(b!.focalX).toBe(0.2);
     expect(b!.focalY).toBe(0.8);
-    // Numeric strings (jsonb numerics can arrive as strings) + out-of-range clamp.
-    const c = toPublicBanner({ ...raw, focal_x: "1.5", focal_y: "-3" });
+    expect(b!.zoom).toBe(2);
+    // Numeric strings (jsonb numerics arrive as strings) + out-of-range clamp.
+    const c = toPublicBanner({ ...raw, focal_x: "1.5", focal_y: "-3", zoom: "9" });
     expect(c!.focalX).toBe(1);
     expect(c!.focalY).toBe(0);
-    // Absent → centre.
+    expect(c!.zoom).toBe(3);
+    // Absent → centre / no zoom.
     const d = toPublicBanner(raw);
     expect(d!.focalX).toBe(0.5);
     expect(d!.focalY).toBe(0.5);
+    expect(d!.zoom).toBe(1);
   });
 });
 
-describe("focal point (input + css)", () => {
-  it("clamps focal_x/focal_y into 0..1 and defaults to 0.5", () => {
-    expect(bannerInputSchema.parse(base).focal_x).toBe(0.5);
-    expect(bannerInputSchema.parse({ ...base, focal_x: 2, focal_y: -1 })).toMatchObject({
+describe("banner focal input", () => {
+  it("clamps focal_x/focal_y/zoom into range and defaults sensibly", () => {
+    expect(bannerInputSchema.parse(base)).toMatchObject({ focal_x: 0.5, focal_y: 0.5, zoom: 1 });
+    expect(bannerInputSchema.parse({ ...base, focal_x: 2, focal_y: -1, zoom: 99 })).toMatchObject({
       focal_x: 1,
       focal_y: 0,
+      zoom: 3,
     });
-    // A garbage value never blocks the save — it falls back to centre.
-    expect(bannerInputSchema.parse({ ...base, focal_x: "abc" }).focal_x).toBe(0.5);
-  });
-
-  it("renders a CSS object-position string, clamped", () => {
-    expect(focalPosition(0, 0)).toBe("0.00% 0.00%");
-    expect(focalPosition(0.5, 0.25)).toBe("50.00% 25.00%");
-    expect(focalPosition(2, -1)).toBe("100.00% 0.00%");
+    // A garbage value never blocks the save — it falls back to the default.
+    expect(bannerInputSchema.parse({ ...base, focal_x: "abc", zoom: "x" })).toMatchObject({
+      focal_x: 0.5,
+      zoom: 1,
+    });
   });
 });

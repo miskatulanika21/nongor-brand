@@ -3,7 +3,8 @@ import { ArrowRight, Ruler, HandHeart, Truck, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OptimizedImage } from "@/components/OptimizedImage";
 import { HIGH_IMAGE_QUALITY } from "@/lib/image-cdn";
-import { focalPosition, type PublicBanner } from "@/lib/banners-shared";
+import type { PublicBanner } from "@/lib/banners-shared";
+import { focalStyle } from "@/lib/image-focal";
 import heroImg from "@/assets/products/kurti.webp";
 import logo from "@/assets/nongorr-logo-transparent.webp";
 
@@ -144,11 +145,12 @@ export function HeroSection({ banner }: { banner?: PublicBanner | null }) {
                 sizes="(max-width: 1024px) 100vw, 600px"
                 quality={HIGH_IMAGE_QUALITY}
                 className="h-full w-full object-cover"
-                // Focal point keeps the admin-chosen subject framed under
-                // object-cover at every breakpoint. Fallback art stays centred.
+                // Focal point + zoom keep the admin-chosen subject framed under
+                // object-cover at every breakpoint (the card clips overflow).
+                // Fallback art stays centred.
                 style={
                   banner
-                    ? { objectPosition: focalPosition(banner.focalX, banner.focalY) }
+                    ? focalStyle({ x: banner.focalX, y: banner.focalY, zoom: banner.zoom })
                     : undefined
                 }
               />

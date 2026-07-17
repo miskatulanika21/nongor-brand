@@ -226,6 +226,7 @@ interface FormState {
   card_subtitle: string;
   focal_x: number;
   focal_y: number;
+  zoom: number;
   sort_order: string;
   is_active: boolean;
   starts_at: string;
@@ -245,6 +246,7 @@ function toForm(b: AdminBanner | null): FormState {
     card_subtitle: b?.card_subtitle ?? "",
     focal_x: b?.focal_x ?? 0.5,
     focal_y: b?.focal_y ?? 0.5,
+    zoom: b?.zoom ?? 1,
     sort_order: b ? String(b.sort_order) : "0",
     is_active: b?.is_active ?? false,
     starts_at: b?.starts_at ? b.starts_at.slice(0, 10) : "",
@@ -303,6 +305,7 @@ function BannerDialog({
       card_subtitle: form.card_subtitle.trim() === "" ? null : form.card_subtitle,
       focal_x: form.focal_x,
       focal_y: form.focal_y,
+      zoom: form.zoom,
       sort_order: Number(form.sort_order || 0),
       is_active: form.is_active,
       starts_at: form.starts_at || null,
@@ -476,7 +479,10 @@ function BannerDialog({
                   src={form.image_url}
                   focalX={form.focal_x}
                   focalY={form.focal_y}
-                  onChange={({ x, y }) => setForm((f) => ({ ...f, focal_x: x, focal_y: y }))}
+                  zoom={form.zoom}
+                  onChange={({ x, y, zoom }) =>
+                    setForm((f) => ({ ...f, focal_x: x, focal_y: y, zoom }))
+                  }
                   preview={{
                     eyebrow: form.eyebrow,
                     title: form.title,
