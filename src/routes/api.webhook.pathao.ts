@@ -3,9 +3,24 @@
  *
  * Receives delivery status updates from Pathao Courier.
  *
+ * Auth: Pathao sends `X-PATHAO-Signature` containing the secret you entered when
+ * registering the webhook. It does NOT send X-Webhook-Secret — checking for that
+ * header rejected 100% of real events.
+ *
+ * Registration: clicking "Add Webhook" in the merchant panel first probes this
+ * URL with { event: "webhook_integration" }. Pathao only accepts the URL if we
+ * answer HTTP 202 AND echo the header X-Pathao-Merchant-Webhook-Integration-Secret
+ * with their fixed constant. Without that handshake the URL cannot be registered
+ * at all, so no event ever arrives.
+ *
+ * Payload: the status travels in `event` as a dotted-kebab slug (e.g.
+ * "order.delivered") — order_status/status are absent. See courier-shared.ts for
+ * the full 24-event vocabulary.
+ *
  * Security:
- *   - Validates X-Webhook-Secret header against PATHAO_WEBHOOK_SECRET env
- *   - If the env is not set, webhook processing is DISABLED (returns 503)
+ *   - Validates X-PATHAO-Signature against PATHAO_WEBHOOK_SECRET env
+ *   - If the env is not set, webhook processing is DISABLED (returns 503).
+ *     Set the env BEFORE clicking "Add Webhook", or registration will fail.
  *   - Body limit: 64KB
  *   - Rate limited per IP (courierWebhook)
  *   - Idempotent via webhook_events dedup
@@ -46,15 +61,6 @@ export const Route = createFileRoute("/api/webhook/pathao")({
           });
         }
 
-        const providedSecret = request.headers.get("x-webhook-secret") ?? "";
-        if (!timingSafeStringEqual(providedSecret, secret)) {
-          safeServerLog("warn", "Pathao webhook: invalid secret");
-          return new Response(JSON.stringify({ message: "OK" }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-
         const okResponse = () =>
           new Response(JSON.stringify({ message: "OK" }), {
             status: 200,
@@ -80,6 +86,32 @@ export const Route = createFileRoute("/api/webhook/pathao")({
           return okResponse();
         }
 
+        // ── Registration handshake ──────────────────────────────────────
+        // Must precede the signature check: Pathao's probe carries no signature,
+        // so authenticating it first would fail every registration attempt. The
+        // echoed value is a published constant, so answering reveals nothing —
+        // and a caller who forges this still cannot deliver events, since real
+        // events are signature-checked below.
+        const { isPathaoIntegrationProbe, PATHAO_INTEGRATION_SECRET } =
+          await import("@/lib/courier-shared");
+        if (isPathaoIntegrationProbe(body)) {
+          safeServerLog("info", "Pathao webhook: registration handshake");
+          return new Response(JSON.stringify({ message: "Webhook integration successful" }), {
+            status: 202,
+            headers: {
+              "Content-Type": "application/json",
+              "X-Pathao-Merchant-Webhook-Integration-Secret": PATHAO_INTEGRATION_SECRET,
+            },
+          });
+        }
+
+        // ── Signature check ─────────────────────────────────────────────
+        const providedSecret = request.headers.get("x-pathao-signature") ?? "";
+        if (!timingSafeStringEqual(providedSecret, secret)) {
+          safeServerLog("warn", "Pathao webhook: invalid signature");
+          return okResponse();
+        }
+
         // ── Idempotent processing ───────────────────────────────────────
         try {
           const { webhookEventId, mapCourierStatusToInternal } =
@@ -98,9 +130,13 @@ export const Route = createFileRoute("/api/webhook/pathao")({
           if (isNew) {
             let procError: string | null = null;
             try {
-              // Pathao sends: { consignment_id, order_status, ... }
+              // Pathao sends: { consignment_id, merchant_order_id, updated_at,
+              //                 timestamp, store_id, event, delivery_fee }
+              // The status is `event` ("order.delivered"). The old code read
+              // order_status/status — neither exists on the payload, so rawStatus
+              // was always "" and no shipment ever transitioned.
               const consignmentId = String(body.consignment_id ?? "");
-              const rawStatus = String(body.order_status ?? body.status ?? "");
+              const rawStatus = String(body.event ?? "");
               if (consignmentId) {
                 const shipment = await findShipmentByConsignment("pathao", consignmentId);
                 if (shipment) {

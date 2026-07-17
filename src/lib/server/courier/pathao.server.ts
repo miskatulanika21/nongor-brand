@@ -48,8 +48,10 @@ function getConfig(sandbox: boolean) {
     baseUrl: (process.env.PATHAO_BASE_URL || "https://api-hermes.pathao.com").replace(/\/+$/, ""),
     clientId: process.env.PATHAO_CLIENT_ID || "",
     clientSecret: process.env.PATHAO_CLIENT_SECRET || "",
-    username: undefined,
-    password: undefined,
+    // Production uses the SAME password grant as sandbox — these are the merchant
+    // panel login credentials, not a separate API user. See getAccessToken.
+    username: process.env.PATHAO_USERNAME,
+    password: process.env.PATHAO_PASSWORD,
   };
 }
 
@@ -59,11 +61,20 @@ function isSandbox(): boolean {
   return process.env.PATHAO_SANDBOX_ENABLED === "true";
 }
 
+/**
+ * Store ids are issued per environment — a production store_id does not exist in
+ * sandbox (verified: prod store 410847 is absent from the sandbox store list).
+ * Sending the wrong one books against a stranger's store or fails outright, so
+ * sandbox reads its own id and never silently falls back to the production one.
+ */
 function getStoreId(): string {
-  const storeId = process.env.PATHAO_STORE_ID;
+  const sandbox = isSandbox();
+  const storeId = sandbox ? process.env.PATHAO_SANDBOX_STORE_ID : process.env.PATHAO_STORE_ID;
   if (!storeId) {
+    const varName = sandbox ? "PATHAO_SANDBOX_STORE_ID" : "PATHAO_STORE_ID";
     throw new Error(
-      "PATHAO_STORE_ID is not configured. Set it in env or fetch via /stores endpoint.",
+      `${varName} is not configured. Set it in env or fetch it via the /stores endpoint. ` +
+        `Store ids are environment-specific — do not reuse the production id in sandbox.`,
     );
   }
   return storeId;
@@ -79,19 +90,23 @@ async function getAccessToken(): Promise<string> {
   if (!config.clientId || !config.clientSecret) {
     throw new Error("Pathao credentials not configured: PATHAO_CLIENT_ID / PATHAO_CLIENT_SECRET");
   }
+  // The docs are unambiguous: "Must use grant type password for issue token api."
+  // There is no client_credentials grant — sending one fails auth outright, so
+  // username/password are required in production, not just sandbox.
+  if (!config.username || !config.password) {
+    throw new Error(
+      "Pathao credentials not configured: PATHAO_USERNAME / PATHAO_PASSWORD " +
+        "(the merchant panel login — Pathao's issue-token API only supports the password grant).",
+    );
+  }
 
   const body: Record<string, string> = {
     client_id: config.clientId,
     client_secret: config.clientSecret,
-    grant_type: "client_credentials",
+    grant_type: "password",
+    username: config.username,
+    password: config.password,
   };
-
-  // Sandbox may require username/password grant
-  if (config.username && config.password) {
-    body.grant_type = "password";
-    body.username = config.username;
-    body.password = config.password;
-  }
 
   const resp = await fetch(`${config.baseUrl}/aladdin/api/v1/issue-token`, {
     method: "POST",
@@ -110,7 +125,10 @@ async function getAccessToken(): Promise<string> {
     throw new Error("Pathao token response missing access_token");
   }
 
-  // Cache with TTL (default 1 hour if expires_in not provided)
+  // Cache with TTL. Always trust the response: the docs say expires_in is
+  // 432000, but sandbox actually returned 7776000 (90d) when measured on
+  // 2026-07-17 — so don't hard-code either. The 1h fallback applies only if the
+  // field is absent, and stays short so a wrong guess self-heals.
   const expiresIn = (data.expires_in || 3600) * 1000;
   tokenCache = { accessToken, expiresAt: Date.now() + expiresIn };
 
@@ -232,13 +250,35 @@ export const pathaoAdapter: CourierAdapter = {
   },
 
   async checkStatus(consignmentId: string): Promise<CourierStatusResult> {
-    const resp = await pathaoFetch(`/aladdin/api/v1/orders/${encodeURIComponent(consignmentId)}`);
-    const body = await resp.json();
+    // "Get Order Short Info" is /orders/{cid}/info — there is no bare GET
+    // /orders/{cid}, so the old path could only ever have 404'd.
+    //
+    // Parse defensively for the same reason as the SteadFast adapter: a gateway
+    // error or an expired-token HTML page is not JSON, and a status poll must
+    // never throw into the caller.
+    let body: unknown = null;
+    try {
+      const resp = await pathaoFetch(
+        `/aladdin/api/v1/orders/${encodeURIComponent(consignmentId)}/info`,
+      );
+      const text = await resp.text();
+      try {
+        body = JSON.parse(text);
+      } catch {
+        body = { error: text.slice(0, 500), httpStatus: resp.status };
+      }
+    } catch (err) {
+      body = { error: err instanceof Error ? err.message : "Unknown error" };
+    }
 
+    const data = (body as { data?: Record<string, unknown> } | null)?.data;
     return {
       consignmentId,
-      status: body?.data?.order_status ?? body?.data?.status ?? "unknown",
-      updatedAt: body?.data?.updated_at ?? null,
+      // Doc returns both order_status ("Pending") and order_status_slug; either
+      // spelling resolves via mapCourierStatusToInternal. An unresolvable poll
+      // yields "unknown", which maps to null (recorded, no transition).
+      status: (data?.order_status_slug as string) ?? (data?.order_status as string) ?? "unknown",
+      updatedAt: (data?.updated_at as string) ?? null,
       rawResponse: body,
     };
   },

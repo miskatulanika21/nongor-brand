@@ -1,14 +1,15 @@
 /**
  * SteadFast Courier adapter.
  *
- * Base URL from STEADFAST_BASE_URL env (default: portal.steadfast.com.bd/api/v1).
+ * Base URL from STEADFAST_BASE_URL env (default: portal.packzy.com/api/v1).
  * Auth via Api-Key + Secret-Key headers from env.
  *
  * Endpoints:
  *   POST /create_order         — book a parcel
  *   GET  /status_by_cid/{cid}  — check status by consignment ID
  *
- * SteadFast does not support programmatic cancellation.
+ * SteadFast does not support programmatic cancellation. (It DOES support
+ * POST /create_return_request — not wired up here yet.)
  */
 import process from "node:process";
 import type {
@@ -18,7 +19,9 @@ import type {
   CourierStatusResult,
 } from "./types";
 
-const DEFAULT_BASE_URL = "https://portal.steadfast.com.bd/api/v1";
+// portal.steadfast.com.bd does not exist (NXDOMAIN) — the API is served from
+// packzy.com. Every booking against the old host died at DNS resolution.
+const DEFAULT_BASE_URL = "https://portal.packzy.com/api/v1";
 const TIMEOUT_MS = 10_000;
 
 function getConfig() {
@@ -121,13 +124,31 @@ export const steadfastAdapter: CourierAdapter = {
   },
 
   async checkStatus(consignmentId: string): Promise<CourierStatusResult> {
-    const resp = await steadfastFetch(`/status_by_cid/${encodeURIComponent(consignmentId)}`);
-    const body = await resp.json();
+    // SteadFast does not always answer with JSON: an unauthorised or unknown
+    // consignment returns the bare text "Unauthorized Access" (verified live).
+    // resp.json() throws a SyntaxError on that, so read text and parse
+    // defensively — a status poll must never throw into the caller.
+    let body: unknown = null;
+    try {
+      const resp = await steadfastFetch(`/status_by_cid/${encodeURIComponent(consignmentId)}`);
+      const text = await resp.text();
+      try {
+        body = JSON.parse(text);
+      } catch {
+        body = { error: text.slice(0, 500), httpStatus: resp.status };
+      }
+    } catch (err) {
+      body = { error: err instanceof Error ? err.message : "Unknown error" };
+    }
 
+    const parsed = body as { delivery_status?: string; updated_at?: string } | null;
     return {
       consignmentId,
-      status: body?.delivery_status ?? "unknown",
-      updatedAt: body?.updated_at ?? null,
+      // "unknown" is itself a documented SteadFast status, and mapCourierStatus-
+      // ToInternal maps it to a non-transitioning event — so a failed poll is
+      // recorded, never mistaken for a delivery outcome.
+      status: parsed?.delivery_status ?? "unknown",
+      updatedAt: parsed?.updated_at ?? null,
       rawResponse: body,
     };
   },
