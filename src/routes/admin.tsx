@@ -193,7 +193,7 @@ function AdminLayout() {
     <div className="flex min-h-screen bg-background">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
         <div className="flex h-16 items-center gap-2 border-b border-sidebar-border px-5">
-          <Logo variant="light" />
+          <Logo variant="light" roundMark />
           <span className="ml-auto rounded bg-sidebar-primary/20 px-1.5 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wider text-sidebar-primary">
             Studio
           </span>
@@ -214,7 +214,7 @@ function AdminLayout() {
             <SheetContent side="left" className="w-72 border-sidebar-border bg-sidebar p-0">
               <SheetHeader className="h-16 justify-center border-b border-sidebar-border px-5">
                 <SheetTitle className="sr-only">Admin menu</SheetTitle>
-                <Logo variant="light" />
+                <Logo variant="light" roundMark />
               </SheetHeader>
               <ScrollArea className="h-[calc(100vh-4rem)]">
                 <NavList
