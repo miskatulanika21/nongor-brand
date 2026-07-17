@@ -81,6 +81,32 @@ describe("toCard", () => {
     expect(p.gallery).toEqual([PLACEHOLDER_IMAGE]);
   });
 
+  it("carries the PRIMARY image's focal point + zoom (clamped, string-safe)", () => {
+    const p = toCard(
+      cardRow({
+        media: [
+          { url: "/a.jpg", alt: "a", is_primary: false, sort_order: 1, focal_x: 0.9, focal_y: 0.9 },
+          {
+            url: "/primary.jpg",
+            alt: "p",
+            is_primary: true,
+            sort_order: 0,
+            focal_x: "0.3",
+            focal_y: "0.7",
+            zoom: "2",
+          },
+        ],
+      }),
+    );
+    // Primary wins, jsonb numeric strings coerce.
+    expect(p.imageFocal).toEqual({ x: 0.3, y: 0.7, zoom: 2 });
+  });
+
+  it("defaults focal to centre / no zoom when the primary omits it", () => {
+    const p = toCard(cardRow());
+    expect(p.imageFocal).toEqual({ x: 0.5, y: 0.5, zoom: 1 });
+  });
+
   it("keeps a null sale price as null", () => {
     const p = toCard(cardRow({ sale_price: null }));
     expect(p.salePrice).toBeNull();

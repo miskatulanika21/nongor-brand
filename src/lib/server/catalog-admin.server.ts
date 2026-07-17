@@ -10,6 +10,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { createAdminSupabaseClient } from "./supabase-admin.server";
+import { toFocal } from "@/lib/image-focal";
 import type {
   ProductInput,
   CategoryInput,
@@ -156,6 +157,9 @@ export interface GalleryImage {
   alt: string | null;
   isPrimary: boolean;
   sortOrder: number;
+  focalX: number;
+  focalY: number;
+  zoom: number;
 }
 
 export interface AdminProductDetail extends ProductInput {
@@ -200,7 +204,15 @@ interface AdminProductDetailRow {
   stitched: boolean | null;
   gallery_revision: number;
   category: { slug: string } | null;
-  media: Array<{ url: string; alt: string | null; is_primary: boolean; sort_order: number }> | null;
+  media: Array<{
+    url: string;
+    alt: string | null;
+    is_primary: boolean;
+    sort_order: number;
+    focal_x: number | string | null;
+    focal_y: number | string | null;
+    zoom: number | string | null;
+  }> | null;
 }
 
 const ADMIN_DETAIL_SELECT = `
@@ -210,7 +222,7 @@ const ADMIN_DETAIL_SELECT = `
   shade, volume, skin_type, expiry, batch, ingredients, how_to_use, safety,
   blouse_piece, stitched, gallery_revision,
   category:product_categories ( slug ),
-  media:product_media ( url, alt, is_primary, sort_order )
+  media:product_media ( url, alt, is_primary, sort_order, focal_x, focal_y, zoom )
 `;
 
 const und = <T>(v: T | null): T | undefined => (v === null ? undefined : v);
@@ -262,12 +274,18 @@ export async function fetchAdminProductDetail(code: string): Promise<AdminProduc
     galleryRevision: r.gallery_revision ?? 0,
     gallery: [...(r.media ?? [])]
       .sort((a, b) => a.sort_order - b.sort_order)
-      .map((m) => ({
-        url: m.url,
-        alt: m.alt,
-        isPrimary: m.is_primary,
-        sortOrder: m.sort_order,
-      })),
+      .map((m) => {
+        const f = toFocal(m.focal_x, m.focal_y, m.zoom);
+        return {
+          url: m.url,
+          alt: m.alt,
+          isPrimary: m.is_primary,
+          sortOrder: m.sort_order,
+          focalX: f.x,
+          focalY: f.y,
+          zoom: f.zoom,
+        };
+      }),
   };
 }
 
@@ -745,12 +763,18 @@ export async function setProductMedia(
   expectedRevision: number | null,
 ): Promise<SavedGallery> {
   const admin = createAdminSupabaseClient();
-  const payload = items.map((it, i) => ({
-    url: it.url,
-    alt: it.alt ?? null,
-    is_primary: Boolean(it.isPrimary),
-    sort_order: i,
-  }));
+  const payload = items.map((it, i) => {
+    const f = toFocal(it.focalX, it.focalY, it.zoom);
+    return {
+      url: it.url,
+      alt: it.alt ?? null,
+      is_primary: Boolean(it.isPrimary),
+      sort_order: i,
+      focal_x: f.x,
+      focal_y: f.y,
+      zoom: f.zoom,
+    };
+  });
   const { data, error } = await admin.schema("api").rpc("set_product_media", {
     p_code: code,
     p_items: payload,
@@ -760,16 +784,30 @@ export async function setProductMedia(
   if (error) throwGalleryError(error);
   const result = (data ?? {}) as {
     revision?: number;
-    items?: Array<{ url: string; alt: string | null; is_primary: boolean; sort_order: number }>;
+    items?: Array<{
+      url: string;
+      alt: string | null;
+      is_primary: boolean;
+      sort_order: number;
+      focal_x: number | string | null;
+      focal_y: number | string | null;
+      zoom: number | string | null;
+    }>;
   };
   return {
     revision: result.revision ?? 0,
-    gallery: (result.items ?? []).map((m) => ({
-      url: m.url,
-      alt: m.alt,
-      isPrimary: m.is_primary,
-      sortOrder: m.sort_order,
-    })),
+    gallery: (result.items ?? []).map((m) => {
+      const f = toFocal(m.focal_x, m.focal_y, m.zoom);
+      return {
+        url: m.url,
+        alt: m.alt,
+        isPrimary: m.is_primary,
+        sortOrder: m.sort_order,
+        focalX: f.x,
+        focalY: f.y,
+        zoom: f.zoom,
+      };
+    }),
   };
 }
 

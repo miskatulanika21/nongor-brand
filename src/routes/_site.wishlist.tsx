@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 import { requiresSelection, type Product } from "@/lib/products";
+import { DEFAULT_FOCAL, focalStyle } from "@/lib/image-focal";
 import { listProductCards } from "@/lib/catalog.api";
 import { formatBDT } from "@/lib/brand";
 import { EmptyState } from "@/components/states";
@@ -176,6 +177,7 @@ function Wishlist() {
                     src={p.image}
                     alt={p.name}
                     loading="lazy"
+                    style={focalStyle(p.imageFocal ?? DEFAULT_FOCAL)}
                     className="h-full w-full object-cover"
                   />
                 </Link>

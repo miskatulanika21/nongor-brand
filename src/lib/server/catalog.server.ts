@@ -29,7 +29,7 @@ const CARD_SELECT = `
   is_new, is_handmade, is_best_seller, has_video, custom_size, custom_size_charge,
   color, colors, fabric, occasion, shade, volume, skin_type,
   category:product_categories!inner ( slug, name ),
-  media:product_media ( url, alt, is_primary, sort_order ),
+  media:product_media ( url, alt, is_primary, sort_order, focal_x, focal_y, zoom ),
   sizes:product_size_stock ( size, quantity, sort_order )
 `;
 
@@ -40,7 +40,7 @@ const DETAIL_SELECT = `
   description, care, blouse_piece, length, work_type, stitched, pieces_included,
   shade, volume, skin_type, expiry, batch, ingredients, how_to_use, safety,
   category:product_categories!inner ( slug, name ),
-  media:product_media ( url, alt, is_primary, sort_order ),
+  media:product_media ( url, alt, is_primary, sort_order, focal_x, focal_y, zoom ),
   sizes:product_size_stock ( size, quantity, sort_order ),
   reviews:product_reviews ( id, author_name, rating, body, created_at )
 `;

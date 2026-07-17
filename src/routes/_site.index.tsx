@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { listProductCards } from "@/lib/catalog.api";
+import { DEFAULT_FOCAL, focalStyle } from "@/lib/image-focal";
 import { getActiveBanners } from "@/lib/banners.api";
 import { ProductGrid } from "@/components/ProductGrid";
 import { SectionHeading } from "@/components/SectionHeading";
@@ -318,6 +319,7 @@ function Home() {
                     src={p.image}
                     alt={`${p.name} styled by Nongorr`}
                     loading="lazy"
+                    style={focalStyle(p.imageFocal ?? DEFAULT_FOCAL)}
                     className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                   />
                   <span className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-card/80 text-primary opacity-0 backdrop-blur transition group-hover:opacity-100">
