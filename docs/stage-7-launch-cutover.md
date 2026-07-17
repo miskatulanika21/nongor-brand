@@ -244,18 +244,37 @@ The single page the operator ticks through on launch day. Unchecked items are
 
 ### Courier — keys & webhook (§8)
 
-- [ ] SteadFast keys **regenerated** (the merchant-dashboard pair was exposed in
-      a screenshot 2026-07-17) → `STEADFAST_API_KEY` / `STEADFAST_SECRET_KEY`
+- [ ] SteadFast keys **regenerated** → `STEADFAST_API_KEY` / `STEADFAST_SECRET_KEY`.
+      **Blocker, not hygiene**: the pair was exposed in a screenshot 2026-07-17
+      _and_ a live `/get_balance` probe returns `401 invalid API credentials` —
+      the keys in env are already dead.
+- [ ] `STEADFAST_BASE_URL=https://portal.packzy.com/api/v1` (or leave unset — the
+      default is now correct). **Never** set it to a `portal.steadfast.com.bd`
+      host: that domain does not exist.
 - [ ] `STEADFAST_WEBHOOK_SECRET` set in Vercel (a value **we** invent, not one
       SteadFast issues) **+ redeploy**
-- [ ] SteadFast → **Update Webhook Info** → `https://nongorr.com/api/webhook/steadfast`,
-      header `X-Webhook-Secret` = that secret (**after** the DNS cut-over, so
-      it's wired once — was `No Webhook Set` as of 2026-07-17)
+- [ ] SteadFast → **Update Webhook Info** → Callback Url
+      `https://nongorr.com/api/webhook/steadfast`, **Auth Token(Bearer)** = that
+      secret (**after** the DNS cut-over — was `No Webhook Set` as of 2026-07-17)
 - [ ] Verify the secret landed: `curl -X POST` the endpoint with **no** header →
       `200` means set, `503` means still unset (proves it without knowing it)
 - [ ] Book one real shipment end-to-end and confirm a status update arrives
-- [ ] Same for Pathao if used: `PATHAO_CLIENT_ID` / `PATHAO_CLIENT_SECRET` /
-      `PATHAO_WEBHOOK_SECRET` → `https://nongorr.com/api/webhook/pathao`
+- [ ] **`PATHAO_SANDBOX_ENABLED` is `false` (or unset) in Vercel.** ⚠ If it is
+      `true` in production, every real order books against Pathao's sandbox and
+      **nothing ever ships** — the app looks healthy and returns consignment ids
+      the whole time. It is legitimately `true` in local `.env` for testing, so
+      this is easy to carry over by accident. Verify it explicitly; do not assume.
+- [ ] Pathao, if used: `PATHAO_CLIENT_ID` / `PATHAO_CLIENT_SECRET` /
+      **`PATHAO_USERNAME`** / **`PATHAO_PASSWORD`** (the panel login — their
+      token API only supports the password grant) / `PATHAO_STORE_ID` /
+      `PATHAO_WEBHOOK_SECRET`
+- [ ] `PATHAO_STORE_ID` is the **production** store id (Merchant panel → Stores).
+      Store ids are per-environment and the code does **not** fall back between
+      them: `PATHAO_SANDBOX_STORE_ID` is separate, because reusing one in the
+      other environment books against a store that isn't yours.
+- [ ] Pathao webhook: set `PATHAO_WEBHOOK_SECRET` **and redeploy first**, then
+      "Add Webhook" → `https://nongorr.com/api/webhook/pathao`, **Secret** = that
+      value. Registration probes the URL and fails while the env is unset.
 
 ### Environment
 
@@ -317,12 +336,20 @@ report "picked up", "delivered", "returned", so shipments freeze at their booked
 status forever and the operator has to reconcile delivery by hand. There is no
 error to notice. It just quietly does nothing.
 
+> **Corrected 2026-07-17.** This section previously said to register the secret
+> as an `X-Webhook-Secret` header. **Neither provider sends that header** — the
+> instruction below would have failed every event even after wiring. The
+> integration was verified against both providers' live docs and rewritten; the
+> real header names are given below. See §8.1 for the full list of what was
+> wrong.
+
 ### What the endpoint already does
 
 `POST /api/webhook/steadfast` (`src/routes/api.webhook.steadfast.ts`; Pathao is
-the mirror image):
+**not** a mirror image — see §8.1):
 
-- Verifies an `X-Webhook-Secret` header with a **timing-safe** compare.
+- Verifies the token in `Authorization: Bearer <token>` with a **timing-safe**
+  compare. (Pathao instead sends `X-PATHAO-Signature`.)
 - **Fails closed** — if `STEADFAST_WEBHOOK_SECRET` is unset it returns **503**
   and processes nothing.
 - **Idempotent** — the event id is a SHA-256 of the raw body (no clock), so a
@@ -341,11 +368,19 @@ whatever header we register. Generate it outside any shared session
 
 1. Vercel → add `STEADFAST_WEBHOOK_SECRET` (Production) → **redeploy**. Env
    changes don't reach the running app without one.
-2. SteadFast → **Update Webhook Info** → URL
-   `https://nongorr.com/api/webhook/steadfast`, header `X-Webhook-Secret` = that
-   value.
+2. SteadFast → **Update Webhook Info**
+   (<https://steadfast.com.bd/user/webhook/add>) → **Callback Url**
+   `https://nongorr.com/api/webhook/steadfast`, **Auth Token(Bearer)** = that
+   value. SteadFast returns it to us as `Authorization: Bearer <value>`.
 3. Do step 2 **after** the DNS cut-over. Pointing it at the vercel.app host works
    but leaves the courier integration depending on a URL we're retiring.
+
+For **Pathao**, the same order applies with one extra constraint: set
+`PATHAO_WEBHOOK_SECRET` and redeploy **before** clicking "Add Webhook". Pathao
+probes the URL during registration and refuses it unless the probe is answered
+(and while the env is unset the endpoint returns 503, which fails the probe). Enter
+the secret as **Secret**; Pathao returns it as `X-PATHAO-Signature`. Tick the
+events you want — all 24 are handled.
 
 ### Verifying without handling the secret
 
@@ -365,4 +400,40 @@ update actually lands.
 > screenshot. **Regenerate them** in the merchant dashboard and treat the old
 > pair as burned — it can book/cancel real shipments and read customer addresses
 > and phone numbers. See `docs/stage-7-secrets-and-rotation.md` for the standing
-> rotation procedure.
+> rotation procedure. A live read-only `/get_balance` probe on 2026-07-17
+> returned `401 invalid API credentials` — the keys currently in env are already
+> dead, so this is now a blocker, not just hygiene. (That endpoint counts
+> failures: the response carried `attempts_left: 9`. Don't probe it in a loop.)
+
+---
+
+## 8.1 Courier integration — what was actually broken (2026-07-17)
+
+Stage 5 shipped the courier layer against **guessed** provider contracts. None of
+it could ever have worked in production. Verified against both providers' live
+docs and, where possible, live probes:
+
+| #   | Bug                                             | Evidence                                                                                                                                                                                                                                                                                                     | Fix                                                                                                                                                   |
+| --- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | SteadFast base URL `portal.steadfast.com.bd`    | **NXDOMAIN** — `curl` exit 6, node `ENOTFOUND`. Real host is `portal.packzy.com` (401 JSON, i.e. reachable).                                                                                                                                                                                                 | `DEFAULT_BASE_URL` → packzy                                                                                                                           |
+| 2   | Both webhooks checked `X-Webhook-Secret`        | Neither provider sends it. SteadFast's panel field is literally "Auth Token(Bearer)"; its docs list `Authorization: Bearer {your_api_key}`. Pathao's docs list `X-PATHAO-Signature`.                                                                                                                         | Per-provider auth                                                                                                                                     |
+| 3   | Pathao webhook could not be registered          | Their spec requires the URL answer the `{event:"webhook_integration"}` probe with **202** + header `X-Pathao-Merchant-Webhook-Integration-Secret: f3992ecc-…`. We returned 200 and no header.                                                                                                                | Handshake, checked **before** the signature (the probe is unsigned)                                                                                   |
+| 4   | Pathao status read from `order_status`/`status` | Payload has neither. Status is `event` (`"order.delivered"`). Both reads were always `undefined`.                                                                                                                                                                                                            | Read `event`                                                                                                                                          |
+| 5   | Pathao vocabulary invented                      | We expected `picked_up`, `out_for_delivery`. Real slugs are dotted-kebab and 24 of them. Several are unguessable: "Payment Invoice" = `order.paid`, "Exchange" = `order.exchanged`, "Return" = `order.returned`. Also our normalizer never stripped the dot, so a real slug could never have matched anyway. | All 24 mapped                                                                                                                                         |
+| 6   | Pathao token grant `client_credentials`         | Docs: _"Must use grant type **password**"_. Production had no username/password at all, so token issuance — and therefore every Pathao call — failed.                                                                                                                                                        | `password` grant; `PATHAO_USERNAME`/`PATHAO_PASSWORD` now required                                                                                    |
+| 7   | Pathao status poll hit `/orders/{cid}`          | Documented path is `/orders/{cid}/info`.                                                                                                                                                                                                                                                                     | Corrected                                                                                                                                             |
+| 8   | SteadFast statuses invented                     | We mapped `in_transit` and `delivered_to_warehouse`; neither exists. Real set is 11 (polling) / 5 (webhook). SteadFast has **no transit signal at all**.                                                                                                                                                     | Real vocabulary                                                                                                                                       |
+| 9   | SteadFast `tracking_update` dropped             | A second `notification_type` carrying `tracking_message` and **no** status.                                                                                                                                                                                                                                  | Recorded via new `api.record_shipment_event` (migration `20260717120221`, applied to prod) — append-only, so it can't clobber a real `courier_status` |
+| 10  | `checkStatus` threw on any non-JSON reply       | Found by driving the live API, not by reading docs: polling a consignment that isn't ours returns the bare text `Unauthorized Access` (HTTP 401), and the unguarded `resp.json()` raised a SyntaxError into the caller. A gateway error or an HTML page does the same. Both adapters were affected.          | Defensive parse; a failed poll yields `unknown` — a documented, non-transitioning status. Pinned by `courier/__tests__/adapter-resilience.test.ts`    |
+| 11  | One `PATHAO_STORE_ID` for both environments     | Store ids are issued per environment: production store `410847` ("Nongorr") does not exist in sandbox. A single var means one environment is always wrong — booking against a store that isn't ours.                                                                                                         | Separate `PATHAO_SANDBOX_STORE_ID`, with **no fallback** between them                                                                                 |
+
+**Why none of this surfaced:** both endpoints return 503 while their secrets are
+unset, and booking failures are reported per-attempt rather than alerted. The
+integration failed silently and completely.
+
+**The lesson worth keeping:** the Stage 5 tests passed the entire time. They
+asserted our _invented_ vocabulary, so they pinned the bug in place instead of
+catching it. Tests covering an external contract must be written from that
+contract's published source — `src/lib/__tests__/courier-shared.test.ts` now
+cites the doc for each expectation, and asserts that the old guesses map to
+`null`.
