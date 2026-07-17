@@ -138,3 +138,23 @@ export function reportErrorMessage(code: string | null | undefined): string {
   if (!code) return REPORT_ERROR_MESSAGES.internal_error;
   return REPORT_ERROR_MESSAGES[code] ?? REPORT_ERROR_MESSAGES.internal_error;
 }
+
+/**
+ * Expand `by_day` to one row per day across [range.from, range.to).
+ *
+ * api.report_sales_summary GROUPs BY the order date, so days with no orders are
+ * absent from the array entirely. Plotted raw, a quiet day is not drawn as zero
+ * — it vanishes, and the x-axis silently compresses, which makes a 7-day chart
+ * lie about the period it covers. Filling the gaps with explicit zeros keeps the
+ * axis honest.
+ */
+export function fillDailySeries(byDay: SalesByDay[], range: ReportRange): SalesByDay[] {
+  const bucket = new Map(byDay.map((d) => [d.day, d]));
+  const out: SalesByDay[] = [];
+  const end = new Date(`${range.to}T00:00:00Z`);
+  for (let d = new Date(`${range.from}T00:00:00Z`); d < end; d.setUTCDate(d.getUTCDate() + 1)) {
+    const day = d.toISOString().slice(0, 10);
+    out.push(bucket.get(day) ?? { day, orders: 0, confirmed_revenue: 0, delivered_revenue: 0 });
+  }
+  return out;
+}
