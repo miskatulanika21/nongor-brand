@@ -4,6 +4,24 @@ Stage-by-stage plan with exit criteria. Derived from
 `nongorr-phase-2-antigravity-prompt.md` (V3). Update after each stage; keep in
 sync with `CURRENT_STATUS.md`.
 
+> **2026-07-17 — Domain cut-over + courier contract rebuild** (PR #12,
+> `b4d1d44`, CI green incl. migrations-local; **670 Vitest**; migration
+> `20260717120221_record_shipment_event` applied to prod). **`nongorr.com` now
+> serves this app** — apex Production, `www` 308 → apex, canonical verified live,
+> deliberately still `noindex` pending legal sign-off. No DNS change was needed
+> (records already pointed at Vercel); the blocker was the domain being claimed by
+> a **different Vercel account**. Separately, the Stage-5 courier layer was found
+> to have **never been capable of working** — built against guessed provider
+> contracts: a NXDOMAIN SteadFast host, an `X-Webhook-Secret` header neither
+> provider sends, an unimplementable Pathao registration handshake, a status read
+> from a field that doesn't exist, an invented 24-slug vocabulary, and a token
+> grant Pathao rejects. Eleven bugs, each verified against published docs **and**
+> live probes (`docs/stage-7-launch-cutover.md` §8.1); Pathao sandbox now books
+> end-to-end through the real adapter and production auth is verified read-only.
+> **The Stage-5 tests passed throughout** because they asserted our own invented
+> vocabulary — pinning the bug instead of catching it. Remaining P7 work is
+> owner-gated: webhook secrets, `VITE_ALLOW_INDEXING`, HSTS preload, legal copy.
+>
 > **2026-07-16 — Codex (GPT-5) order-workflow remediation** (MERGED & DEPLOYED,
 > `main` @ `b17e589`, CI all-green incl. migrations-local). A cross-cutting pass
 > addressing the ten Codex findings: guest idempotent replay redesigned around a

@@ -3,7 +3,49 @@
 Authoritative record of verified project state. Code and live-environment
 behavior are the source of truth; this file is updated after every stage.
 
-\_Last updated: 2026-07-16 — **Codex (GPT-5) order-workflow remediation —
+\_Last updated: 2026-07-17 — **DOMAIN CUT-OVER DONE + courier integration
+rebuilt against the real provider contracts** (PR #12, `b4d1d44`, CI green;
+**670 Vitest**). Two things landed.
+
+**(1) `nongorr.com` now serves this app.** Apex = Production, `www` = 308 → apex,
+canonical/`og:url` verified live as `https://nongorr.com/`. Deliberately still
+**`noindex`** — that flip is gated on the legal-copy sign-off and is the one step
+Google notices. **No DNS change was needed**: the records already pointed at
+Vercel, so the cut-over was purely moving the domain between Vercel _projects_
+(the old static site held it on a **different Vercel account** — Vercel claims
+domains at account _and_ project level, which is what "linked to another Vercel
+account" means). Back-out is a Vercel-side click, not a propagation wait, right
+up until HSTS preload. Runbook + evidence: `docs/stage-7-launch-cutover.md` §2.
+
+**(2) The courier layer had never worked, and now provably does.** Stage 5 shipped
+it against _guessed_ provider contracts: SteadFast booked to a host that does not
+exist (`portal.steadfast.com.bd` — NXDOMAIN; the API is `portal.packzy.com`), and
+both webhooks checked an `X-Webhook-Secret` header **neither provider sends**
+(SteadFast uses `Authorization: Bearer`, Pathao `X-PATHAO-Signature`). Pathao's
+webhook could not even be registered — it probes the URL and demands HTTP 202 plus
+an integration-secret echo. Pathao's status travels in `event` as one of 24
+dotted-kebab slugs (`order.delivered`), not `order_status`; several are
+unguessable (`order.paid` = "Payment Invoice"). Its token API only supports the
+`password` grant. Eleven bugs total, each verified against the published docs
+**and** live probes — full table in `docs/stage-7-launch-cutover.md` §8.1.
+**Verified live:** Pathao sandbox books end-to-end through the real adapter
+(consignment `DT170726Q3VV3U`) and polls `pending`→`booked`; Pathao production
+`issue-token`/`stores`/`price-plan` all 200; SteadFast `/get_balance` 200.
+
+**The lesson worth keeping:** the Stage 5 tests passed the whole time — they
+asserted our _invented_ vocabulary, so a green suite actively concealed a dead
+integration. Tests over an external contract must cite that contract's published
+source; the suite now does, and asserts the old guesses map to `null`. Two of the
+eleven bugs (a `SyntaxError` thrown on SteadFast's plain-text `401`, and one
+`PATHAO_STORE_ID` serving two environments) were findable **only** by driving the
+real API — no amount of doc-reading surfaces them.
+
+**Still owner-gated:** webhook secrets (both endpoints 503 until set — generate
+with `openssl rand -base64 32` and paste the _output_, not the command),
+`VITE_ALLOW_INDEXING=true`, HSTS preload, legal-copy sign-off. ⚠ SteadFast has
+**no sandbox** — its first booking is a real, billable consignment.\_
+
+\_Earlier (2026-07-16) — **Codex (GPT-5) order-workflow remediation —
 MERGED & DEPLOYED** (`main` @ `b17e589`; CI all-green incl. the migrations-local
 Docker replay). Site is in the **editing / pre-launch** phase (no real
 customers); the owner explicitly authorized applying the order-RPC migration to
