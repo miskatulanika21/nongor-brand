@@ -296,7 +296,8 @@ export function ImageFramer({
         </div>
         {heroChrome && (
           <p className="text-[0.7rem] text-muted-foreground">
-            The shaded band is where the gradient and caption card sit — keep your subject out of it.
+            The shaded band is where the gradient and caption card sit — keep your subject out of
+            it.
           </p>
         )}
       </div>
@@ -366,7 +367,9 @@ function PreviewCard({
                 </p>
               )}
               {!compact && preview?.cardSubtitle && (
-                <p className="truncate text-[0.7rem] text-muted-foreground">{preview.cardSubtitle}</p>
+                <p className="truncate text-[0.7rem] text-muted-foreground">
+                  {preview.cardSubtitle}
+                </p>
               )}
             </div>
           )}
