@@ -298,7 +298,25 @@ orders must be payment-verified before booking.
 
 Status flow: webhooks (`/api/webhook/steadfast`, `/api/webhook/pathao`) are
 POST-only, rate-limited per IP, disabled (503) until their
-`*_WEBHOOK_SECRET` env is set, and always answer a generic 200. The raw body
+`*_WEBHOOK_SECRET` env is set, and always answer a generic 200.
+
+**Auth differs per provider** (2026-07-17 — they are _not_ mirror images).
+SteadFast authenticates with `Authorization: Bearer <token>`, the value entered
+as "Auth Token(Bearer)" in its panel; Pathao sends `X-PATHAO-Signature`. Neither
+sends `X-Webhook-Secret` — the header the original code checked, which rejected
+100% of real events. Pathao additionally **probes the URL at registration** with
+`{event:"webhook_integration"}` and only accepts it if we answer HTTP **202** and
+echo `X-Pathao-Merchant-Webhook-Integration-Secret`; that handshake is checked
+_before_ the signature, because the probe is unsigned. Pathao's status arrives in
+the payload's `event` field as a dotted-kebab slug (`order.delivered`, 24 of
+them), never `order_status`. SteadFast sends two `notification_type`s:
+`delivery_status` (carrying `status`) and `tracking_update` (carrying only a
+`tracking_message`) — the latter is appended via `api.record_shipment_event`,
+which deliberately does **not** touch `courier_status`, since routing it through
+`update_shipment_status` would overwrite a real "delivered" with a non-status.
+Full contract + evidence: `docs/stage-7-launch-cutover.md` §8.1.
+
+The raw body
 is capped at 64 KB (on the actual read bytes), parsed, and recorded via
 `api.record_webhook_event` with an idempotency key = SHA-256 of the raw body —
 a byte-identical provider retry dedups, a distinct event processes. New events

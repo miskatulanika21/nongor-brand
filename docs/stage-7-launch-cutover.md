@@ -1,15 +1,38 @@
 # Stage 7 / P7 — Content, legal & launch cut-over
 
-**Status:** IN PROGRESS (2026-07-17). Code-side P7 work is **done**; what remains
-is owner-gated (DNS, toggles, secrets) and the legal-copy sign-off.
+**Status:** CUT-OVER DONE (2026-07-17). `nongorr.com` **serves this app**, on the
+apex, correctly canonicalised — and is deliberately still `noindex`. What remains
+is the webhook secrets, the indexing flip, and the legal-copy sign-off.
 
-**The domain exists:** `nongorr.com` was acquired 2026-07-16 (Namecheap — ACTIVE,
-auto-renew ON, WHOIS privacy ON, expires 2027-02-19, PositiveSSL issued). It
-**currently serves a different site**, so this is a re-point, not a first
-publish: §2 sequences it so the storefront is verified on the domain before
-anything that is hard to walk back (HSTS preload) is switched on.
+## Where the cut-over actually landed
 
-Acquiring the domain also **opens the deferred Stage-6 P1/P2 gate** (§5).
+Verified live 2026-07-17, after the move:
+
+|                          | State                                                     |
+| ------------------------ | --------------------------------------------------------- |
+| Apex `nongorr.com`       | **Production** — serves this app, HTTP 200                |
+| `www.nongorr.com`        | **308 → apex** (apex is canonical)                        |
+| `<link rel="canonical">` | `https://nongorr.com/` ✅ matches the served host         |
+| `<meta name="robots">`   | `noindex,nofollow` — **intentional**, see §2 step 9       |
+| `/api/webhook/*`         | **503** — secrets not set yet (fails closed, as designed) |
+| HSTS preload             | **not submitted** — nothing locked in                     |
+
+**The DNS was already on Vercel.** The apex `A` record pointed at `216.198.79.1`
+and `www` at `…vercel-dns-017.com` before the move, so **no Namecheap DNS change
+was needed and none should be made**. The cut-over was purely moving the domain
+between Vercel _projects_. Earlier revisions of this doc told you to re-point DNS
+at Namecheap — that was written before the domain was inspected, and following it
+now would break a working configuration.
+
+**What actually blocked it** was not DNS: the domain was claimed by a _different
+Vercel account_ (the old static site). Vercel tracks domains at **both** the
+account and the project level, so removing it from the old _project_ is not
+enough — it must be released from the old **account's** domain list, or ownership
+proved with the `_vercel` TXT records Vercel offers. Either clears it in minutes.
+
+The domain also **opens the deferred Stage-6 P1/P2 gate** (§5) — and the Resend
+email DNS (`resend._domainkey`, SPF via `amazonses`, `_dmarc`) is already present
+on `nongorr.com`, so the outbox sender is unblocked whenever you want it.
 
 ---
 
@@ -107,35 +130,64 @@ scaffolding was confined to exactly one file — verified `MockBadge` /
 > **Read §3 first.** `VITE_SITE_URL` is consumed two different ways and the
 > difference is the single biggest trap in this procedure.
 
-The domain currently serves another site, so order matters.
+**Steps 1–7 are DONE (2026-07-17)** and kept here as the record of what was
+actually required — the reasoning matters more than the clicks, and steps 8–9 are
+still open. What follows is what happened, not a plan.
 
-1. **Vercel — add the domain.** Project → Settings → Domains → add `nongorr.com`
-   **and** `www.nongorr.com`; pick one as canonical (recommend apex, redirect
-   `www` → apex) so the canonical tag and the served host agree.
-2. **Namecheap — DNS.** Point per Vercel's instructions (apex `A` →
-   `76.76.21.21`, or Namecheap's ALIAS/CNAME to Vercel; `www` CNAME →
-   `cname.vercel-dns.com`). **Lower the TTL a day ahead** if you want a fast
-   back-out. This is the step that takes the old site down — everything after is
-   verification.
-3. **Wait for Vercel-issued TLS.** Vercel provisions its own certificate; the
-   Namecheap PositiveSSL is not used by Vercel and needs no action.
-4. **`ADDITIONAL_ALLOWED_ORIGINS` — do this BEFORE step 5.** Set it to
-   `https://nongor-brand.vercel.app` so in-flight sessions on the old host keep
-   working through the switch (see §3).
-5. **`VITE_SITE_URL=https://nongorr.com` → then REDEPLOY.** The redeploy is not
-   optional; see §3.
-6. **Supabase — Auth URL configuration.** Site URL → `https://nongorr.com`; add
-   `https://nongorr.com/**` to Redirect URLs. **Keep the vercel.app entry until
-   the cut-over is confirmed**, then remove it.
-7. **Google OAuth console.** Add `https://nongorr.com` to Authorized JavaScript
-   origins and the Supabase callback to Authorized redirect URIs.
-8. **Verify on the real domain** (§4) — _before_ step 9.
-9. **HSTS preload — LAST, and only once §4 passes.** Preload is
-   **hard to reverse** (removal takes months to propagate through browser
-   releases). Confirm the site is fully healthy on HTTPS at the apex first, then
-   submit at `hstspreload.org`.
-10. **Rotate credentials** per `docs/stage-7-secrets-and-rotation.md`, now that
-    the domain and secrets are final.
+1. ~~**Release the domain from the old Vercel account.**~~ ✅ The domain was
+   claimed by a different Vercel account serving the old static site. Vercel
+   tracks domains at **both** account and project level: removing it from the old
+   _project_ leaves it claimed, and the new project shows _"This domain is linked
+   to another Vercel account."_ Clear it either by removing it from the old
+   **account's** Domains page, or by adding the `_vercel` TXT records Vercel
+   offers. Between release and verification the domain serves **404** — expected,
+   and the reason to do this before announcing anything.
+2. ~~**Add the domain to `nongor-brand`.**~~ ✅ Apex `nongorr.com` = **Production**;
+   `www.nongorr.com` = **308 → apex**. The direction matters: the served host must
+   match the canonical tag, and `VITE_SITE_URL` is the apex.
+3. ~~**DNS.**~~ ✅ **No change was needed and none should be made.** The apex `A`
+   already pointed at Vercel (`216.198.79.1`) and `www` at
+   `…vercel-dns-017.com`. Because DNS never moved, there was no propagation wait
+   and no downtime window. _(A previous revision of this doc told you to re-point
+   at `76.76.21.21`. That was written before the DNS was inspected — do not do it.
+   Do not touch the `A`/`CNAME`, nor the Resend `resend._domainkey` / `send` /
+   `_dmarc` TXT records.)_
+4. ~~**TLS.**~~ ✅ Vercel provisions its own certificate. The Namecheap
+   PositiveSSL is unused and needs no action.
+5. ~~**`ADDITIONAL_ALLOWED_ORIGINS` before `VITE_SITE_URL`.**~~ ✅ Set to
+   `https://nongor-brand.vercel.app` so in-flight sessions survive the switch
+   (see §3).
+6. ~~**`VITE_SITE_URL=https://nongorr.com` → REDEPLOY.**~~ ✅ **The redeploy is
+   the step that is silently skipped.** Attaching a domain does _not_ change these
+   values — they are inlined at build time. Before the redeploy, `nongorr.com` was
+   live and serving `<link rel="canonical" href="https://nongor-brand.vercel.app/">`
+   plus `noindex`: a site that looks perfectly healthy while pointing every
+   canonical at the wrong host. Verified after: canonical and `og:url` are now
+   `https://nongorr.com/`.
+7. **Supabase + Google OAuth.** Supabase → Auth → URL Configuration: Site URL
+   `https://nongorr.com`, add `https://nongorr.com/**` to Redirect URLs; **keep
+   the vercel.app entry** until §4 passes, then remove. Google OAuth console: add
+   `https://nongorr.com` to Authorized JavaScript origins and the Supabase
+   callback to Authorized redirect URIs.
+8. **Webhook secrets → redeploy → register.** ⬜ OPEN. See §8. Both endpoints
+   return **503** until their secrets are set, and Pathao's registration probes
+   the URL — so a 503 makes registration fail. Set, redeploy, verify **200**,
+   then register.
+9. **`VITE_ALLOW_INDEXING=true`.** ⬜ OPEN — currently `noindex,nofollow`, which
+   is deliberate. This is the step Google notices, and it is gated on the
+   legal-copy sign-off. Everything else on this list reverses in minutes; a bad
+   indexing event does not. Leaving the site `noindex` lets you register webhooks
+   and run a real booking test on the production domain before anyone can find it.
+10. **HSTS preload — LAST.** ⬜ OPEN. **Hard to reverse** (removal takes months to
+    propagate through browser releases). Nothing is locked in yet: HSTS is served
+    but _without_ the `preload` directive. Only submit at `hstspreload.org` once
+    §4 passes.
+
+**Back-out:** re-add the domain to the old Vercel project. Because DNS was never
+touched, this is a Vercel-side change measured in minutes — not a propagation
+wait. That remains true right up until HSTS preload (step 10), which is where a
+clean escape stops existing. 10. **Rotate credentials** per `docs/stage-7-secrets-and-rotation.md`, now that
+the domain and secrets are final.
 
 **Back-out:** revert the Namecheap DNS records. With a low TTL this is minutes.
 This is why HSTS preload is step 9 — after it, "just point the DNS back" stops
@@ -235,51 +287,75 @@ The single page the operator ticks through on launch day. Unchecked items are
 
 ### Domain & DNS
 
-- [ ] `nongorr.com` + `www` added in Vercel, canonical host chosen
-- [ ] Namecheap DNS pointed at Vercel; old site retired
-- [ ] Vercel TLS issued; HTTP → HTTPS enforced
+- [x] Domain released from the **old Vercel account** (account-level Domains, not
+      just the project) — this, not DNS, was the actual blocker
+- [x] `nongorr.com` = **Production**, `www` = **308 → apex** in `nongor-brand`
+- [x] **DNS: no change made, none needed** — already pointed at Vercel. Do not
+      "fix" the `A`/`CNAME`, and do not touch the Resend TXT records
+- [x] Vercel TLS issued; HTTP → HTTPS enforced
+- [x] `VITE_SITE_URL=https://nongorr.com` **+ redeploy** → canonical/`og:url`
+      verified as `https://nongorr.com/` on the live apex
 - [ ] §4 verification passed **in full**
-- [ ] HSTS preload submitted (**only after** §4 — hard to reverse)
-- [ ] SPF / DKIM / DMARC (with the Stage-6 P1 provider, if chosen)
+- [ ] `VITE_ALLOW_INDEXING=true` — ⬜ still `noindex,nofollow` **on purpose**;
+      gated on the legal-copy sign-off. The one step Google notices
+- [ ] HSTS preload submitted (**only after** §4 — hard to reverse; currently
+      served **without** `preload`, so nothing is locked in)
+- [x] SPF / DKIM / DMARC — Resend records already present on `nongorr.com`
+      (`resend._domainkey`, `send` → amazonses, `_dmarc`); unblocks Stage-6 P1
 
 ### Courier — keys & webhook (§8)
 
-- [ ] SteadFast keys **regenerated** → `STEADFAST_API_KEY` / `STEADFAST_SECRET_KEY`.
-      **Blocker, not hygiene**: the pair was exposed in a screenshot 2026-07-17
-      _and_ a live `/get_balance` probe returns `401 invalid API credentials` —
-      the keys in env are already dead.
-- [ ] `STEADFAST_BASE_URL=https://portal.packzy.com/api/v1` (or leave unset — the
+- [x] SteadFast keys **regenerated** → verified live: `/get_balance` returns
+      `200 {"current_balance":0}` on `portal.packzy.com`. (The previous pair was
+      exposed in a screenshot _and_ already dead — 401.)
+- [x] `STEADFAST_BASE_URL=https://portal.packzy.com/api/v1` (or leave unset — the
       default is now correct). **Never** set it to a `portal.steadfast.com.bd`
       host: that domain does not exist.
-- [ ] `STEADFAST_WEBHOOK_SECRET` set in Vercel (a value **we** invent, not one
-      SteadFast issues) **+ redeploy**
-- [ ] SteadFast → **Update Webhook Info** → Callback Url
-      `https://nongorr.com/api/webhook/steadfast`, **Auth Token(Bearer)** = that
-      secret (**after** the DNS cut-over — was `No Webhook Set` as of 2026-07-17)
+- [x] `STEADFAST_WEBHOOK_SECRET` set in Vercel **+ redeploy**. ⚠ It is a value
+      **you generate** (`openssl rand -hex 32`) — SteadFast does not issue it,
+      it only echoes back what you register. **Paste the command's _output_, not
+      the command.** A guessable secret here lets anyone forge delivery events and
+      mark orders delivered/returned at will.
+      ⚠ **Use hex, NOT `-base64`.** SteadFast's "Auth Token(Bearer)" field
+      client-side-rejects `+` `/` `=` with _"The auth token format is invalid."_
+      A base64 secret can never be entered; hex is alphanumeric and passes. Our
+      endpoint compares the Bearer token verbatim, so any string works our side.
+- [x] SteadFast → **Update Webhook Info** (<https://steadfast.com.bd/user/webhook/add>)
+      → Callback Url `https://nongorr.com/api/webhook/steadfast`,
+      **Auth Token(Bearer)** = that secret. Register the **apex, never `www`** —
+      `www` 308s to apex and a redirect can drop the `Authorization` header the
+      auth depends on. (Registered 2026-07-17 → _"Successfully updated!"_)
 - [ ] Verify the secret landed: `curl -X POST` the endpoint with **no** header →
       `200` means set, `503` means still unset (proves it without knowing it)
-- [ ] Book one real shipment end-to-end and confirm a status update arrives
+- [ ] Book one real shipment end-to-end and confirm a status update arrives.
+      ⚠ **SteadFast has no sandbox** — the first booking is a real, billable
+      consignment. Pathao can be rehearsed for free; SteadFast cannot.
 - [ ] **`PATHAO_SANDBOX_ENABLED` is `false` (or unset) in Vercel.** ⚠ If it is
       `true` in production, every real order books against Pathao's sandbox and
       **nothing ever ships** — the app looks healthy and returns consignment ids
       the whole time. It is legitimately `true` in local `.env` for testing, so
       this is easy to carry over by accident. Verify it explicitly; do not assume.
-- [ ] Pathao, if used: `PATHAO_CLIENT_ID` / `PATHAO_CLIENT_SECRET` /
-      **`PATHAO_USERNAME`** / **`PATHAO_PASSWORD`** (the panel login — their
-      token API only supports the password grant) / `PATHAO_STORE_ID` /
-      `PATHAO_WEBHOOK_SECRET`
-- [ ] `PATHAO_STORE_ID` is the **production** store id (Merchant panel → Stores).
-      Store ids are per-environment and the code does **not** fall back between
-      them: `PATHAO_SANDBOX_STORE_ID` is separate, because reusing one in the
-      other environment books against a store that isn't yours.
+- [x] Pathao production credentials **verified live** (2026-07-17): `issue-token`
+      → 200, `/stores` → 200, `/price-plan` → 200. ⚠ **`PATHAO_USERNAME` /
+      `PATHAO_PASSWORD` are your merchant-panel _login email and password_, NOT
+      API values.** Pathao needs an API pair (`CLIENT_ID`/`CLIENT_SECRET` from the
+      Developer API page) **and** an account login, because `issue-token` only
+      supports the `password` grant. Filling all four from the Developer API page
+      is the natural mistake and it fails as **HTTP 500 with an empty body** —
+      which tells you nothing. If you see that 500, check this first.
+- [x] `PATHAO_STORE_ID` = **`410847`** ("Nongorr") — confirmed against the live
+      `/stores` list. Store ids are per-environment and the code does **not** fall
+      back between them: `PATHAO_SANDBOX_STORE_ID` is separate, because reusing
+      one in the other environment books against a store that isn't yours
+      (verified: prod store `410847` does not exist in sandbox).
 - [ ] Pathao webhook: set `PATHAO_WEBHOOK_SECRET` **and redeploy first**, then
       "Add Webhook" → `https://nongorr.com/api/webhook/pathao`, **Secret** = that
       value. Registration probes the URL and fails while the env is unset.
 
 ### Environment
 
-- [ ] `ADDITIONAL_ALLOWED_ORIGINS=https://nongor-brand.vercel.app` (before the flip)
-- [ ] `VITE_SITE_URL=https://nongorr.com` **+ redeploy** (§3)
+- [x] `ADDITIONAL_ALLOWED_ORIGINS=https://nongor-brand.vercel.app` (before the flip)
+- [x] `VITE_SITE_URL=https://nongorr.com` **+ redeploy** (§3) — verified live
 - [ ] `ADDITIONAL_ALLOWED_ORIGINS` cleared once traffic has moved
 
 ### Security
@@ -364,7 +440,9 @@ error to notice. It just quietly does nothing.
 
 The secret is **ours to invent** — SteadFast does not issue it; it echoes back
 whatever header we register. Generate it outside any shared session
-(`openssl rand -base64 32`).
+(`openssl rand -hex 32`). ⚠ **Hex, not `-base64`:** SteadFast's Auth Token field
+rejects `+` `/` `=` ("The auth token format is invalid."), so a base64 value can
+never be registered. Hex is alphanumeric and accepted.
 
 1. Vercel → add `STEADFAST_WEBHOOK_SECRET` (Production) → **redeploy**. Env
    changes don't reach the running app without one.
