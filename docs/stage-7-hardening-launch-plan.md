@@ -1,7 +1,10 @@
 # Stage 7 — Master Plan: Hardening & Launch
 
 **Status:** IN PROGRESS (plan 2026-07-12). **P0 decision gate RESOLVED
-2026-07-12** (§2). Next: **P1 — security hardening & closure**.
+2026-07-12** (§2). **P1–P6 done** (P5 CI/CD and P6 backup/DR shipped; the P6
+restore drill is green at RTO ≈ 1 s and the prod↔repo drift it found is
+reconciled). Now: **P7 — content, legal & launch cut-over**, tracked in
+`docs/stage-7-launch-cutover.md`; then P8 closure.
 
 **Predecessors:** Stages 1–6 closed. Stage 6 content scope shipped (banners /
 policies CMS / size charts / reports+CSV); **Stage 6 P1 (notification-outbox
@@ -332,6 +335,14 @@ The highest-severity **doc** gap. No new app code; this is procedure + drills.
 Storage backup addressed; the DR decision tree covers the four named scenarios.
 
 ### P7 — Content, legal & launch cut-over
+
+> **IN PROGRESS — see `docs/stage-7-launch-cutover.md`** for what has shipped,
+> the cut-over runbook and the go-live checklist. **`nongorr.com` was acquired
+> 2026-07-16** (it currently serves another site, so P7 is a re-point). Code-side
+> P7 is **done**: absolute SEO URLs, the ৳ glyph subset + lining numerals, the
+> courier dropdown fix, the admin dashboard on real data, and a green
+> owner/admin/staff role audit. What remains is owner-gated (DNS, toggles,
+> secrets) plus the legal-copy sign-off.
 
 The launch-readiness pass. Also the event that unblocks Stage-6 P1/P2.
 

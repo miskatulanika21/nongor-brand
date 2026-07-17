@@ -68,12 +68,16 @@ manually any time: **Actions → Restore drill → Run workflow**.
 2 order_items; schemas+tables+RPCs+RLS intact, catalog_facets() live.` The first
 run also surfaced real drift — see the note below.
 
-> **⚠ Prod↔repo drift found by the drill (open):** production `public.audit_logs`
-> has `id uuid` + an `ip_address inet` column, but the committed migration
-> (`20260620144019_create_audit_logs.sql`) defines `id bigint` with no
-> `ip_address`. Prod is ahead of source control — reconcile by committing a
-> migration that matches prod (forward-only). The drill is drift-immune (it
-> restores prod's schema), so this does not block backups/restore.
+> **✔ Prod↔repo drift found by the drill (RESOLVED 2026-07-17):** production
+> `public.audit_logs` had `id uuid` + an `ip_address inet` column, but the
+> committed migration (`20260620144019_create_audit_logs.sql`) defined
+> `id bigint` with no `ip_address` — prod had drifted ahead of source control.
+> Reconciled forward-only by `20260716140000_reconcile_audit_logs_with_prod.sql`:
+> idempotent, so it is a guarded no-op against prod (which already has that
+> shape) and performs the real conversion on a fresh rebuild. **Confirmed
+> recorded in prod's migration history**, so prod and repo now agree. The drill
+> is drift-immune anyway (it restores prod's own schema), so this never blocked
+> backups/restore — it blocked a _rebuild-from-migrations_ matching prod.
 
 **RTO (recovery-time objective):** the app is stateless (Vercel), so app recovery
 is seconds; **data** recovery = dump + restore time, tracked by the drill summary
@@ -182,7 +186,7 @@ survive separately.
 - [x] Automated, scheduled **restore drill** that restores + verifies + records RTO.
 - [x] First green drill run recorded — run `29480429916`, **RTO ≈ 1s**, `restore_verify` passed (10 products / 2 orders / RPCs + RLS intact). Backup workflow also verified green (DB dump).
 - [ ] Backup secrets configured (§7) — enables the full encrypted backup + storage snapshot (drill needs none of these).
-- [ ] Reconcile the `audit_logs` prod↔repo drift the drill found (§2 note).
+- [x] Reconcile the `audit_logs` prod↔repo drift the drill found (§2 note) — `20260716140000_reconcile_audit_logs_with_prod.sql`, applied and **verified present in prod migration history 2026-07-17**.
 
 Related: `docs/stage-7-cicd-and-rollback.md` (P5 rollback), `docs/stage-7-hardening-launch-plan.md` (P6),
 `docs/stage-7-secrets-and-rotation.md`.
