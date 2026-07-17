@@ -242,6 +242,21 @@ The single page the operator ticks through on launch day. Unchecked items are
 - [ ] HSTS preload submitted (**only after** §4 — hard to reverse)
 - [ ] SPF / DKIM / DMARC (with the Stage-6 P1 provider, if chosen)
 
+### Courier — keys & webhook (§8)
+
+- [ ] SteadFast keys **regenerated** (the merchant-dashboard pair was exposed in
+      a screenshot 2026-07-17) → `STEADFAST_API_KEY` / `STEADFAST_SECRET_KEY`
+- [ ] `STEADFAST_WEBHOOK_SECRET` set in Vercel (a value **we** invent, not one
+      SteadFast issues) **+ redeploy**
+- [ ] SteadFast → **Update Webhook Info** → `https://nongorr.com/api/webhook/steadfast`,
+      header `X-Webhook-Secret` = that secret (**after** the DNS cut-over, so
+      it's wired once — was `No Webhook Set` as of 2026-07-17)
+- [ ] Verify the secret landed: `curl -X POST` the endpoint with **no** header →
+      `200` means set, `503` means still unset (proves it without knowing it)
+- [ ] Book one real shipment end-to-end and confirm a status update arrives
+- [ ] Same for Pathao if used: `PATHAO_CLIENT_ID` / `PATHAO_CLIENT_SECRET` /
+      `PATHAO_WEBHOOK_SECRET` → `https://nongorr.com/api/webhook/pathao`
+
 ### Environment
 
 - [ ] `ADDITIONAL_ALLOWED_ORIGINS=https://nongor-brand.vercel.app` (before the flip)
@@ -286,3 +301,68 @@ The single page the operator ticks through on launch day. Unchecked items are
 - [x] Owner / admin / staff role audit green, RBAC enforced (§1)
 - [x] `audit_logs` prod↔repo drift reconciled + present in prod migration history
 - [x] Restore drill green, RTO ≈ 1 s (`docs/stage-7-backup-and-dr.md`)
+
+---
+
+## 8. Courier webhook — the silent gap
+
+**As of 2026-07-17 the SteadFast merchant dashboard reads `Webhook URL: No
+Webhook Set`.** The endpoint has existed since Stage 5 and nothing has ever
+called it.
+
+This is the failure mode worth understanding, because **nothing about it looks
+broken**. Booking a shipment works; the consignment is created; the admin shows
+it as booked. What never happens is the _update_ — SteadFast has nowhere to
+report "picked up", "delivered", "returned", so shipments freeze at their booked
+status forever and the operator has to reconcile delivery by hand. There is no
+error to notice. It just quietly does nothing.
+
+### What the endpoint already does
+
+`POST /api/webhook/steadfast` (`src/routes/api.webhook.steadfast.ts`; Pathao is
+the mirror image):
+
+- Verifies an `X-Webhook-Secret` header with a **timing-safe** compare.
+- **Fails closed** — if `STEADFAST_WEBHOOK_SECRET` is unset it returns **503**
+  and processes nothing.
+- **Idempotent** — the event id is a SHA-256 of the raw body (no clock), so a
+  byte-identical provider retry dedups instead of double-applying.
+- Rate-limited per IP; body capped at 64 KB (checked on the read text, not the
+  spoofable `content-length`).
+- Returns a **generic 200 to everything** — a wrong secret, a malformed body and
+  a success are indistinguishable from outside, so it never leaks internal
+  state.
+
+### Wiring it (order matters)
+
+The secret is **ours to invent** — SteadFast does not issue it; it echoes back
+whatever header we register. Generate it outside any shared session
+(`openssl rand -base64 32`).
+
+1. Vercel → add `STEADFAST_WEBHOOK_SECRET` (Production) → **redeploy**. Env
+   changes don't reach the running app without one.
+2. SteadFast → **Update Webhook Info** → URL
+   `https://nongorr.com/api/webhook/steadfast`, header `X-Webhook-Secret` = that
+   value.
+3. Do step 2 **after** the DNS cut-over. Pointing it at the vercel.app host works
+   but leaves the courier integration depending on a URL we're retiring.
+
+### Verifying without handling the secret
+
+The fail-closed behavior doubles as a probe. POST with **no** header:
+
+```sh
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://nongorr.com/api/webhook/steadfast
+# 503 → STEADFAST_WEBHOOK_SECRET is not set (or the redeploy didn't happen)
+# 200 → the secret IS set (the request failed the compare, as it should)
+```
+
+That distinguishes "configured" from "not configured" **without anyone needing
+to know or reveal the value**. Then book one real shipment and confirm a status
+update actually lands.
+
+> **Note (2026-07-17):** the SteadFast Api-Key/Secret-Key pair was exposed in a
+> screenshot. **Regenerate them** in the merchant dashboard and treat the old
+> pair as burned — it can book/cancel real shipments and read customer addresses
+> and phone numbers. See `docs/stage-7-secrets-and-rotation.md` for the standing
+> rotation procedure.
