@@ -36,17 +36,30 @@ export function getCourierAdapter(provider: string): CourierAdapter {
     }
 
     case "pathao": {
-      const hasProduction = process.env.PATHAO_CLIENT_ID && process.env.PATHAO_CLIENT_SECRET;
+      // Pathao's issue-token API only supports the password grant, so the login
+      // username/password are as mandatory as the client id/secret.
+      const hasProduction =
+        process.env.PATHAO_CLIENT_ID &&
+        process.env.PATHAO_CLIENT_SECRET &&
+        process.env.PATHAO_USERNAME &&
+        process.env.PATHAO_PASSWORD;
       const hasSandbox =
-        process.env.PATHAO_SANDBOX_CLIENT_ID && process.env.PATHAO_SANDBOX_CLIENT_SECRET;
+        process.env.PATHAO_SANDBOX_CLIENT_ID &&
+        process.env.PATHAO_SANDBOX_CLIENT_SECRET &&
+        process.env.PATHAO_SANDBOX_USERNAME &&
+        process.env.PATHAO_SANDBOX_PASSWORD;
       if (!hasProduction && !hasSandbox) {
         throw new CourierConfigError(
-          "Pathao is not configured. Set PATHAO_CLIENT_ID / PATHAO_CLIENT_SECRET (or sandbox equivalents) in env.",
+          "Pathao is not configured. Set PATHAO_CLIENT_ID / PATHAO_CLIENT_SECRET / " +
+            "PATHAO_USERNAME / PATHAO_PASSWORD (or sandbox equivalents) in env.",
         );
       }
-      if (!process.env.PATHAO_STORE_ID) {
+      // Store ids are per-environment; check the one the active mode will use.
+      const sandboxMode = process.env.PATHAO_SANDBOX_ENABLED === "true";
+      const storeVar = sandboxMode ? "PATHAO_SANDBOX_STORE_ID" : "PATHAO_STORE_ID";
+      if (!process.env[storeVar]) {
         throw new CourierConfigError(
-          "Pathao store_id is not configured. Set PATHAO_STORE_ID in env or fetch via the /stores endpoint.",
+          `Pathao store_id is not configured. Set ${storeVar} in env or fetch it via the /stores endpoint.`,
         );
       }
       return pathaoAdapter;
@@ -64,8 +77,14 @@ export function getCourierAdapter(provider: string): CourierAdapter {
 export function hasAnyCourierConfigured(): boolean {
   const hasSteadfast = !!(process.env.STEADFAST_API_KEY && process.env.STEADFAST_SECRET_KEY);
   const hasPathao = !!(
-    (process.env.PATHAO_CLIENT_ID && process.env.PATHAO_CLIENT_SECRET) ||
-    (process.env.PATHAO_SANDBOX_CLIENT_ID && process.env.PATHAO_SANDBOX_CLIENT_SECRET)
+    (process.env.PATHAO_CLIENT_ID &&
+      process.env.PATHAO_CLIENT_SECRET &&
+      process.env.PATHAO_USERNAME &&
+      process.env.PATHAO_PASSWORD) ||
+    (process.env.PATHAO_SANDBOX_CLIENT_ID &&
+      process.env.PATHAO_SANDBOX_CLIENT_SECRET &&
+      process.env.PATHAO_SANDBOX_USERNAME &&
+      process.env.PATHAO_SANDBOX_PASSWORD)
   );
   // Manual is always available
   return hasSteadfast || hasPathao || true;

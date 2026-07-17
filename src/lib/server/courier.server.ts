@@ -218,6 +218,27 @@ export async function updateShipmentStatus(
   return { orderTransitioned: result.order_transitioned };
 }
 
+/**
+ * Append an informational shipment event WITHOUT changing courier_status or the
+ * order. For provider notifications that carry progress text but no status of
+ * their own — e.g. SteadFast's tracking_update webhook. Using
+ * updateShipmentStatus for those would overwrite a real status with a
+ * non-status.
+ */
+export async function recordShipmentEvent(
+  shipmentId: string,
+  status: string,
+  rawPayload: unknown,
+  source: string,
+): Promise<void> {
+  await rpc<{ recorded: boolean }>("record_shipment_event", {
+    p_shipment_id: shipmentId,
+    p_status: status,
+    p_raw_payload: rawPayload,
+    p_source: source,
+  });
+}
+
 // ── Cancel ────────────────────────────────────────────────────────────────────
 
 export async function cancelShipment(
