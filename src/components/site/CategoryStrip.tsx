@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { PRIMARY_CATEGORIES, type NavCategory } from "@/lib/categories";
+import { PRIMARY_CATEGORIES, categoryPath, type NavCategory } from "@/lib/categories";
 import { OptimizedImage } from "@/components/OptimizedImage";
 import kurtiImg from "@/assets/products/kurti.webp";
 import sareeImg from "@/assets/products/saree.webp";
@@ -18,10 +18,15 @@ const IMAGE_BY_LABEL: Record<string, string> = {
   "New Arrivals": serumImg,
 };
 
-function searchFor(c: NavCategory) {
-  if (c.category) return { category: c.category };
-  if (c.filter) return { filter: c.filter };
-  return {};
+/**
+ * Physical categories link to their own crawlable landing page; discovery
+ * entries (New Arrivals) stay filter views of /shop, since they aren't
+ * categories and have no standalone page.
+ */
+function linkFor(c: NavCategory): { to: string; search?: Record<string, string> } {
+  if (c.category) return { to: categoryPath(c.category) };
+  if (c.filter) return { to: "/shop", search: { filter: c.filter } };
+  return { to: "/shop" };
 }
 
 export function CategoryStrip() {
@@ -37,8 +42,7 @@ export function CategoryStrip() {
         {PRIMARY_CATEGORIES.map((c) => (
           <Link
             key={c.label}
-            to="/shop"
-            search={searchFor(c) as never}
+            {...(linkFor(c) as { to: string })}
             className="gold-sweep group relative aspect-[3/4] w-36 shrink-0 snap-start overflow-hidden rounded-2xl border border-gold/30 bg-card shadow-soft transition-all duration-300 hover:-translate-y-0.5 hover:border-gold/60 hover:shadow-card active:scale-[.98] sm:w-auto"
           >
             <OptimizedImage

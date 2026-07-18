@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { listProductCards } from "@/lib/catalog.api";
+import { categoryPath } from "@/lib/categories";
 import { DEFAULT_FOCAL, focalStyle } from "@/lib/image-focal";
 import { getActiveBanners } from "@/lib/banners.api";
 import { ProductGrid } from "@/components/ProductGrid";
@@ -204,7 +205,7 @@ function Home() {
               eyebrow="Made to Measure"
               title="Custom-Fit Favourites"
               description="Handmade kurti, ready to be tailored to your exact measurements."
-              action={<ViewAll to="/shop" search={{ category: "kurti" }} />}
+              action={<ViewAll to={categoryPath("kurti")} />}
             />
             <ProductGrid products={customFitFavourites} />
             <div className="mt-8 flex justify-center">
@@ -224,9 +225,7 @@ function Home() {
             eyebrow="Coming to Bloom"
             title="Beauty & Self-Care"
             description="Lipsticks, serums and skincare — curated for radiant, confident you."
-            action={
-              <ViewAll to="/shop" search={{ category: "cosmetics" }} label="Explore beauty" />
-            }
+            action={<ViewAll to={categoryPath("cosmetics")} label="Explore beauty" />}
           />
           <ProductGrid products={beauty} />
         </section>
@@ -248,11 +247,18 @@ function Home() {
               We're a small, family-run boutique — which means real care in every stitch and every
               parcel.
             </p>
-            <Button variant="ghost" asChild>
-              <Link to="/about">
-                Read our full story <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="ghost" asChild>
+                <Link to="/about">
+                  Read our full story <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+              <Button variant="ghost" asChild>
+                <Link to="/founder">
+                  Meet the founder <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <img

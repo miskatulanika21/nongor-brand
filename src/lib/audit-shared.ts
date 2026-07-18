@@ -85,6 +85,10 @@ export const AUDIT_ACTIONS = [
   "page.draft_saved",
   "page.published",
   "page.draft_discarded",
+  // founder page (owner-only CMS)
+  "founder.draft_saved",
+  "founder.published",
+  "founder.draft_discarded",
   "size_chart.created",
   "size_chart.updated",
   "size_chart.status_changed",
@@ -224,6 +228,13 @@ export const AUDIT_ACTION_META: Record<AuditAction, AuditActionMeta> = {
   "page.draft_saved": { label: "Page draft saved", category: "content", tone: "neutral" },
   "page.published": { label: "Page published", category: "content", tone: "success" },
   "page.draft_discarded": { label: "Page draft discarded", category: "content", tone: "warning" },
+  "founder.draft_saved": { label: "Founder draft saved", category: "content", tone: "neutral" },
+  "founder.published": { label: "Founder page published", category: "content", tone: "success" },
+  "founder.draft_discarded": {
+    label: "Founder draft discarded",
+    category: "content",
+    tone: "warning",
+  },
   "size_chart.created": { label: "Size chart created", category: "catalog", tone: "success" },
   "size_chart.updated": { label: "Size chart updated", category: "catalog", tone: "info" },
   "size_chart.status_changed": {

@@ -8,11 +8,16 @@ export const Route = createFileRoute("/sitemap.xml")({
       GET: async () => {
         // Server-only repository: RLS returns active products only.
         const { fetchProductCards } = await import("@/lib/server/catalog.server");
+        const { CATEGORY_FILTERS, categoryPath } = await import("@/lib/categories");
         const products = await fetchProductCards();
         const paths = [
           "/",
           "/shop",
+          // Category landing pages. The /shop?category=… filter views are
+          // deliberately absent — they canonicalise to these paths.
+          ...CATEGORY_FILTERS.map((c) => categoryPath(c.slug)),
           "/about",
+          "/founder",
           "/contact",
           "/faq",
           "/eid-style-guide",

@@ -9,6 +9,8 @@ import {
   matchesFilter,
   categoryLabel,
   filterLabel,
+  categoryPath,
+  isCategorySlug,
 } from "@/lib/categories";
 import { ProductGrid } from "@/components/ProductGrid";
 import { Button } from "@/components/ui/button";
@@ -60,38 +62,57 @@ export const Route = createFileRoute("/_site/shop")({
     if (f) out.filter = f;
     return out;
   },
-  head: () => ({
-    meta: [
-      { title: "Shop · Nongorr" },
-      {
-        name: "description",
-        content:
-          "Browse Nongorr's kurti, saree, three piece, girls dress and beauty collection with smart filters.",
-      },
-      { property: "og:title", content: "Shop · Nongorr" },
-      {
-        property: "og:description",
-        content:
-          "Browse Nongorr's kurti, saree, three piece, girls dress and beauty collection with smart filters.",
-      },
-      { property: "og:url", content: absUrl("/shop") },
-      { property: "og:type", content: "website" },
-    ],
-    links: [{ rel: "canonical", href: absUrl("/shop") }],
-    scripts: [
-      {
-        type: "application/ld+json",
-        children: JSON.stringify({
-          "@context": "https://schema.org",
-          "@type": "CollectionPage",
-          name: "Shop · Nongorr",
-          url: absUrl("/shop"),
-          description:
-            "Browse Nongorr's kurti, saree, three piece, girls dress and beauty collection.",
-        }),
-      },
-    ],
-  }),
+  head: ({ match }) => {
+    // A filtered shop view is a *state* of /shop, not a page of its own. Point
+    // its canonical at the dedicated category landing page when one exists so
+    // the two URLs don't compete for the same query; unfiltered /shop and any
+    // free-text search fall back to /shop itself.
+    const cat = (match.search as ShopSearch).category ?? "";
+    const canonical = isCategorySlug(cat) ? absUrl(categoryPath(cat)) : absUrl("/shop");
+    return {
+      meta: [
+        { title: "Shop · Nongorr" },
+        {
+          name: "description",
+          content:
+            "Browse Nongorr's kurti, saree, three piece, girls dress and beauty collection with smart filters.",
+        },
+        { property: "og:title", content: "Shop · Nongorr" },
+        {
+          property: "og:description",
+          content:
+            "Browse Nongorr's kurti, saree, three piece, girls dress and beauty collection with smart filters.",
+        },
+        { property: "og:url", content: absUrl("/shop") },
+        { property: "og:type", content: "website" },
+      ],
+      links: [{ rel: "canonical", href: canonical }],
+      scripts: [
+        {
+          type: "application/ld+json",
+          children: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "CollectionPage",
+            name: "Shop · Nongorr",
+            url: absUrl("/shop"),
+            description:
+              "Browse Nongorr's kurti, saree, three piece, girls dress and beauty collection.",
+          }),
+        },
+        {
+          type: "application/ld+json",
+          children: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "BreadcrumbList",
+            itemListElement: [
+              { "@type": "ListItem", position: 1, name: "Home", item: absUrl("/") },
+              { "@type": "ListItem", position: 2, name: "Shop", item: absUrl("/shop") },
+            ],
+          }),
+        },
+      ],
+    };
+  },
   loader: async () => {
     const [products, facets] = await Promise.all([listProductCards(), getCatalogFacets()]);
     return { products, facets };
