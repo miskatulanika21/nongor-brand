@@ -8,14 +8,14 @@ is the webhook secrets, the indexing flip, and the legal-copy sign-off.
 
 Verified live 2026-07-17, after the move:
 
-|                          | State                                                     |
-| ------------------------ | --------------------------------------------------------- |
-| Apex `nongorr.com`       | **Production** — serves this app, HTTP 200                |
-| `www.nongorr.com`        | **308 → apex** (apex is canonical)                        |
-| `<link rel="canonical">` | `https://nongorr.com/` ✅ matches the served host         |
-| `<meta name="robots">`   | `noindex,nofollow` — **intentional**, see §2 step 9       |
-| `/api/webhook/*`         | **503** — secrets not set yet (fails closed, as designed) |
-| HSTS preload             | **not submitted** — nothing locked in                     |
+|                          | State                                                 |
+| ------------------------ | ----------------------------------------------------- |
+| Apex `nongorr.com`       | **Production** — serves this app, HTTP 200            |
+| `www.nongorr.com`        | **308 → apex** (apex is canonical)                    |
+| `<link rel="canonical">` | `https://nongorr.com/` ✅ matches the served host     |
+| `<meta name="robots">`   | `noindex,nofollow` — **intentional**, see §2 step 9   |
+| `/api/webhook/*`         | **200** — both secrets now set (re-probed 2026-07-18) |
+| HSTS preload             | **not submitted** — nothing locked in                 |
 
 **The DNS was already on Vercel.** The apex `A` record pointed at `216.198.79.1`
 and `www` at `…vercel-dns-017.com` before the move, so **no Namecheap DNS change
@@ -298,8 +298,14 @@ The single page the operator ticks through on launch day. Unchecked items are
 - [ ] §4 verification passed **in full**
 - [ ] `VITE_ALLOW_INDEXING=true` — ⬜ still `noindex,nofollow` **on purpose**;
       gated on the legal-copy sign-off. The one step Google notices
-- [ ] HSTS preload submitted (**only after** §4 — hard to reverse; currently
-      served **without** `preload`, so nothing is locked in)
+- [ ] HSTS preload submitted (**only after** §4 — hard to reverse).
+      ⚠ **Correction (2026-07-18):** an earlier revision of this line claimed the
+      site is served _without_ `preload`. It is not. The live apex returns
+      `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`
+      (`headers.server.ts`). Submission to hstspreload.org is still a separate,
+      deliberate step — so nothing is locked in _yet_ — but the directive is
+      already being advertised, and browsers/scrapers can act on it. Treat the
+      remaining margin as smaller than the old note implied.
 - [x] SPF / DKIM / DMARC — Resend records already present on `nongorr.com`
       (`resend._domainkey`, `send` → amazonses, `_dmarc`); unblocks Stage-6 P1
 
@@ -325,8 +331,9 @@ The single page the operator ticks through on launch day. Unchecked items are
       **Auth Token(Bearer)** = that secret. Register the **apex, never `www`** —
       `www` 308s to apex and a redirect can drop the `Authorization` header the
       auth depends on. (Registered 2026-07-17 → _"Successfully updated!"_)
-- [ ] Verify the secret landed: `curl -X POST` the endpoint with **no** header →
-      `200` means set, `503` means still unset (proves it without knowing it)
+- [x] Verify the secret landed: `curl -X POST` the endpoint with **no** header →
+      `200` means set, `503` means still unset (proves it without knowing it).
+      **Verified 2026-07-18: `200`** → `STEADFAST_WEBHOOK_SECRET` is set in prod.
 - [ ] Book one real shipment end-to-end and confirm a status update arrives.
       ⚠ **SteadFast has no sandbox** — the first booking is a real, billable
       consignment. Pathao can be rehearsed for free; SteadFast cannot.
@@ -348,9 +355,11 @@ The single page the operator ticks through on launch day. Unchecked items are
       back between them: `PATHAO_SANDBOX_STORE_ID` is separate, because reusing
       one in the other environment books against a store that isn't yours
       (verified: prod store `410847` does not exist in sandbox).
-- [ ] Pathao webhook: set `PATHAO_WEBHOOK_SECRET` **and redeploy first**, then
+- [x] Pathao webhook: set `PATHAO_WEBHOOK_SECRET` **and redeploy first**, then
       "Add Webhook" → `https://nongorr.com/api/webhook/pathao`, **Secret** = that
       value. Registration probes the URL and fails while the env is unset.
+      **Secret verified set 2026-07-18** (unauthenticated POST → `200`, not
+      `503`); registration was completed 2026-07-17 with a 202 handshake.
 
 ### Environment
 
@@ -364,8 +373,37 @@ The single page the operator ticks through on launch day. Unchecked items are
       **verified clean 2026-07-16** (browser walk + raw-HTML nonce audit): the
       app is 100% strict-CSP compatible and the _only_ violation is the
       Toolbar's `vercel.live/feedback.js`, which is team-only and never loads
-      for customers
+      for customers.
+      ⚠ **Scope caveat on that 2026-07-16 sign-off:** it could not have covered
+      `/`, `/shop`, `/product/*`, `/about` or `/size-guide`. Those pages emitted
+      **no Report-Only header at all** (see the fix below), so they reported no
+      violations because nothing was watching — not because they were clean.
+      The hashed policy now covers them; they were re-walked 2026-07-18.
 - [ ] Set `CSP_ENFORCE_STRICT=true` (confirmed **not** currently set) + redeploy
+
+      ⚠ **Before 2026-07-18 this flag was a partial no-op — do not trust older
+      notes that treat it as a whole-site switch.** Public pages are served from
+      a shared edge cache and are rendered NONCE-FREE on purpose (a nonce
+      replayed from cache secures nothing). The strict policy was gated on a
+      nonce being present, so those pages silently fell through to the
+      permissive `script-src 'unsafe-inline'` policy. Flipping the flag hardened
+      `/cart`, `/contact`, `/account`, `/admin` and `/checkout` while leaving the
+      **entire storefront** unhardened, with no error and no Report-Only header
+      to reveal it.
+
+      Fixed by adding a second hardened policy: cached pages now get a
+      `'sha256-…'` per inline script (`src/lib/server/csp-hash.server.ts`),
+      derived from the response body so policy and body cache as one unit.
+      Uncacheable pages keep nonce + `'strict-dynamic'`. If hashes cannot be
+      computed the response **fails open** to the permissive policy — a hash
+      policy built from a bad render would be cached and served to everyone.
+
+      ⚠ **Verify with a real navigation, never with `curl` or `fetch`.** Neither
+      runs the HTML parser, so both will confirm a policy that a browser then
+      rejects: the parser rewrites U+0000 → U+FFFD inside script text (TanStack
+      uses NUL to delimit serialised route keys), and CSP hashes the
+      post-parse text. Getting this wrong blocks hydration site-wide.
+
 - [ ] Supabase → enable **leaked-password protection** + Manual linking
       (`docs/stage-7-secrets-and-rotation.md` §3)
 - [ ] Rotate: service-role key, DB password, courier keys, webhook secrets,
