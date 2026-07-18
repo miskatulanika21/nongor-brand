@@ -225,19 +225,35 @@ Drop the extra origin once traffic has fully moved.
 
 Run all of these against `https://nongorr.com` before HSTS preload:
 
-- [ ] `/api/health` returns healthy; `curl -sI https://nongorr.com` is `200` over HTTP/2.
-- [ ] `www` → apex redirect works (or whichever direction you chose).
-- [ ] **View source**: `<link rel=canonical>`, `og:url`, `og:image` all read
-      `https://nongorr.com/...`. If they still say `vercel.app`, the redeploy in
-      step 5 didn't happen — see §3.
-- [ ] `/robots.txt` and `/sitemap.xml` emit the new host.
-- [ ] **Email/password login**, **Google OAuth login**, and **logout** all work.
+Verified 2026-07-18 unless noted.
+
+- [x] `/api/health` returns healthy; `https://nongorr.com` is `200` over HTTP/2.
+      ⚠ Confirm HTTP/2 from a **browser** (`performance.getEntriesByType('navigation')[0].nextHopProtocol`
+      → `h2`). A Schannel-built Windows `curl` reports `1.1` and rejects
+      `--http2` — that is a client limitation, not the server.
+- [x] `www` → apex redirect works — `308 → https://nongorr.com/`.
+- [x] **View source**: `<link rel=canonical>`, `og:url`, `og:image` all read
+      `https://nongorr.com/...`.
+- [x] `/robots.txt` and `/sitemap.xml` emit the new host
+      (`Sitemap: https://nongorr.com/sitemap.xml`).
+- [x] **Email/password login** and **logout** work (logout is behind the
+      `useConfirm()` "Sign out" dialog → redirects to `/login`).
+      ⬜ **Google OAuth login still unverified** — needs a real Google account.
 - [ ] A **state-changing action** succeeds (add to cart → place an order) — this
-      is the CSRF-origin proof.
-- [ ] **Admin**: log in, load the dashboard, confirm the revenue trend renders.
-- [ ] Prices render ৳ in the brand font (not a fallback glyph) and `1` renders
-      as a lining figure.
-- [ ] Post-deploy smoke workflow green against the new host.
+      is the CSRF-origin proof. ⬜ **Deliberately not run**: it writes a real
+      order to the live database. Owner should do this, or say explicitly that a
+      test order is acceptable.
+- [x] **Admin**: logged in, dashboard `h1` renders, revenue trend chart renders
+      (recharts surface present), 16 stat cards, ৳ throughout.
+- [x] Prices render ৳ in the brand font — computed stack leads with `Taka`
+      (`Taka:loaded`) — and numerals compute `font-variant-numeric: lining-nums`.
+- [x] Post-deploy smoke workflow green against the new host — run
+      `29656624509`, **steps actually executed** (`Run smoke suite: success`),
+      dispatched manually with `url=https://nongorr.com`.
+      ⚠ The **automatic** post-deploy run still SKIPS on every deploy: it targets
+      the protected per-deploy URL and `VERCEL_AUTOMATION_BYPASS_SECRET` is unset,
+      so it exits green having run nothing. Only the manual dispatch against the
+      public domain proves anything today.
 
 ---
 
@@ -296,8 +312,18 @@ The single page the operator ticks through on launch day. Unchecked items are
 - [x] `VITE_SITE_URL=https://nongorr.com` **+ redeploy** → canonical/`og:url`
       verified as `https://nongorr.com/` on the live apex
 - [ ] §4 verification passed **in full**
-- [ ] `VITE_ALLOW_INDEXING=true` — ⬜ still `noindex,nofollow` **on purpose**;
-      gated on the legal-copy sign-off. The one step Google notices
+- [x] `VITE_ALLOW_INDEXING=true` — ⚠️ **ALREADY SET IN PRODUCTION. The site is
+      indexable RIGHT NOW.** This was believed to be closed and gated on the
+      legal-copy sign-off; it is not. Verified 2026-07-18: `/`, `/shop`,
+      `/about` and `/size-guide` emit **no** `<meta name="robots">`, while a 404
+      (which carries its own hardcoded `noindex`) still emits one — proving the
+      mechanism works and the flag is on. Per `src/routes/_site.tsx:38` the meta
+      is omitted precisely when `VITE_ALLOW_INDEXING === "true"`.
+      **Decide deliberately**: legal copy is unreviewed and product photography
+      is still placeholder, both of which the owner marked launch-blocking. To
+      re-close, set `VITE_ALLOW_INDEXING` to anything but `true` (or unset) and
+      **redeploy** — it is `import.meta.env`, so it is build-inlined and an env
+      change alone will not take effect.
 - [ ] HSTS preload submitted (**only after** §4 — hard to reverse).
       ⚠ **Correction (2026-07-18):** an earlier revision of this line claimed the
       site is served _without_ `preload`. It is not. The live apex returns
