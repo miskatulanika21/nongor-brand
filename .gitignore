@@ -56,6 +56,9 @@ e2e/.auth/
 docs/.visual-audit-assets/
 docs/.visual-audit-render/
 
+# Binary Office reports — keep out of git history (findings live in the .md reports)
+*.docx
+
 # Local Supabase config
 supabase/config.toml
 supabase/.gitignore
