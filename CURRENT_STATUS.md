@@ -3,6 +3,47 @@
 Authoritative record of verified project state. Code and live-environment
 behavior are the source of truth; this file is updated after every stage.
 
+\_Last updated: 2026-07-18 — **Focal Studio + launch-prep polish shipped to
+`main`** (PRs #14–#19; **688 Vitest** green, 61 files; CI green). Six changes
+landed on top of the 2026-07-17 cut-over, all owner-mergeable and none opening a
+new stage:
+
+- **#14 Focal Studio** — non-destructive image framing. A normalized focal point
+  (`focal_x`/`focal_y`, 0..1, default 0.5) is stored per banner and per product
+  primary image and applied as CSS `object-position`, so subjects stay framed at
+  every breakpoint with **no re-cropped file**. Reusable `<ImageFramer>`
+  (drag/click reticle, rule-of-thirds, keyboard nudge, WYSIWYG hero preview +
+  text-safe-zone overlay) and a shared `image-focal.ts` drive both editor and
+  render. Optional ✨ auto-frame uses `FaceDetector` + a saliency fallback.
+  Migration `20260717175716` (focal columns + focal-aware `get_active_banners` /
+  `upsert_banner`) is additive, backfills existing rows to centre, and is
+  **applied to prod**. Also folded in a CSP fix: `upgrade-insecure-requests` is a
+  no-op in a Report-Only header (Chrome warned on every page) and is now emitted
+  only when the strict policy is enforced. ⚠ PDP is `object-contain` (focal N/A);
+  category tiles have no DB-backed image yet (deferred).
+- **#15 Shared edge cache** — anonymous public pages (`/`, `/shop`,
+  `/product/*`, `/about`, `/size-guide`, `/new-arrivals`) now serve from a shared
+  edge cache, cutting the ~1.5 s SSR document-latency the DocumentLatency insight
+  flagged. Three fail-closed guards keep per-user data out: a path allowlist, a
+  no-auth-cookie requirement, and a plain-200-no-Set-Cookie check. Cached hits
+  render nonce-free (the enforced CSP already allows scripts via `unsafe-inline`);
+  authenticated/dynamic responses stay fresh and private.
+- **#16 Mobile side sheets** sized to the dynamic viewport so bottom actions stay
+  reachable on mobile.
+- **#17 Proprietary LICENSE + SECURITY.md** + repo metadata.
+- **#18 Google Search Console** site-verification meta tag (does **not** change
+  `noindex` — indexing is still gated on legal sign-off).
+- **#19 Project README** — full README replacing the placeholder.
+
+**What remains to go live is still entirely owner-gated** — see the
+`docs/stage-7-launch-cutover.md` §7 go-live checklist. The short list:
+`VITE_ALLOW_INDEXING=true` (flip off `noindex`, gated on legal-copy sign-off),
+HSTS preload (do LAST), disable the prod Vercel Toolbar → `CSP_ENFORCE_STRICT=true`,
+Supabase leaked-password protection, secret rotation, one real end-to-end courier
+shipment (SteadFast has **no sandbox** — first booking is billable), Pathao
+webhook secret + registration, real product photography, and the legal-copy
+review. No code work is blocking.\_
+
 \_Last updated: 2026-07-17 — **DOMAIN CUT-OVER DONE + courier integration
 rebuilt against the real provider contracts** (PR #12, `b4d1d44`, CI green;
 **670 Vitest**). Two things landed.
