@@ -400,7 +400,21 @@ The single page the operator ticks through on launch day. Unchecked items are
 
 - [x] `ADDITIONAL_ALLOWED_ORIGINS=https://nongor-brand.vercel.app` (before the flip)
 - [x] `VITE_SITE_URL=https://nongorr.com` **+ redeploy** (§3) — verified live
-- [ ] `ADDITIONAL_ALLOWED_ORIGINS` cleared once traffic has moved
+- [x] `ADDITIONAL_ALLOWED_ORIGINS` cleared once traffic has moved — **removed
+      from Production AND Preview 2026-07-18 + redeployed** (a redeploy is
+      required: Vercel bakes env into the deployment, so removal alone changes
+      nothing on the running one).
+      Verified end-to-end, both directions: - from the **old alias** `https://nongor-brand.vercel.app`, submitting the
+      footer newsletter form returns **"Invalid request origin."**
+      (`newsletter.api.ts:25`) — and since the CSRF check runs _before_ the
+      RPC, the rejected call writes nothing; - from **`https://nongorr.com`**, logout and login both still succeed, so
+      the canonical origin was not broken by the removal.
+
+      ⚠ **`nongor-brand.vercel.app` still serves the full app at HTTP 200 — it
+      does NOT redirect to the apex.** Only mutations are now refused there;
+      pages still load, so it remains a live duplicate of the storefront. Worth
+      making it redirect to `nongorr.com` before indexing is opened, otherwise
+      it is a duplicate-content surface that merely happens to be read-only.
 
 ### Security
 
