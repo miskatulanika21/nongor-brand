@@ -48,8 +48,13 @@ e2e/.auth/
 *.sln
 *.sw?
 
-# Local Claude Code config (machine-specific; pre-approves local MCP servers)
-.claude/settings.local.json
+# Local agent tooling (machine-specific; skills/config are provisioned per-machine)
+.claude/
+.codex/
+
+# Local visual-audit render artifacts (regenerated on demand)
+docs/.visual-audit-assets/
+docs/.visual-audit-render/
 
 # Local Supabase config
 supabase/config.toml
