@@ -178,6 +178,73 @@ export function withSecurityHeaders(response: Response, isProd: boolean, nonce?:
   });
 }
 
+// ── Public edge caching ──────────────────────────────────────────────────────
+// The framework defaults SSR HTML to `no-store`, so every visit re-renders on
+// the server (slow TTFB, worse on cold starts). The pages below are IDENTICAL
+// for every anonymous visitor, so they are safe to serve from a shared edge
+// cache. Three independent guards keep per-user data out of that cache:
+//   1. an ALLOWLIST of public paths (a new private route is never cached by
+//      accident — denylists fail open, allowlists fail closed);
+//   2. the request must carry NO Supabase auth cookie (authenticated visitors
+//      always get a fresh, uncached render — see server.ts);
+//   3. the response must be a plain 200 HTML page that sets no cookie.
+
+const PUBLIC_CACHEABLE_PREFIXES = ["/shop", "/product", "/about", "/size-guide", "/new-arrivals"];
+
+function isPublicPath(pathname: string): boolean {
+  if (pathname === "/") return true;
+  return PUBLIC_CACHEABLE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+/** A Supabase session lives in `sb-<ref>-auth-token[.<chunk>]`; its presence = logged in. */
+function hasAuthCookie(request: Request): boolean {
+  const cookie = request.headers.get("cookie");
+  return cookie != null && /(?:^|;\s*)sb-[^=;]*-auth-token/i.test(cookie);
+}
+
+/**
+ * True when a request may be served from a shared edge cache: a GET/HEAD for a
+ * public page by an anonymous visitor. Authenticated requests are NEVER
+ * cacheable, so one user's response can never populate the shared cache.
+ */
+export function isPublicCacheableRequest(request: Request): boolean {
+  if (request.method !== "GET" && request.method !== "HEAD") return false;
+  if (hasAuthCookie(request)) return false;
+  try {
+    return isPublicPath(new URL(request.url).pathname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Promote a public response to a shared edge cache — applied only to
+ * {@link isPublicCacheableRequest} responses, and only when the response itself
+ * is a plain 200 HTML page that sets no cookie (so nothing per-user is stored).
+ * `stale-while-revalidate` keeps every hit instant while the edge refreshes in
+ * the background; the short `s-maxage` bounds how long a catalog edit takes to
+ * appear. Replaces the framework's `no-store` trio.
+ */
+export function withPublicCache(response: Response): Response {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (
+    response.status !== 200 ||
+    !contentType.includes("text/html") ||
+    response.headers.has("set-cookie")
+  ) {
+    return response;
+  }
+  const headers = new Headers(response.headers);
+  headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=86400");
+  headers.delete("Pragma");
+  headers.delete("Expires");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 export function setNoCacheHeaders(): void {
   try {
     setResponseHeaders({

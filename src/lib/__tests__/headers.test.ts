@@ -7,9 +7,15 @@
  * or that a naive rebuild could lose.
  */
 import { describe, it, expect } from "vitest";
-import { withSecurityHeaders } from "@/lib/server/headers.server";
+import {
+  withSecurityHeaders,
+  isPublicCacheableRequest,
+  withPublicCache,
+} from "@/lib/server/headers.server";
 
 const html = () => new Response("<html></html>", { headers: { "content-type": "text/html" } });
+const req = (url: string, init?: RequestInit) => new Request(`https://nongorr.com${url}`, init);
+const AUTH_COOKIE = "sb-xomjxtmhkglhuiccekld-auth-token=abc; other=1";
 
 describe("withSecurityHeaders", () => {
   it("adds the baseline security headers to an HTML response", () => {
@@ -105,5 +111,68 @@ describe("withSecurityHeaders", () => {
     const out = withSecurityHeaders(json, false, "abc123==");
     expect(out.headers.get("Content-Security-Policy")).toBeNull();
     expect(out.headers.get("Content-Security-Policy-Report-Only")).toBeNull();
+  });
+});
+
+describe("isPublicCacheableRequest", () => {
+  it("caches anonymous GETs of public pages", () => {
+    expect(isPublicCacheableRequest(req("/"))).toBe(true);
+    expect(isPublicCacheableRequest(req("/shop"))).toBe(true);
+    expect(isPublicCacheableRequest(req("/shop?category=kurti"))).toBe(true);
+    expect(isPublicCacheableRequest(req("/product/maroon-kurti"))).toBe(true);
+    expect(isPublicCacheableRequest(req("/about"))).toBe(true);
+  });
+
+  it("never caches authenticated requests (auth cookie present)", () => {
+    expect(isPublicCacheableRequest(req("/", { headers: { cookie: AUTH_COOKIE } }))).toBe(false);
+    expect(isPublicCacheableRequest(req("/shop", { headers: { cookie: AUTH_COOKIE } }))).toBe(
+      false,
+    );
+  });
+
+  it("never caches private routes, even anonymous", () => {
+    for (const p of ["/account", "/cart", "/checkout", "/wishlist", "/admin", "/login", "/api/x"]) {
+      expect(isPublicCacheableRequest(req(p))).toBe(false);
+    }
+  });
+
+  it("only caches GET/HEAD", () => {
+    expect(isPublicCacheableRequest(req("/", { method: "POST" }))).toBe(false);
+    expect(isPublicCacheableRequest(req("/", { method: "HEAD" }))).toBe(true);
+  });
+
+  it("ignores non-auth cookies (analytics, consent)", () => {
+    expect(
+      isPublicCacheableRequest(req("/", { headers: { cookie: "ph_id=1; consent=yes" } })),
+    ).toBe(true);
+  });
+});
+
+describe("withPublicCache", () => {
+  it("promotes a plain 200 HTML response to a shared edge cache", () => {
+    const out = withPublicCache(withSecurityHeaders(html(), true));
+    expect(out.headers.get("Cache-Control")).toBe(
+      "public, s-maxage=60, stale-while-revalidate=86400",
+    );
+    expect(out.headers.get("Pragma")).toBeNull();
+    expect(out.headers.get("Expires")).toBeNull();
+  });
+
+  it("refuses to cache a response that sets a cookie", () => {
+    const res = new Response("<html></html>", {
+      headers: { "content-type": "text/html", "set-cookie": "sb-x-auth-token=1" },
+    });
+    const out = withPublicCache(res);
+    expect(out.headers.get("Cache-Control") ?? "").not.toContain("s-maxage");
+  });
+
+  it("refuses to cache a non-200 or non-HTML response", () => {
+    const redirect = new Response(null, { status: 302, headers: { location: "/login" } });
+    expect(withPublicCache(redirect).headers.get("Cache-Control") ?? "").not.toContain("s-maxage");
+    const json = new Response("{}", {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+    expect(withPublicCache(json).headers.get("Cache-Control") ?? "").not.toContain("s-maxage");
   });
 });
