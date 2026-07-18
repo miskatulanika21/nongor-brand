@@ -178,6 +178,17 @@ const CLASSIFICATION: Record<string, Classification> = {
   claimGuestOrderFn: "rate-limited",
 
   // pages.api.ts
+  // founder.api.ts — owner-only CMS for the /founder page
+  getFounderProfile: "public-read",
+  loadFounderAdmin: "rbac-read",
+  loadFounderRevisions: "rbac-read",
+  listMediaForFounder: "rbac-read",
+  saveFounderDraftFn: "admin-guarded",
+  publishFounderFn: "admin-guarded",
+  discardFounderDraftFn: "admin-guarded",
+  restoreFounderRevisionFn: "admin-guarded",
+
+  // pages.api.ts
   getSitePage: "public-read",
   loadSitePages: "rbac-read",
   loadSitePageAdmin: "rbac-read",

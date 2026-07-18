@@ -4,6 +4,7 @@ import sizeChart from "@/assets/size-chart.webp";
 import { NotFoundPage } from "@/components/NotFoundPage";
 import { READY_SIZES, GIRLS_SIZES, type Product } from "@/lib/products";
 import { getProductDetail, listProductCards } from "@/lib/catalog.api";
+import { categoryLabel, categoryPath, isCategorySlug } from "@/lib/categories";
 import { submitReview } from "@/lib/reviews.api";
 import { formatBDT, discountPct, BRAND } from "@/lib/brand";
 import { useStore } from "@/lib/store";
@@ -140,13 +141,17 @@ export const Route = createFileRoute("/_site/product/$slug")({
               "@context": "https://schema.org",
               "@type": "BreadcrumbList",
               itemListElement: [
-                { "@type": "ListItem", position: 1, name: "Home", item: "/" },
-                { "@type": "ListItem", position: 2, name: "Shop", item: "/shop" },
+                // Absolute URLs required — Google ignores BreadcrumbList items
+                // with relative `item` values.
+                { "@type": "ListItem", position: 1, name: "Home", item: absUrl("/") },
+                { "@type": "ListItem", position: 2, name: "Shop", item: absUrl("/shop") },
                 {
                   "@type": "ListItem",
                   position: 3,
-                  name: loaderData.product.category,
-                  item: absUrl(`/shop?category=${encodeURIComponent(loaderData.product.category)}`),
+                  name: categoryLabel(loaderData.product.category),
+                  item: isCategorySlug(loaderData.product.category)
+                    ? absUrl(categoryPath(loaderData.product.category))
+                    : absUrl("/shop"),
                 },
                 {
                   "@type": "ListItem",

@@ -32,7 +32,7 @@ import { cn } from "@/lib/utils";
 import { BRAND, formatBDT, whatsappConfigured } from "@/lib/brand";
 import { FREE_DELIVERY_THRESHOLD } from "@/lib/checkout-ui";
 import { isSafeLinkUrl, type AnnouncementState } from "@/lib/settings.schema";
-import { PRODUCT_CATEGORIES } from "@/lib/categories";
+import { PRODUCT_CATEGORIES, categoryPath } from "@/lib/categories";
 import { useIsLoggedIn } from "@/lib/auth-state";
 
 export interface SessionSummary {
@@ -206,10 +206,9 @@ export function SiteHeader({
                 {PRODUCT_CATEGORIES.map((c) => (
                   <DrawerLink
                     key={c.category}
-                    to="/shop"
-                    search={{ category: c.category }}
+                    to={categoryPath(c.category)}
                     onNavigate={() => setOpen(false)}
-                    active={onShop && shopSearch.category === c.category}
+                    active={pathname === categoryPath(c.category)}
                     indented
                   >
                     {c.label}
@@ -355,10 +354,9 @@ export function SiteHeader({
                   {PRODUCT_CATEGORIES.map((c) => (
                     <li key={c.category}>
                       <ShopMenuLink
-                        to="/shop"
-                        search={{ category: c.category }}
+                        to={categoryPath(c.category)}
                         title={c.label}
-                        active={onShop && shopSearch.category === c.category}
+                        active={pathname === categoryPath(c.category)}
                       />
                     </li>
                   ))}

@@ -4,12 +4,11 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { BRAND } from "@/lib/brand";
 import founderPortrait from "@/assets/founder-portrait.webp";
-import founderLifestyle from "@/assets/founder-lifestyle.webp";
 import logo from "@/assets/nongorr-logo-transparent.webp";
 import sizeChart from "@/assets/size-chart.webp";
 import { absUrl } from "@/lib/site-config";
 import {
-  Quote,
+  ArrowRight,
   Ruler,
   Sparkles,
   HandHeart,
@@ -164,8 +163,14 @@ function About() {
           <div className="ornament-divider mx-auto mt-5 w-48" />
           <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground">
             Nongorr is a premium women's boutique founded by{" "}
-            <span className="text-foreground">Miskatul Afrin Anika</span>, created to celebrate
-            Bangladeshi craftsmanship, custom-fit clothing, and timeless feminine elegance.
+            <Link
+              to="/founder"
+              className="text-foreground underline decoration-gold/60 underline-offset-4 transition-colors hover:text-primary"
+            >
+              Miskatul Afrin Anika
+            </Link>
+            , created to celebrate Bangladeshi craftsmanship, custom-fit clothing, and timeless
+            feminine elegance.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Button size="lg" asChild>
@@ -208,32 +213,29 @@ function About() {
           <div className="space-y-5">
             <span className="eyebrow">Meet the Founder</span>
             <h2 className="font-display text-4xl text-foreground sm:text-5xl">
-              Miskatul Afrin Anika
+              <Link
+                to="/founder"
+                className="underline decoration-gold/50 underline-offset-8 transition-colors hover:text-primary"
+              >
+                Miskatul Afrin Anika
+              </Link>
             </h2>
             <p className="text-sm font-medium uppercase tracking-[0.18em] text-gold">
               Founder &amp; Creative Lead of Nongorr
             </p>
+            {/* Teaser only — her full story, letter, journey and quote live on
+                /founder so the two pages never repeat each other. */}
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Miskatul Afrin Anika founded Nongorr with a simple dream: to create clothing that
-              feels personal, graceful, and meaningful. With a love for Bangladeshi craft, soft
-              feminine styling, and thoughtful details, she built Nongorr as a premium boutique for
-              women who value elegance, comfort, and trust.
+              Anika started Nongorr for the nakshi kantha — the layered, hand-stitched quilts
+              Bengali women spent months making, and that fewer families pass down each year. She
+              runs the boutique from Sreenagar in Munshiganj while completing a Computer Science and
+              Engineering degree at BRAC University.
             </p>
-            <p className="text-sm leading-relaxed text-muted-foreground">
-              From handcrafted kurtis to future collections of saree, three piece, girls dress,
-              cosmetics, makeup, and serum, Nongorr is growing into a women-focused fashion and
-              beauty destination.
-            </p>
-            {/* quote card */}
-            <figure className="relative mt-6 rounded-3xl border border-gold/30 bg-secondary/40 p-7 shadow-soft">
-              <Quote className="absolute -top-3 left-6 h-9 w-9 fill-gold text-gold" aria-hidden />
-              <blockquote className="font-display text-2xl leading-snug text-primary">
-                “Every piece should feel thoughtful — not just worn, but loved.”
-              </blockquote>
-              <figcaption className="mt-3 text-sm text-muted-foreground">
-                — Miskatul Afrin Anika
-              </figcaption>
-            </figure>
+            <Button asChild className="mt-2">
+              <Link to="/founder">
+                Read her full story <ArrowRight className="h-4 w-4" />
+              </Link>
+            </Button>
           </div>
         </div>
       </section>
@@ -248,13 +250,15 @@ function About() {
             </h2>
             <div className="ornament-divider w-40 justify-start" />
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Nongorr began with a love for handmade fashion and the beauty of traditional details.
-              The anchor in our identity represents strength, belonging, and trust, while the
-              flowing maroon fabric reflects the grace of Bangladeshi women's wear.
+              Nongorr began with the nakshi kantha. For generations, women across Bengal layered
+              worn sarees and joined them with a running stitch, drawing the thread from the sarees'
+              own borders, until a quilt held an entire life in it. That patience is going out of
+              use. This boutique is one attempt to keep it working.
             </p>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              From the first kurti to every future collection, our goal is simple: to make women
-              feel confident, comfortable, and beautifully themselves.
+              The anchor in our identity stands for steadiness and belonging; the flowing maroon
+              fabric for the grace of Bangladeshi women's wear. From the first kurti onward the goal
+              has stayed simple — clothing made with real care, for women who intend to keep it.
             </p>
           </div>
           <div className="relative mx-auto grid w-full max-w-md place-items-center">
@@ -276,38 +280,9 @@ function About() {
         </div>
       </section>
 
-      {/* 4 — BEHIND THE BRAND / LIFESTYLE */}
-      <section id="craft" className="mx-auto max-w-6xl scroll-mt-36 px-4 py-20 sm:px-6">
-        <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
-          <div className="relative order-2 mx-auto w-full max-w-md lg:order-1">
-            <div className="overflow-hidden rounded-[2rem] border border-gold/30 bg-card p-2 shadow-card">
-              <img
-                src={founderLifestyle}
-                alt="Anika in a maroon outfit on a flower-decorated garden swing at golden hour"
-                width={1024}
-                height={1280}
-                loading="lazy"
-                className="aspect-[4/5] w-full rounded-[1.6rem] object-cover"
-              />
-            </div>
-            <p className="mt-5 text-center font-display text-xl italic text-primary/80">
-              “A personal love for colour, culture, and quiet elegance.”
-            </p>
-          </div>
-          <div className="order-1 space-y-5 lg:order-2">
-            <span className="eyebrow">Behind the Brand</span>
-            <h2 className="font-display text-4xl text-foreground sm:text-5xl text-balance">
-              Inspired by Colour, Craft &amp; Everyday Grace
-            </h2>
-            <div className="ornament-divider w-40 justify-start" />
-            <p className="text-sm leading-relaxed text-muted-foreground">
-              For Anika, Nongorr is more than fashion — it is a feeling of comfort, culture, and
-              confidence. Every colour, fabric, and detail is chosen with the hope that women feel
-              beautiful, comfortable, and connected to their own style.
-            </p>
-          </div>
-        </div>
-      </section>
+      {/* The former "Behind the Brand" lifestyle block moved to /founder — it
+          repeated that page's photo, caption and copy verbatim. The `craft`
+          anchor now points at the genuine craft & measurement section below. */}
 
       {/* 5 — WHAT MAKES NONGORR DIFFERENT */}
       <section className="bg-secondary/30 py-20">
@@ -356,7 +331,7 @@ function About() {
       </section>
 
       {/* 6 — CRAFT & MEASUREMENT */}
-      <section className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
+      <section id="craft" className="mx-auto max-w-6xl scroll-mt-36 px-4 py-20 sm:px-6">
         <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-14">
           <div className="rounded-3xl border border-gold/30 bg-card p-4 shadow-card sm:p-6">
             <img
@@ -470,7 +445,8 @@ function About() {
       </section>
 
       {/* 9 — FINAL CTA */}
-      <section className="bg-gradient-hero">
+      {/* -mb-20 cancels the footer's site-wide mt-20 (see /founder). */}
+      <section className="-mb-20 bg-gradient-hero">
         <div className="mx-auto max-w-3xl px-4 py-20 text-center sm:px-6">
           <Flower2 className="mx-auto h-10 w-10 text-gold" aria-hidden />
           <h2 className="mt-4 font-display text-4xl text-primary-foreground sm:text-5xl">

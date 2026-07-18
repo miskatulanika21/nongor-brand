@@ -55,6 +55,75 @@ export const DISCOVERY_LINKS: DiscoveryLink[] = [
   { label: "Custom Fit", to: "/custom-size-policy" },
 ];
 
+/** Narrow an arbitrary URL segment to a known category slug. */
+export function isCategorySlug(v: string): v is CategorySlug {
+  return CATEGORY_FILTERS.some((c) => c.slug === v);
+}
+
+/**
+ * Canonical crawlable path for a category.
+ *
+ * Categories are reachable two ways on purpose:
+ *   - `/shop/kurti`      → the indexable landing page (this path). Stable URL,
+ *                          unique title/description/H1, its own schema.
+ *   - `/shop?category=…` → the interactive filter view, which is a *state* of
+ *                          the shop and canonicalises back to the path above.
+ *
+ * Search engines only reliably treat distinct paths as pages in their own
+ * right, so every nav/footer/homepage category link points here.
+ */
+export function categoryPath(slug: CategorySlug): string {
+  return `/shop/${slug}`;
+}
+
+/** Per-category page copy. Unique text per category — duplicated boilerplate
+ *  across category pages reads as thin content and suppresses them in search. */
+export const CATEGORY_SEO: Record<
+  CategorySlug,
+  { title: string; description: string; heading: string; intro: string }
+> = {
+  kurti: {
+    title: "Kurti Collection — Handmade & Embroidered Kurtis | Nongorr",
+    description:
+      "Shop Nongorr's kurti collection — handloom, chikankari and embroidered kurtis for everyday and occasion wear. Stitched and unstitched, delivered across Bangladesh.",
+    heading: "Kurti Collection",
+    intro:
+      "Handloom weaves, chikankari threadwork and everyday cottons — our kurtis are made in small batches, with stitched and unstitched options and custom sizing on request.",
+  },
+  saree: {
+    title: "Saree Collection — Jamdani & Handloom Sarees | Nongorr",
+    description:
+      "Explore Nongorr's saree collection featuring jamdani, handloom and occasion sarees. Premium Bangladeshi craftsmanship with nationwide cash-on-delivery.",
+    heading: "Saree Collection",
+    intro:
+      "From heritage jamdani to soft everyday handloom, each saree is chosen for its weave, drape and finish — traditional craft cut for how women dress today.",
+  },
+  "three-piece": {
+    title: "Three Piece Collection — Stitched & Unstitched | Nongorr",
+    description:
+      "Browse Nongorr's three piece sets — stitched and unstitched salwar kameez in premium fabrics, with custom tailoring available across Bangladesh.",
+    heading: "Three Piece Collection",
+    intro:
+      "Complete three piece sets in premium fabric, available stitched to your measurements or unstitched for your own tailor.",
+  },
+  "girls-dress": {
+    title: "Girls Dress Collection — Kids Ethnic & Party Wear | Nongorr",
+    description:
+      "Shop Nongorr's girls dress collection — festive, party and everyday ethnic wear for children in soft, skin-friendly fabrics.",
+    heading: "Girls Dress Collection",
+    intro:
+      "Festive and everyday dresses for girls, cut in soft skin-friendly fabrics with the same finish standards as our adult collection.",
+  },
+  cosmetics: {
+    title: "Beauty & Cosmetics — Makeup, Serum & Skincare | Nongorr",
+    description:
+      "Discover Nongorr's beauty edit — makeup, vitamin C serums and skincare selected for Bangladeshi skin and climate.",
+    heading: "Beauty & Cosmetics",
+    intro:
+      "A tight, considered beauty edit — makeup, serums and skincare picked to suit Bangladeshi skin tones and climate rather than to fill a catalogue.",
+  },
+};
+
 export function matchesCategory(p: Product, category: string): boolean {
   if (!category) return true;
   if (category === "cosmetics") return COSMETIC_TYPES.includes(p.type);
