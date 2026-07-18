@@ -4,6 +4,21 @@ Stage-by-stage plan with exit criteria. Derived from
 `nongorr-phase-2-antigravity-prompt.md` (V3). Update after each stage; keep in
 sync with `CURRENT_STATUS.md`.
 
+> **2026-07-18 — Focal Studio + launch-prep polish** (PRs #14–#19, `main` @
+> `d8120f7`, CI green; **688 Vitest**). Non-stage-opening polish on top of the
+> cut-over: **#14 Focal Studio** — non-destructive image framing for banners and
+> product primary images (normalized focal point stored as `focal_x`/`focal_y`
+> and applied as CSS `object-position`; reusable `<ImageFramer>` + shared
+> `image-focal.ts`; optional FaceDetector/saliency auto-frame; migration
+> `20260717175716` additive and **applied to prod**; also drops the no-op
+> `upgrade-insecure-requests` directive from the Report-Only CSP). **#15** shared
+> edge cache for anonymous public pages (three fail-closed guards; nonce-free
+> cached render) removing ~1.5 s of SSR document latency. **#16** mobile side
+> sheets sized to the dynamic viewport. **#17** proprietary LICENSE + SECURITY.md.
+> **#18** Google Search Console verification meta (does not touch `noindex`).
+> **#19** project README. Remaining launch work is unchanged and owner-gated —
+> see `docs/stage-7-launch-cutover.md` §7.
+>
 > **2026-07-17 — Domain cut-over + courier contract rebuild** (PR #12,
 > `b4d1d44`, CI green incl. migrations-local; **670 Vitest**; migration
 > `20260717120221_record_shipment_event` applied to prod). **`nongorr.com` now

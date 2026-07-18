@@ -4,6 +4,19 @@ Reflects what the code does today (Stages 2–6 closed for their shipped scope;
 checkout + order management, customer accounts, courier & shipments, and the
 Stage-6 content/reports modules all live — 67 migrations). Updated each stage.
 
+> **2026-07-18 Focal Studio + edge cache (PRs #14–#19, `d8120f7`).** Banner and
+> product-primary images now carry a normalized focal point (`focal_x`/`focal_y`,
+> 0..1, default 0.5, migration `20260717175716`). `get_active_banners` /
+> `upsert_banner` are focal-aware; `image-focal.ts`'s `focalPosition()` maps it to
+> a CSS `object-position` string used by both the live render and the
+> `<ImageFramer>` editor preview, so framing is non-destructive (no re-crop) and
+> WYSIWYG. Separately, anonymous public pages now render through a **shared edge
+> cache** — the SSR response is served cached only when the path is on the public
+> allowlist, carries no Supabase auth cookie, and is a plain 200 with no
+> `Set-Cookie`; cached responses render **nonce-free** (the enforced CSP allows
+> scripts via `unsafe-inline`), while authenticated/dynamic responses keep the
+> per-request nonce and stay private.
+>
 > **2026-07-16 Codex order-workflow remediation (merged & deployed, `b17e589`).**
 > The guest tracking token is now **client-held**: the browser mints the raw
 > token and sends only its SHA-256 hash (`sha256Hex`), the server stores the
