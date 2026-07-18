@@ -31,6 +31,7 @@ export type AdminIconKey =
   | "banners"
   | "media"
   | "policies"
+  | "founder"
   | "reports"
   | "settings"
   | "staff"
@@ -126,6 +127,14 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         to: "/admin/policies",
         icon: "policies",
         permission: "policies.manage",
+      },
+      // Owner-only (founder.manage is not granted to the admin role), so this
+      // link is simply absent from an admin's sidebar.
+      {
+        label: "Founder Page",
+        to: "/admin/founder",
+        icon: "founder",
+        permission: "founder.manage",
       },
     ],
   },

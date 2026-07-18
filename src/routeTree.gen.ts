@@ -34,6 +34,7 @@ import { Route as AdminMessagesRouteImport } from './routes/admin.messages'
 import { Route as AdminMediaLibraryRouteImport } from './routes/admin.media-library'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as AdminInventoryRouteImport } from './routes/admin.inventory'
+import { Route as AdminFounderRouteImport } from './routes/admin.founder'
 import { Route as AdminCustomersRouteImport } from './routes/admin.customers'
 import { Route as AdminCourierRouteImport } from './routes/admin.courier'
 import { Route as AdminCouponsRouteImport } from './routes/admin.coupons'
@@ -51,6 +52,7 @@ import { Route as SitePaymentPolicyRouteImport } from './routes/_site.payment-po
 import { Route as SiteOrdersRouteImport } from './routes/_site.orders'
 import { Route as SiteOrderSuccessRouteImport } from './routes/_site.order-success'
 import { Route as SiteLoginRouteImport } from './routes/_site.login'
+import { Route as SiteFounderRouteImport } from './routes/_site.founder'
 import { Route as SiteFaqRouteImport } from './routes/_site.faq'
 import { Route as SiteEidStyleGuideRouteImport } from './routes/_site.eid-style-guide'
 import { Route as SiteDeliveryPolicyRouteImport } from './routes/_site.delivery-policy'
@@ -67,6 +69,7 @@ import { Route as SiteOrdersIndexRouteImport } from './routes/_site.orders.index
 import { Route as SiteAccountIndexRouteImport } from './routes/_site.account.index'
 import { Route as ApiWebhookSteadfastRouteImport } from './routes/api.webhook.steadfast'
 import { Route as ApiWebhookPathaoRouteImport } from './routes/api.webhook.pathao'
+import { Route as SiteShopCategoryRouteImport } from './routes/_site.shop_.$category'
 import { Route as SiteProductSlugRouteImport } from './routes/_site.product.$slug'
 import { Route as SiteOrdersIdRouteImport } from './routes/_site.orders.$id'
 import { Route as SiteAccountSecurityRouteImport } from './routes/_site.account.security'
@@ -198,6 +201,11 @@ const AdminInventoryRoute = AdminInventoryRouteImport.update({
   path: '/inventory',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminFounderRoute = AdminFounderRouteImport.update({
+  id: '/founder',
+  path: '/founder',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminCustomersRoute = AdminCustomersRouteImport.update({
   id: '/customers',
   path: '/customers',
@@ -283,6 +291,11 @@ const SiteLoginRoute = SiteLoginRouteImport.update({
   path: '/login',
   getParentRoute: () => SiteRoute,
 } as any)
+const SiteFounderRoute = SiteFounderRouteImport.update({
+  id: '/founder',
+  path: '/founder',
+  getParentRoute: () => SiteRoute,
+} as any)
 const SiteFaqRoute = SiteFaqRouteImport.update({
   id: '/faq',
   path: '/faq',
@@ -363,6 +376,11 @@ const ApiWebhookPathaoRoute = ApiWebhookPathaoRouteImport.update({
   path: '/api/webhook/pathao',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SiteShopCategoryRoute = SiteShopCategoryRouteImport.update({
+  id: '/shop_/$category',
+  path: '/shop/$category',
+  getParentRoute: () => SiteRoute,
+} as any)
 const SiteProductSlugRoute = SiteProductSlugRouteImport.update({
   id: '/product/$slug',
   path: '/product/$slug',
@@ -411,6 +429,7 @@ export interface FileRoutesByFullPath {
   '/delivery-policy': typeof SiteDeliveryPolicyRoute
   '/eid-style-guide': typeof SiteEidStyleGuideRoute
   '/faq': typeof SiteFaqRoute
+  '/founder': typeof SiteFounderRoute
   '/login': typeof SiteLoginRoute
   '/order-success': typeof SiteOrderSuccessRoute
   '/orders': typeof SiteOrdersRouteWithChildren
@@ -428,6 +447,7 @@ export interface FileRoutesByFullPath {
   '/admin/coupons': typeof AdminCouponsRoute
   '/admin/courier': typeof AdminCourierRoute
   '/admin/customers': typeof AdminCustomersRoute
+  '/admin/founder': typeof AdminFounderRoute
   '/admin/inventory': typeof AdminInventoryRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/media-library': typeof AdminMediaLibraryRoute
@@ -454,6 +474,7 @@ export interface FileRoutesByFullPath {
   '/account/security': typeof SiteAccountSecurityRoute
   '/orders/$id': typeof SiteOrdersIdRoute
   '/product/$slug': typeof SiteProductSlugRoute
+  '/shop/$category': typeof SiteShopCategoryRoute
   '/api/webhook/pathao': typeof ApiWebhookPathaoRoute
   '/api/webhook/steadfast': typeof ApiWebhookSteadfastRoute
   '/account/': typeof SiteAccountIndexRoute
@@ -473,6 +494,7 @@ export interface FileRoutesByTo {
   '/delivery-policy': typeof SiteDeliveryPolicyRoute
   '/eid-style-guide': typeof SiteEidStyleGuideRoute
   '/faq': typeof SiteFaqRoute
+  '/founder': typeof SiteFounderRoute
   '/login': typeof SiteLoginRoute
   '/order-success': typeof SiteOrderSuccessRoute
   '/payment-policy': typeof SitePaymentPolicyRoute
@@ -489,6 +511,7 @@ export interface FileRoutesByTo {
   '/admin/coupons': typeof AdminCouponsRoute
   '/admin/courier': typeof AdminCourierRoute
   '/admin/customers': typeof AdminCustomersRoute
+  '/admin/founder': typeof AdminFounderRoute
   '/admin/inventory': typeof AdminInventoryRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/media-library': typeof AdminMediaLibraryRoute
@@ -516,6 +539,7 @@ export interface FileRoutesByTo {
   '/account/security': typeof SiteAccountSecurityRoute
   '/orders/$id': typeof SiteOrdersIdRoute
   '/product/$slug': typeof SiteProductSlugRoute
+  '/shop/$category': typeof SiteShopCategoryRoute
   '/api/webhook/pathao': typeof ApiWebhookPathaoRoute
   '/api/webhook/steadfast': typeof ApiWebhookSteadfastRoute
   '/account': typeof SiteAccountIndexRoute
@@ -539,6 +563,7 @@ export interface FileRoutesById {
   '/_site/delivery-policy': typeof SiteDeliveryPolicyRoute
   '/_site/eid-style-guide': typeof SiteEidStyleGuideRoute
   '/_site/faq': typeof SiteFaqRoute
+  '/_site/founder': typeof SiteFounderRoute
   '/_site/login': typeof SiteLoginRoute
   '/_site/order-success': typeof SiteOrderSuccessRoute
   '/_site/orders': typeof SiteOrdersRouteWithChildren
@@ -556,6 +581,7 @@ export interface FileRoutesById {
   '/admin/coupons': typeof AdminCouponsRoute
   '/admin/courier': typeof AdminCourierRoute
   '/admin/customers': typeof AdminCustomersRoute
+  '/admin/founder': typeof AdminFounderRoute
   '/admin/inventory': typeof AdminInventoryRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/media-library': typeof AdminMediaLibraryRoute
@@ -583,6 +609,7 @@ export interface FileRoutesById {
   '/_site/account/security': typeof SiteAccountSecurityRoute
   '/_site/orders/$id': typeof SiteOrdersIdRoute
   '/_site/product/$slug': typeof SiteProductSlugRoute
+  '/_site/shop_/$category': typeof SiteShopCategoryRoute
   '/api/webhook/pathao': typeof ApiWebhookPathaoRoute
   '/api/webhook/steadfast': typeof ApiWebhookSteadfastRoute
   '/_site/account/': typeof SiteAccountIndexRoute
@@ -607,6 +634,7 @@ export interface FileRouteTypes {
     | '/delivery-policy'
     | '/eid-style-guide'
     | '/faq'
+    | '/founder'
     | '/login'
     | '/order-success'
     | '/orders'
@@ -624,6 +652,7 @@ export interface FileRouteTypes {
     | '/admin/coupons'
     | '/admin/courier'
     | '/admin/customers'
+    | '/admin/founder'
     | '/admin/inventory'
     | '/admin/login'
     | '/admin/media-library'
@@ -650,6 +679,7 @@ export interface FileRouteTypes {
     | '/account/security'
     | '/orders/$id'
     | '/product/$slug'
+    | '/shop/$category'
     | '/api/webhook/pathao'
     | '/api/webhook/steadfast'
     | '/account/'
@@ -669,6 +699,7 @@ export interface FileRouteTypes {
     | '/delivery-policy'
     | '/eid-style-guide'
     | '/faq'
+    | '/founder'
     | '/login'
     | '/order-success'
     | '/payment-policy'
@@ -685,6 +716,7 @@ export interface FileRouteTypes {
     | '/admin/coupons'
     | '/admin/courier'
     | '/admin/customers'
+    | '/admin/founder'
     | '/admin/inventory'
     | '/admin/login'
     | '/admin/media-library'
@@ -712,6 +744,7 @@ export interface FileRouteTypes {
     | '/account/security'
     | '/orders/$id'
     | '/product/$slug'
+    | '/shop/$category'
     | '/api/webhook/pathao'
     | '/api/webhook/steadfast'
     | '/account'
@@ -734,6 +767,7 @@ export interface FileRouteTypes {
     | '/_site/delivery-policy'
     | '/_site/eid-style-guide'
     | '/_site/faq'
+    | '/_site/founder'
     | '/_site/login'
     | '/_site/order-success'
     | '/_site/orders'
@@ -751,6 +785,7 @@ export interface FileRouteTypes {
     | '/admin/coupons'
     | '/admin/courier'
     | '/admin/customers'
+    | '/admin/founder'
     | '/admin/inventory'
     | '/admin/login'
     | '/admin/media-library'
@@ -778,6 +813,7 @@ export interface FileRouteTypes {
     | '/_site/account/security'
     | '/_site/orders/$id'
     | '/_site/product/$slug'
+    | '/_site/shop_/$category'
     | '/api/webhook/pathao'
     | '/api/webhook/steadfast'
     | '/_site/account/'
@@ -975,6 +1011,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminInventoryRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/founder': {
+      id: '/admin/founder'
+      path: '/founder'
+      fullPath: '/admin/founder'
+      preLoaderRoute: typeof AdminFounderRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/customers': {
       id: '/admin/customers'
       path: '/customers'
@@ -1094,6 +1137,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SiteLoginRouteImport
       parentRoute: typeof SiteRoute
     }
+    '/_site/founder': {
+      id: '/_site/founder'
+      path: '/founder'
+      fullPath: '/founder'
+      preLoaderRoute: typeof SiteFounderRouteImport
+      parentRoute: typeof SiteRoute
+    }
     '/_site/faq': {
       id: '/_site/faq'
       path: '/faq'
@@ -1206,6 +1256,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWebhookPathaoRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_site/shop_/$category': {
+      id: '/_site/shop_/$category'
+      path: '/shop/$category'
+      fullPath: '/shop/$category'
+      preLoaderRoute: typeof SiteShopCategoryRouteImport
+      parentRoute: typeof SiteRoute
+    }
     '/_site/product/$slug': {
       id: '/_site/product/$slug'
       path: '/product/$slug'
@@ -1298,6 +1355,7 @@ interface SiteRouteChildren {
   SiteDeliveryPolicyRoute: typeof SiteDeliveryPolicyRoute
   SiteEidStyleGuideRoute: typeof SiteEidStyleGuideRoute
   SiteFaqRoute: typeof SiteFaqRoute
+  SiteFounderRoute: typeof SiteFounderRoute
   SiteLoginRoute: typeof SiteLoginRoute
   SiteOrderSuccessRoute: typeof SiteOrderSuccessRoute
   SiteOrdersRoute: typeof SiteOrdersRouteWithChildren
@@ -1311,6 +1369,7 @@ interface SiteRouteChildren {
   SiteWishlistRoute: typeof SiteWishlistRoute
   SiteIndexRoute: typeof SiteIndexRoute
   SiteProductSlugRoute: typeof SiteProductSlugRoute
+  SiteShopCategoryRoute: typeof SiteShopCategoryRoute
 }
 
 const SiteRouteChildren: SiteRouteChildren = {
@@ -1326,6 +1385,7 @@ const SiteRouteChildren: SiteRouteChildren = {
   SiteDeliveryPolicyRoute: SiteDeliveryPolicyRoute,
   SiteEidStyleGuideRoute: SiteEidStyleGuideRoute,
   SiteFaqRoute: SiteFaqRoute,
+  SiteFounderRoute: SiteFounderRoute,
   SiteLoginRoute: SiteLoginRoute,
   SiteOrderSuccessRoute: SiteOrderSuccessRoute,
   SiteOrdersRoute: SiteOrdersRouteWithChildren,
@@ -1339,6 +1399,7 @@ const SiteRouteChildren: SiteRouteChildren = {
   SiteWishlistRoute: SiteWishlistRoute,
   SiteIndexRoute: SiteIndexRoute,
   SiteProductSlugRoute: SiteProductSlugRoute,
+  SiteShopCategoryRoute: SiteShopCategoryRoute,
 }
 
 const SiteRouteWithChildren = SiteRoute._addFileChildren(SiteRouteChildren)
@@ -1350,6 +1411,7 @@ interface AdminRouteChildren {
   AdminCouponsRoute: typeof AdminCouponsRoute
   AdminCourierRoute: typeof AdminCourierRoute
   AdminCustomersRoute: typeof AdminCustomersRoute
+  AdminFounderRoute: typeof AdminFounderRoute
   AdminInventoryRoute: typeof AdminInventoryRoute
   AdminLoginRoute: typeof AdminLoginRoute
   AdminMediaLibraryRoute: typeof AdminMediaLibraryRoute
@@ -1374,6 +1436,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminCouponsRoute: AdminCouponsRoute,
   AdminCourierRoute: AdminCourierRoute,
   AdminCustomersRoute: AdminCustomersRoute,
+  AdminFounderRoute: AdminFounderRoute,
   AdminInventoryRoute: AdminInventoryRoute,
   AdminLoginRoute: AdminLoginRoute,
   AdminMediaLibraryRoute: AdminMediaLibraryRoute,

@@ -40,6 +40,9 @@ export const ADMIN_PERMISSIONS = [
   "content.manage",
   "media.manage",
   "policies.manage",
+  // Owner-exclusive (see OWNER_ONLY_PERMISSIONS): the founder page is personal,
+  // brand-identity content, so admins cannot rewrite it.
+  "founder.manage",
   "sizes.manage",
   "reports.view",
   "settings.manage",

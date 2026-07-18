@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { BRAND } from "@/lib/brand";
 import type { PublicSettings } from "@/lib/settings.schema";
 import { availableMethods } from "@/lib/checkout-shared";
-import { PRODUCT_CATEGORIES } from "@/lib/categories";
+import { PRODUCT_CATEGORIES, categoryPath } from "@/lib/categories";
 import { subscribeNewsletterFn } from "@/lib/newsletter.api";
 import { newsletterSubscribeSchema } from "@/lib/newsletter-shared";
 import {
@@ -52,8 +52,7 @@ const shopLinks: FooterLink[] = [
   // Physical categories from the shared category source (no local duplicate array).
   ...PRODUCT_CATEGORIES.map((c) => ({
     label: c.label,
-    to: "/shop",
-    search: { category: c.category },
+    to: categoryPath(c.category),
   })),
   // Discovery links are filters, not physical categories.
   { label: "New Arrivals", to: "/shop", search: { filter: "new-arrivals" } },
@@ -363,7 +362,13 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
                 and timeless feminine elegance.
               </p>
               <p className="text-xs uppercase tracking-[0.18em] text-gold/80">
-                Founded by Miskatul Afrin Anika
+                Founded by{" "}
+                <Link
+                  to="/founder"
+                  className="underline underline-offset-4 transition-colors hover:text-gold"
+                >
+                  Miskatul Afrin Anika
+                </Link>
               </p>
               <div className="flex gap-2">
                 {socials.map(({ icon: Icon, label, href, disabled }) =>
@@ -478,7 +483,13 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
                 and timeless feminine elegance.
               </p>
               <p className="text-xs uppercase tracking-[0.18em] text-gold/80">
-                Founded by Miskatul Afrin Anika
+                Founded by{" "}
+                <Link
+                  to="/founder"
+                  className="underline underline-offset-4 transition-colors hover:text-gold"
+                >
+                  Miskatul Afrin Anika
+                </Link>
               </p>
               <div className="flex gap-2">
                 {socials.map(({ icon: Icon, label, href, disabled }) =>
