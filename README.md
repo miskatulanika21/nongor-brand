@@ -173,4 +173,4 @@ CI/CD & rollback, backup & DR, secrets & rotation, and observability guides.
 
 Copyright © 2026 Nongorr (Miskatul Afrin Anika). All rights reserved.
 Proprietary and confidential — see [`LICENSE`](./LICENSE).
-For inquiries: **hello@nongorr.com**
+For inquiries: **nongorr.anika@gmail.com**
