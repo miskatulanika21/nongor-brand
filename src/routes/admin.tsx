@@ -211,12 +211,20 @@ function AdminLayout() {
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-72 border-sidebar-border bg-sidebar p-0">
-              <SheetHeader className="h-16 justify-center border-b border-sidebar-border px-5">
+            {/* Flex column so the nav scrolls and the Logout button pinned to
+                the bottom stays reachable. Sheet height comes from the shared
+                component's h-dvh (dynamic viewport) — a hardcoded
+                h-[calc(100vh-4rem)] ScrollArea used the LARGE viewport and
+                pushed Logout behind the mobile browser toolbar. */}
+            <SheetContent
+              side="left"
+              className="flex w-72 flex-col border-sidebar-border bg-sidebar p-0"
+            >
+              <SheetHeader className="h-16 shrink-0 justify-center border-b border-sidebar-border px-5">
                 <SheetTitle className="sr-only">Admin menu</SheetTitle>
                 <Logo variant="light" roundMark />
               </SheetHeader>
-              <ScrollArea className="h-[calc(100vh-4rem)]">
+              <ScrollArea className="min-h-0 flex-1">
                 <NavList
                   nav={nav}
                   pathname={pathname}
