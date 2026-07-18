@@ -2,7 +2,11 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
-import { withSecurityHeaders } from "./lib/server/headers.server";
+import {
+  withSecurityHeaders,
+  isPublicCacheableRequest,
+  withPublicCache,
+} from "./lib/server/headers.server";
 import { generateNonce, runWithNonce } from "./lib/server/request-nonce.server";
 import { isProduction, ensureEnvValidated } from "./lib/server/env.server";
 
@@ -58,7 +62,12 @@ export default {
     // getRouter() — which stamps it onto every script TanStack injects — and
     // withSecurityHeaders() below, which puts the same nonce in the CSP. getRouter
     // runs synchronously inside handler.fetch, i.e. inside this ALS scope.
-    const nonce = generateNonce();
+    // Anonymous public pages are served from a shared edge cache (see
+    // headers.server.ts). Such pages render NONCE-FREE — a per-request nonce
+    // can't be shared across cached hits, and the enforced CSP allows scripts
+    // via 'unsafe-inline' without one. Everything else keeps a fresh nonce.
+    const cacheable = isPublicCacheableRequest(request);
+    const nonce = cacheable ? "" : generateNonce();
     return runWithNonce(nonce, async () => {
       try {
         ensureEnvValidated();
@@ -70,7 +79,8 @@ export default {
         // a safe error page that is itself passed through withSecurityHeaders. The
         // intent is that a normal response is never emitted without headers; the
         // error-path rebuild is best-effort and not an absolute guarantee.
-        return withSecurityHeaders(normalized, isProduction(), nonce);
+        const secured = withSecurityHeaders(normalized, isProduction(), nonce || undefined);
+        return cacheable ? withPublicCache(secured) : secured;
       } catch (error) {
         console.error(error);
         await reportServerError(error, { path: "ssr_fetch" });
