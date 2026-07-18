@@ -75,6 +75,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           "Nongorr is a premium Bangladeshi women's boutique for handmade kurti, custom-size tailoring, saree, three piece, girls dress and beauty essentials.",
       },
       { name: "author", content: "Nongorr" },
+      // Google Search Console site-ownership verification (URL-prefix property
+      // https://nongorr.com). Keep this — removing it un-verifies the property.
+      { name: "google-site-verification", content: "UA7Z9087cNjG8aDghQ2R8R7V3IQe-eBJfIl68mkJKmM" },
       { property: "og:title", content: "Nongorr — Premium Women's Boutique" },
       {
         property: "og:description",
