@@ -35,19 +35,19 @@ Analytics + Speed Insights, and a full CI/CD + backup/DR runbook.
 
 ## Tech stack
 
-| Layer          | Technology                                                        |
-| -------------- | ----------------------------------------------------------------- |
-| Framework      | [TanStack Start](https://tanstack.com/start) (SSR) + React 19     |
-| Routing        | TanStack Router (file-based, `src/routes/`)                       |
-| Data           | TanStack Query                                                    |
-| Backend        | Supabase — Postgres, Auth, RLS, Storage                           |
-| Styling        | Tailwind CSS v4 + Radix UI primitives (shadcn-style components)   |
-| Forms / schema | React Hook Form + Zod                                             |
-| Build / bundler| Vite 7 + Nitro                                                    |
-| Hosting        | Vercel (region `bom1`, co-located with Supabase `ap-south-1`)     |
-| Monitoring     | Sentry, Vercel Analytics & Speed Insights                        |
-| Tests          | Vitest (unit) + Playwright (e2e/smoke, axe a11y)                  |
-| Package manager| Bun                                                               |
+| Layer           | Technology                                                      |
+| --------------- | --------------------------------------------------------------- |
+| Framework       | [TanStack Start](https://tanstack.com/start) (SSR) + React 19   |
+| Routing         | TanStack Router (file-based, `src/routes/`)                     |
+| Data            | TanStack Query                                                  |
+| Backend         | Supabase — Postgres, Auth, RLS, Storage                         |
+| Styling         | Tailwind CSS v4 + Radix UI primitives (shadcn-style components) |
+| Forms / schema  | React Hook Form + Zod                                           |
+| Build / bundler | Vite 7 + Nitro                                                  |
+| Hosting         | Vercel (region `bom1`, co-located with Supabase `ap-south-1`)   |
+| Monitoring      | Sentry, Vercel Analytics & Speed Insights                       |
+| Tests           | Vitest (unit) + Playwright (e2e/smoke, axe a11y)                |
+| Package manager | Bun                                                             |
 
 ---
 
@@ -81,32 +81,32 @@ At minimum you need Supabase credentials and the site URL. See
 [`.env.example`](./.env.example) for the fully documented list (couriers, OAuth
 flags, MFA enforcement, rate-limit store, etc.).
 
-| Variable                    | Purpose                                       |
-| --------------------------- | --------------------------------------------- |
-| `VITE_SUPABASE_URL`         | Supabase project URL                          |
-| `VITE_SUPABASE_ANON_KEY`    | Browser-safe anon/publishable key             |
-| `SUPABASE_SERVICE_ROLE_KEY` | **Server-only** privileged key — never `VITE_`|
-| `VITE_SITE_URL`             | Public app URL (`http://localhost:8080` local)|
+| Variable                    | Purpose                                        |
+| --------------------------- | ---------------------------------------------- |
+| `VITE_SUPABASE_URL`         | Supabase project URL                           |
+| `VITE_SUPABASE_ANON_KEY`    | Browser-safe anon/publishable key              |
+| `SUPABASE_SERVICE_ROLE_KEY` | **Server-only** privileged key — never `VITE_` |
+| `VITE_SITE_URL`             | Public app URL (`http://localhost:8080` local) |
 
 ---
 
 ## Scripts
 
-| Command                    | What it does                                            |
-| -------------------------- | ------------------------------------------------------- |
-| `bun run dev`              | Start the dev server on `:8080`                         |
-| `bun run build`            | Production build                                        |
-| `bun run preview`          | Preview a production build                              |
-| `bun run typecheck`        | `tsc --noEmit`                                          |
-| `bun run lint`             | ESLint                                                  |
-| `bun run format`           | Prettier write (`format:check` to verify)              |
-| `bun run test`             | Unit tests (Vitest)                                     |
-| `bun run test:e2e`         | Playwright e2e suite                                    |
-| `bun run test:smoke`       | Playwright smoke suite                                  |
-| `bun run check`            | Full gate: typecheck + lint + format + test + build     |
-| `bun run check:migrations` | Verify local migrations match the tracked set           |
-| `bun run seed-catalog`     | Seed catalog data (`scripts/seed-catalog.ts`)           |
-| `bun run provision-admin`  | Create an admin/owner account                           |
+| Command                    | What it does                                        |
+| -------------------------- | --------------------------------------------------- |
+| `bun run dev`              | Start the dev server on `:8080`                     |
+| `bun run build`            | Production build                                    |
+| `bun run preview`          | Preview a production build                          |
+| `bun run typecheck`        | `tsc --noEmit`                                      |
+| `bun run lint`             | ESLint                                              |
+| `bun run format`           | Prettier write (`format:check` to verify)           |
+| `bun run test`             | Unit tests (Vitest)                                 |
+| `bun run test:e2e`         | Playwright e2e suite                                |
+| `bun run test:smoke`       | Playwright smoke suite                              |
+| `bun run check`            | Full gate: typecheck + lint + format + test + build |
+| `bun run check:migrations` | Verify local migrations match the tracked set       |
+| `bun run seed-catalog`     | Seed catalog data (`scripts/seed-catalog.ts`)       |
+| `bun run provision-admin`  | Create an admin/owner account                       |
 
 Run `bun run check` before pushing — it mirrors CI.
 
@@ -159,13 +159,13 @@ CI/CD & rollback, backup & DR, secrets & rotation, and observability guides.
 
 ## Documentation
 
-| Doc                                              | Contents                              |
-| ------------------------------------------------ | ------------------------------------- |
-| [`WALKTHROUGH.md`](./WALKTHROUGH.md)             | How the actual data flows work today  |
-| [`CURRENT_STATUS.md`](./CURRENT_STATUS.md)       | Current state of every module         |
-| [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) | Roadmap and staged plan            |
-| [`SECURITY.md`](./SECURITY.md)                   | Security policy & reporting           |
-| [`docs/`](./docs)                                | Stage reports and ops runbooks        |
+| Doc                                                  | Contents                             |
+| ---------------------------------------------------- | ------------------------------------ |
+| [`WALKTHROUGH.md`](./WALKTHROUGH.md)                 | How the actual data flows work today |
+| [`CURRENT_STATUS.md`](./CURRENT_STATUS.md)           | Current state of every module        |
+| [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) | Roadmap and staged plan              |
+| [`SECURITY.md`](./SECURITY.md)                       | Security policy & reporting          |
+| [`docs/`](./docs)                                    | Stage reports and ops runbooks       |
 
 ---
 
