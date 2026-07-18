@@ -312,18 +312,24 @@ The single page the operator ticks through on launch day. Unchecked items are
 - [x] `VITE_SITE_URL=https://nongorr.com` **+ redeploy** → canonical/`og:url`
       verified as `https://nongorr.com/` on the live apex
 - [ ] §4 verification passed **in full**
-- [x] `VITE_ALLOW_INDEXING=true` — ⚠️ **ALREADY SET IN PRODUCTION. The site is
-      indexable RIGHT NOW.** This was believed to be closed and gated on the
-      legal-copy sign-off; it is not. Verified 2026-07-18: `/`, `/shop`,
-      `/about` and `/size-guide` emit **no** `<meta name="robots">`, while a 404
-      (which carries its own hardcoded `noindex`) still emits one — proving the
-      mechanism works and the flag is on. Per `src/routes/_site.tsx:38` the meta
-      is omitted precisely when `VITE_ALLOW_INDEXING === "true"`.
-      **Decide deliberately**: legal copy is unreviewed and product photography
-      is still placeholder, both of which the owner marked launch-blocking. To
-      re-close, set `VITE_ALLOW_INDEXING` to anything but `true` (or unset) and
-      **redeploy** — it is `import.meta.env`, so it is build-inlined and an env
-      change alone will not take effect.
+- [ ] `VITE_ALLOW_INDEXING=true` — ⬜ **re-closed 2026-07-18; the site is
+      `noindex,nofollow` again.** History worth keeping: the flag had been set to
+      `true` in production (13h before discovery) while every doc still claimed
+      the site was deliberately `noindex` and gated on the legal-copy sign-off.
+      It was found by contrast — `/`, `/shop`, `/about`, `/size-guide` emitted
+      **no** `<meta name="robots">`, while a 404 (hardcoded `noindex`) still did,
+      proving the mechanism worked and the flag was on
+      (`src/routes/_site.tsx:38` omits the meta exactly when the flag is
+      `"true"`).
+      **Action taken (owner-directed):** `VITE_ALLOW_INDEXING` set to `false` in
+      Production via `vercel env`, then **redeployed** — required, because
+      `import.meta.env` is build-inlined and an env change alone does nothing.
+      Verified after: all public routes (incl. `/product/*`) emit
+      `noindex,nofollow`, on the canonical URLs, with `x-vercel-cache: MISS`
+      confirming the deploy invalidated the CDN so no stale indexable copy
+      survived `stale-while-revalidate`.
+      **To open indexing at go-live**, set it back to `true` **and redeploy**,
+      after the legal-copy sign-off and real photography land.
 - [ ] HSTS preload submitted (**only after** §4 — hard to reverse).
       ⚠ **Correction (2026-07-18):** an earlier revision of this line claimed the
       site is served _without_ `preload`. It is not. The live apex returns
@@ -363,7 +369,10 @@ The single page the operator ticks through on launch day. Unchecked items are
 - [ ] Book one real shipment end-to-end and confirm a status update arrives.
       ⚠ **SteadFast has no sandbox** — the first booking is a real, billable
       consignment. Pathao can be rehearsed for free; SteadFast cannot.
-- [ ] **`PATHAO_SANDBOX_ENABLED` is `false` (or unset) in Vercel.** ⚠ If it is
+- [x] **`PATHAO_SANDBOX_ENABLED` is `false` (or unset) in Vercel.**
+      **Verified 2026-07-18 via `vercel env ls production`: the variable is
+      ABSENT from Production entirely** → real bookings, not sandbox. (Also
+      confirmed absent: `CSP_ENFORCE_STRICT`.) ⚠ If it is
       `true` in production, every real order books against Pathao's sandbox and
       **nothing ever ships** — the app looks healthy and returns consignment ids
       the whole time. It is legitimately `true` in local `.env` for testing, so
