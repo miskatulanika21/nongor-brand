@@ -13,9 +13,26 @@ Stage-6 content/reports modules all live — 67 migrations). Updated each stage.
 > WYSIWYG. Separately, anonymous public pages now render through a **shared edge
 > cache** — the SSR response is served cached only when the path is on the public
 > allowlist, carries no Supabase auth cookie, and is a plain 200 with no
-> `Set-Cookie`; cached responses render **nonce-free** (the enforced CSP allows
-> scripts via `unsafe-inline`), while authenticated/dynamic responses keep the
-> per-request nonce and stay private.
+> `Set-Cookie`; cached responses render **nonce-free** (a nonce replayed across
+> cached hits is not a secret, so it secures nothing), while
+> authenticated/dynamic responses keep the per-request nonce and stay private.
+>
+> **2026-07-18 (evening) CSP now has two hardened policies (`788ffe9`).** How a
+> response is _served_ decides what can secure it, so `withSecurityHeaders` picks
+> one of two: **nonce + `strict-dynamic`** for uncacheable responses, and a
+> **`'sha256-…'` per inline script** (`csp-hash.server.ts` → `buildHashCsp`) for
+> edge-cached ones, which have no nonce by construction. The hashes are a pure
+> function of the response body, so `server.ts` buffers cacheable HTML
+> (`secureCacheableResponse`) to compute them and header+body then cache as a
+> single unit and cannot drift; streaming SSR is untouched on every other route.
+> A response with neither keeps the permissive policy — failing **open**, because
+> a hash policy built from a bad render would be cached and served to everyone.
+> `'strict-dynamic'` is deliberately absent from the hashed path: it makes
+> `'self'` ignored for scripts, which would block the parser-inserted bundle.
+> ⚠ A CSP hash covers the script text **as the HTML parser produced it** — CRLF →
+> LF and **U+0000 → U+FFFD** (TanStack delimits serialised route keys with NUL) —
+> so `curl` and `fetch()`, which never run the parser, will both confirm a policy
+> that a real navigation rejects.
 >
 > **2026-07-16 Codex order-workflow remediation (merged & deployed, `b17e589`).**
 > The guest tracking token is now **client-held**: the browser mints the raw
