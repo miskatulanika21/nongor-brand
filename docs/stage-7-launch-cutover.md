@@ -1,21 +1,32 @@
 # Stage 7 / P7 — Content, legal & launch cut-over
 
-**Status:** CUT-OVER DONE (2026-07-17). `nongorr.com` **serves this app**, on the
-apex, correctly canonicalised — and is deliberately still `noindex`. What remains
-is the webhook secrets, the indexing flip, and the legal-copy sign-off.
+**Status:** CUT-OVER DONE (2026-07-17); **§4 verification PASSED 2026-07-18**
+except two owner-gated items. `nongorr.com` serves this app on the apex,
+correctly canonicalised, and is `noindex` again (see the indexing entry in §7 —
+the flag had been left **on**). Both courier webhook secrets are set, the old
+`vercel.app` alias now redirects here, and `ADDITIONAL_ALLOWED_ORIGINS` is
+cleared.
+
+**What actually remains:** the legal-copy sign-off and real photography (which
+gate the indexing flip), the strict-CSP flip, credential rotation, the
+CI/CD + backup secrets, and one real courier shipment. Plus two §4 items I did
+not run: Google OAuth login (needs a real Google account) and the
+place-an-order CSRF proof (writes a real order to the live database).
 
 ## Where the cut-over actually landed
 
 Verified live 2026-07-17, after the move:
 
-|                          | State                                                 |
-| ------------------------ | ----------------------------------------------------- |
-| Apex `nongorr.com`       | **Production** — serves this app, HTTP 200            |
-| `www.nongorr.com`        | **308 → apex** (apex is canonical)                    |
-| `<link rel="canonical">` | `https://nongorr.com/` ✅ matches the served host     |
-| `<meta name="robots">`   | `noindex,nofollow` — **intentional**, see §2 step 9   |
-| `/api/webhook/*`         | **200** — both secrets now set (re-probed 2026-07-18) |
-| HSTS preload             | **not submitted** — nothing locked in                 |
+|                           | State                                                  |
+| ------------------------- | ------------------------------------------------------ |
+| Apex `nongorr.com`        | **Production** — serves this app, HTTP 200             |
+| `www.nongorr.com`         | **308 → apex** (apex is canonical)                     |
+| `<link rel="canonical">`  | `https://nongorr.com/` ✅ matches the served host      |
+| `<meta name="robots">`    | `noindex,nofollow` — **intentional**, see §2 step 9    |
+| `/api/webhook/*`          | **200** — both secrets now set (re-probed 2026-07-18)  |
+| HSTS preload              | **not submitted** — but header already sends `preload` |
+| `nongor-brand.vercel.app` | **308 → apex** since 2026-07-18 (was a live duplicate) |
+| CSP on cached pages       | hashed **Report-Only**; enforcement still off          |
 
 **The DNS was already on Vercel.** The apex `A` record pointed at `216.198.79.1`
 and `www` at `…vercel-dns-017.com` before the move, so **no Namecheap DNS change
@@ -113,6 +124,23 @@ Two measured fixes; see §6 for the diagnosis.
 
 Both the desktop aside and the mobile Sheet now use `<Logo variant="light"
 roundMark />`, matching the footer treatment.
+
+### Admin route sweep + page titles (`ec5b1b8`)
+
+All 19 admin routes re-walked on production 2026-07-18 as `admin@nongorr.test`,
+both by SSR fetch **and** by real client-side navigation through every sidebar
+link (the SSR pass alone cannot see hydration or runtime breakage). Every route
+renders a real `h1` with **zero console errors**; `/admin/audit` correctly
+redirects a non-owner back to `/admin` and is hidden from their sidebar; the
+Settings page's seven sections (Store Info, Payment methods, Payment, Delivery,
+Contact, Announcement bar, Policies) each render with their own working Save.
+
+One defect found and fixed: `/admin/courier` and `/admin/staff` defined no
+`head`, so they inherited the layout's generic `Nongorr Studio · Admin` instead
+of naming the page — 19 of 21 admin routes already had one, so it was an
+oversight. Now `Courier · Nongorr Admin` and `Staff Roles · Nongorr Admin`,
+verified live. It shows in the tab, history and bookmarks, where the two pages
+were previously indistinguishable.
 
 ### Role audit — GREEN
 
@@ -410,11 +438,36 @@ The single page the operator ticks through on launch day. Unchecked items are
       RPC, the rejected call writes nothing; - from **`https://nongorr.com`**, logout and login both still succeed, so
       the canonical origin was not broken by the removal.
 
-      ⚠ **`nongor-brand.vercel.app` still serves the full app at HTTP 200 — it
-      does NOT redirect to the apex.** Only mutations are now refused there;
-      pages still load, so it remains a live duplicate of the storefront. Worth
-      making it redirect to `nongorr.com` before indexing is opened, otherwise
-      it is a duplicate-content surface that merely happens to be read-only.
+- [x] **Old alias `nongor-brand.vercel.app` now 308-redirects to the apex**
+      (`vercel.json` → `redirects`, commits `59e9423` + `8ea8b19`).
+      Clearing the origins above stopped _mutations_ there but left every page
+      readable at HTTP 200 — a live read-only duplicate of the storefront, which
+      is precisely the duplicate-content surface the cut-over existed to remove.
+      Verified: `/`, `/shop`, `/about?utm_source=x`, `/admin`, `/api/health` all
+      `308 → https://nongorr.com/...` with path **and** query preserved;
+      following `/` ends at `https://nongorr.com/` `200`.
+
+      Done declaratively at the edge rather than in `server.ts`: it resolves
+      before the function runs, so the duplicate costs no invocation, and it
+      lives in version control instead of dashboard state.
+
+      ⚠ **The host match must stay anchored to the exact alias** (escaped dots).
+      Preview and per-deploy builds are served from
+      `nongor-brand-<hash>-nongorr.vercel.app`; a loose host pattern would
+      redirect **every preview to production** and make preview testing — and any
+      smoke run against a per-deploy URL — impossible. Verified after the change
+      that a per-deploy URL still returns its Vercel SSO response, not a redirect
+      to the apex, and that the canonical host does not redirect (no loop).
+
+      ⚠ **`source` must be `/(.*)`, not `/:path*`.** The first attempt used
+      `/:path*`, which redirected every sub-path but left **`/` serving 200** —
+      the homepage, the most linked and bookmarked page, stayed duplicated.
+      Vercel's path-to-regexp does not match the bare index with that pattern.
+      Caught only by testing `/` explicitly rather than inferring from `/shop`.
+
+      ⚠ `permanent: true` (308) is **cached hard by browsers**. Correct for
+      retiring a duplicate host, but reversing it later will not take effect
+      immediately for anyone already redirected. Use 307 if that matters.
 
 ### Security
 
