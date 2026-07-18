@@ -3,9 +3,9 @@
   "regions": ["bom1"],
   "redirects": [
     {
-      "source": "/:path*",
+      "source": "/(.*)",
       "has": [{ "type": "host", "value": "nongor-brand\\.vercel\\.app" }],
-      "destination": "https://nongorr.com/:path*",
+      "destination": "https://nongorr.com/$1",
       "permanent": true
     }
   ],
