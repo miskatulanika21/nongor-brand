@@ -3,7 +3,55 @@
 Authoritative record of verified project state. Code and live-environment
 behavior are the source of truth; this file is updated after every stage.
 
-\_Last updated: 2026-07-18 — **Focal Studio + launch-prep polish shipped to
+\_Last updated: 2026-07-18 (evening) — **strict CSP fixed for cached pages, §4
+verification passed, and the cut-over cleaned up** (PR #24 `788ffe9`, then
+`2c7480f`, `ec5b1b8`, `59e9423`, `8ea8b19`; **708 Vitest** green).
+
+- **CSP: `CSP_ENFORCE_STRICT=true` was a partial no-op — now fixed.** Cached
+  public pages (`/`, `/shop`, `/product/*`, `/about`, `/size-guide`) render
+  nonce-free by design, and the strict policy was gated on a nonce existing, so
+  those routes silently kept `script-src 'unsafe-inline'`. Flipping the flag
+  would have hardened only `/cart`, `/account`, `/admin`, `/checkout` while
+  leaving the whole storefront weak — and the 2026-07-16 "Report-Only clean"
+  walk could not have covered them, because they emitted **no** Report-Only
+  header. Fixed with a hashed policy (`src/lib/server/csp-hash.server.ts`): one
+  `'sha256-…'` per inline script, derived from the body so header and body cache
+  as one unit. Fails **open** to the permissive policy if hashes can't be built —
+  a bad hash policy would be cached and served to everyone.
+  ⚠ **Verify CSP hashes with a real browser navigation, never `curl`/`fetch`**:
+  the HTML parser rewrites U+0000 → U+FFFD inside script text (TanStack delimits
+  route keys with NUL) and CSP hashes the post-parse text, so both tools confirm
+  a policy the browser then rejects. Verified live on cache MISS **and** HITs.
+- **Indexing was ON in production and has been re-closed.** `VITE_ALLOW_INDEXING`
+  was `true`, so the storefront was indexable while legal copy is unreviewed and
+  photography is placeholder. Set to `false` + **redeployed** (required — it is
+  `import.meta.env`, build-inlined). All public routes emit `noindex,nofollow`
+  again, confirmed on canonical URLs with `x-vercel-cache: MISS`.
+- **Old alias `nongor-brand.vercel.app` now 308 → apex.** It had been serving the
+  full storefront at 200 — a live read-only duplicate. Done at the edge in
+  `vercel.json`. ⚠ The host match must stay anchored to the exact alias, or every
+  **preview** (`nongor-brand-<hash>-nongorr.vercel.app`) redirects to production;
+  and `source` must be `/(.*)`, not `/:path*`, which left `/` serving 200.
+- **`ADDITIONAL_ALLOWED_ORIGINS` cleared** (Production + Preview) and redeployed.
+  Verified both ways: the old alias now returns "Invalid request origin." on a
+  mutation (no DB write — the CSRF check precedes the RPC), while login and
+  logout still work on `nongorr.com`.
+- **§4 verification passed** — HTTP/2 (`h2`), `www` → apex 308, absolute
+  canonical/OG, robots + sitemap on the new host, email/password login + logout,
+  admin dashboard with the revenue trend, ৳ in the Taka font with lining
+  numerals, and the post-deploy smoke green with its steps **actually executed**
+  (manual dispatch against the public domain). Still open: Google OAuth login
+  (needs a real account) and the place-an-order CSRF proof (writes a real order).
+- **Two blocking checkboxes closed by reading the env**: `PATHAO_SANDBOX_ENABLED`
+  is **absent** from Production (so real bookings, not sandbox) and
+  `CSP_ENFORCE_STRICT` is confirmed absent.
+- **Admin sweep** — all 19 admin routes re-walked on prod by SSR fetch **and**
+  real client-side navigation: every one renders a real `h1` with zero console
+  errors, `/admin/audit` correctly redirects a non-owner, Settings' seven
+  sections each have a working Save. Fixed the only defect: `/admin/courier` and
+  `/admin/staff` had no `head` and inherited the generic layout title.
+
+\_Previously: 2026-07-18 — **Focal Studio + launch-prep polish shipped to
 `main`** (PRs #14–#19; **688 Vitest** green, 61 files; CI green). Six changes
 landed on top of the 2026-07-17 cut-over, all owner-mergeable and none opening a
 new stage:
@@ -26,8 +74,12 @@ new stage:
   edge cache, cutting the ~1.5 s SSR document-latency the DocumentLatency insight
   flagged. Three fail-closed guards keep per-user data out: a path allowlist, a
   no-auth-cookie requirement, and a plain-200-no-Set-Cookie check. Cached hits
-  render nonce-free (the enforced CSP already allows scripts via `unsafe-inline`);
+  render nonce-free (a nonce replayed from cache secures nothing);
   authenticated/dynamic responses stay fresh and private.
+  ⚠ **Superseded 2026-07-18:** "nonce-free is fine because the enforced CSP
+  allows `unsafe-inline`" was true only while the strict policy was never
+  enforced — it silently made `CSP_ENFORCE_STRICT` a no-op on every cached page.
+  Those responses now carry a **hashed** CSP instead. See the entry at the top.
 - **#16 Mobile side sheets** sized to the dynamic viewport so bottom actions stay
   reachable on mobile.
 - **#17 Proprietary LICENSE + SECURITY.md** + repo metadata.
@@ -35,14 +87,16 @@ new stage:
   `noindex` — indexing is still gated on legal sign-off).
 - **#19 Project README** — full README replacing the placeholder.
 
-**What remains to go live is still entirely owner-gated** — see the
-`docs/stage-7-launch-cutover.md` §7 go-live checklist. The short list:
-`VITE_ALLOW_INDEXING=true` (flip off `noindex`, gated on legal-copy sign-off),
-HSTS preload (do LAST), disable the prod Vercel Toolbar → `CSP_ENFORCE_STRICT=true`,
-Supabase leaked-password protection, secret rotation, one real end-to-end courier
-shipment (SteadFast has **no sandbox** — first booking is billable), Pathao
-webhook secret + registration, real product photography, and the legal-copy
-review. No code work is blocking.\_
+**What remains to go live is owner-gated** — see the
+`docs/stage-7-launch-cutover.md` §7 go-live checklist. Updated 2026-07-18: the
+Pathao webhook secret + registration and both courier secrets are **done**, and
+`PATHAO_SANDBOX_ENABLED` is verified absent. The short list is now:
+the legal-copy review and real product photography (which together gate
+`VITE_ALLOW_INDEXING=true`), HSTS preload (do LAST), disable the prod Vercel
+Toolbar → `CSP_ENFORCE_STRICT=true`, Supabase leaked-password protection, secret
+rotation, the CI/CD automation-bypass + backup secrets, and one real end-to-end
+courier shipment (SteadFast has **no sandbox** — first booking is billable). No
+code work is blocking.\_
 
 \_Last updated: 2026-07-17 — **DOMAIN CUT-OVER DONE + courier integration
 rebuilt against the real provider contracts** (PR #12, `b4d1d44`, CI green;
@@ -81,10 +135,13 @@ eleven bugs (a `SyntaxError` thrown on SteadFast's plain-text `401`, and one
 `PATHAO_STORE_ID` serving two environments) were findable **only** by driving the
 real API — no amount of doc-reading surfaces them.
 
-**Still owner-gated:** webhook secrets (both endpoints 503 until set — generate
-with `openssl rand -base64 32` and paste the _output_, not the command),
-`VITE_ALLOW_INDEXING=true`, HSTS preload, legal-copy sign-off. ⚠ SteadFast has
-**no sandbox** — its first booking is a real, billable consignment.\_
+**Still owner-gated** (as of 2026-07-17; superseded by the 2026-07-18 entry
+above — both webhook secrets are now set and verified, and indexing is
+deliberately `false`): webhook secrets (both endpoints 503 until set — generate
+with `openssl rand -hex 32`, **not** `-base64`: SteadFast's Auth-Token field
+rejects `+/=` — and paste the _output_, not the command), `VITE_ALLOW_INDEXING`,
+HSTS preload, legal-copy sign-off. ⚠ SteadFast has **no sandbox** — its first
+booking is a real, billable consignment.\_
 
 \_Earlier (2026-07-16) — **Codex (GPT-5) order-workflow remediation —
 MERGED & DEPLOYED** (`main` @ `b17e589`; CI all-green incl. the migrations-local

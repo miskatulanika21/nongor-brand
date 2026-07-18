@@ -4,6 +4,28 @@ Stage-by-stage plan with exit criteria. Derived from
 `nongorr-phase-2-antigravity-prompt.md` (V3). Update after each stage; keep in
 sync with `CURRENT_STATUS.md`.
 
+> **2026-07-18 (evening) — Strict CSP fixed for cached pages + §4 verification +
+> cut-over cleanup** (PR #24 `788ffe9`, then `2c7480f`, `ec5b1b8`, `59e9423`,
+> `8ea8b19`; **708 Vitest**). `CSP_ENFORCE_STRICT=true` was a **partial no-op**:
+> edge-cached public pages render nonce-free by design, and the strict policy was
+> gated on a nonce, so the entire storefront would have kept
+> `script-src 'unsafe-inline'` while only authenticated routes hardened — and the
+> earlier "Report-Only clean" sign-off never covered those pages, which emitted no
+> Report-Only header at all. Fixed with a **hashed** CSP for cached responses
+> (`csp-hash.server.ts`), derived from the body so header and body cache as one
+> unit, failing **open** if hashes can't be built. ⚠ CSP hashes cover the
+> **post-parse** script text (U+0000 → U+FFFD, CRLF → LF), so `curl`/`fetch` will
+> confirm a policy the browser rejects — verify by real navigation only.
+> Separately: indexing was found **ON** in production and re-closed
+> (`VITE_ALLOW_INDEXING=false` + redeploy — build-inlined, so the redeploy is
+> mandatory); the old `nongor-brand.vercel.app` alias, previously a live 200
+> duplicate, now 308s to the apex; `ADDITIONAL_ALLOWED_ORIGINS` cleared and
+> verified in both directions; §4 verification passed bar Google OAuth and the
+> place-an-order proof; `PATHAO_SANDBOX_ENABLED` verified **absent** from
+> Production. Remaining P7 work is owner-gated: legal copy + photography (which
+> gate indexing), HSTS preload, the strict-CSP flip, rotation, CI/CD + backup
+> secrets, one real shipment.
+>
 > **2026-07-18 — Focal Studio + launch-prep polish** (PRs #14–#19, `main` @
 > `d8120f7`, CI green; **688 Vitest**). Non-stage-opening polish on top of the
 > cut-over: **#14 Focal Studio** — non-destructive image framing for banners and
@@ -509,6 +531,11 @@ about them. Sub-passes:
       no `unsafe-inline`, `report-uri /api/csp-report`) alongside the unchanged
       enforced policy; live-verified (header nonce == all 76 script nonces ==
       csp-nonce meta); flip `CSP_ENFORCE_STRICT=true` after the prod watch.
+      ⚠ **Amended 2026-07-18:** that flip was a **partial no-op** — edge-cached
+      public pages render nonce-free, so the strict policy skipped them entirely
+      and they never emitted a Report-Only header to reveal it. Cached responses
+      now carry a **hashed** CSP (`csp-hash.server.ts`); the flip is only
+      genuinely whole-site from that commit (`788ffe9`) onward.
       **P1b** rate-limit coverage audit enforced by `rate-limit-coverage.test.ts`
       (all ~124 server fns classified; caught+fixed 3 unthrottled ops).
       **P1c/F-14** `api.promote_to_staff` — invite-or-promote flow (owner/MFA
