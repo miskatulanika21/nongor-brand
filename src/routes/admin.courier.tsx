@@ -42,6 +42,7 @@ import { orderStatusMeta, type OrderStatus } from "@/lib/orders-shared";
 import type { CourierProviderId } from "@/lib/courier-shared";
 
 export const Route = createFileRoute("/admin/courier")({
+  head: () => ({ meta: [{ title: "Courier · Nongorr Admin" }] }),
   component: CourierPage,
 });
 

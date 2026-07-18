@@ -35,7 +35,10 @@ import { listStaff, provisionStaff, updateStaffRole, setStaffActive } from "@/li
 import { ADMIN_PERMISSIONS, ROLE_PERMISSIONS } from "@/lib/permissions";
 import type { StaffRole } from "@/lib/auth-types";
 
-export const Route = createFileRoute("/admin/staff")({ component: StaffPage });
+export const Route = createFileRoute("/admin/staff")({
+  head: () => ({ meta: [{ title: "Staff Roles · Nongorr Admin" }] }),
+  component: StaffPage,
+});
 
 interface StaffRow {
   userId: string;
