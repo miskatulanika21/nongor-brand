@@ -6,7 +6,7 @@
  * streaming body — the properties that an in-place header mutation could drop
  * or that a naive rebuild could lose.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   withSecurityHeaders,
   isPublicCacheableRequest,
@@ -16,6 +16,11 @@ import {
 const html = () => new Response("<html></html>", { headers: { "content-type": "text/html" } });
 const req = (url: string, init?: RequestInit) => new Request(`https://nongorr.com${url}`, init);
 const AUTH_COOKIE = "sb-xomjxtmhkglhuiccekld-auth-token=abc; other=1";
+
+// CSP_ENFORCE_STRICT is stubbed by individual tests; never leak it across them.
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("withSecurityHeaders", () => {
   it("adds the baseline security headers to an HTML response", () => {
@@ -111,6 +116,50 @@ describe("withSecurityHeaders", () => {
     const out = withSecurityHeaders(json, false, "abc123==");
     expect(out.headers.get("Content-Security-Policy")).toBeNull();
     expect(out.headers.get("Content-Security-Policy-Report-Only")).toBeNull();
+  });
+
+  // ---- Hashed CSP for edge-cached pages (nonce-free by construction) ----
+
+  it("emits a hashed Report-Only policy when script hashes are supplied", () => {
+    const out = withSecurityHeaders(html(), false, undefined, ["'sha256-AAA='", "'sha256-BBB='"]);
+    const enforced = out.headers.get("Content-Security-Policy") ?? "";
+    const reportOnly = out.headers.get("Content-Security-Policy-Report-Only") ?? "";
+    expect(enforced).toContain("'unsafe-inline'");
+    expect(reportOnly).toContain("'sha256-AAA='");
+    expect(reportOnly).toContain("'sha256-BBB='");
+    // 'self' must survive: it is what allows the parser-inserted external bundle
+    // once 'unsafe-inline' is gone.
+    expect(reportOnly).toContain("script-src 'self'");
+    // strict-dynamic would make 'self' ignored and block that bundle.
+    expect(reportOnly).not.toContain("'strict-dynamic'");
+  });
+
+  it("drops 'unsafe-inline' from script-src when a hashed policy is enforced", () => {
+    vi.stubEnv("CSP_ENFORCE_STRICT", "true");
+    const out = withSecurityHeaders(html(), false, undefined, ["'sha256-AAA='"]);
+    const enforced = out.headers.get("Content-Security-Policy") ?? "";
+    const scriptSrc = enforced.split("; ").find((d) => d.startsWith("script-src")) ?? "";
+    expect(scriptSrc).toContain("'sha256-AAA='");
+    expect(scriptSrc).not.toContain("'unsafe-inline'");
+    expect(out.headers.get("Content-Security-Policy-Report-Only")).toBeNull();
+  });
+
+  it("FAILS OPEN to the permissive policy when no hashes could be extracted", () => {
+    // A cached page whose hashes we failed to compute must keep working. Emitting
+    // a hash policy with no hashes would block every script on a response that is
+    // then served from cache to every visitor.
+    vi.stubEnv("CSP_ENFORCE_STRICT", "true");
+    const out = withSecurityHeaders(html(), false, undefined, []);
+    expect(out.headers.get("Content-Security-Policy")).toContain("'unsafe-inline'");
+    expect(out.headers.get("Content-Security-Policy-Report-Only")).toBeNull();
+  });
+
+  it("prefers the nonce policy over hashes when both are somehow present", () => {
+    vi.stubEnv("CSP_ENFORCE_STRICT", "true");
+    const out = withSecurityHeaders(html(), false, "abc123==", ["'sha256-AAA='"]);
+    const enforced = out.headers.get("Content-Security-Policy") ?? "";
+    expect(enforced).toContain("'nonce-abc123=='");
+    expect(enforced).not.toContain("'sha256-AAA='");
   });
 });
 
