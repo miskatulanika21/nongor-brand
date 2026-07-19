@@ -741,6 +741,7 @@ export async function getOrderForBooking(
   orderNo: string;
   customerName: string;
   customerPhone: string;
+  customerEmail: string | null;
   shipAddress: string;
   shipDistrict: string;
   total: number;
@@ -751,7 +752,7 @@ export async function getOrderForBooking(
   const { data, error } = await admin
     .from("orders")
     .select(
-      "order_no, customer_name, customer_phone, ship_address, ship_district, total, payment_method, status",
+      "order_no, customer_name, customer_phone, customer_email, ship_address, ship_district, total, payment_method, status",
     )
     .eq("id", orderId)
     .single();
@@ -762,6 +763,7 @@ export async function getOrderForBooking(
     order_no: string;
     customer_name: string;
     customer_phone: string;
+    customer_email: string | null;
     ship_address: string;
     ship_district: string;
     total: number;
@@ -790,6 +792,7 @@ export async function getOrderForBooking(
     orderNo: order.order_no,
     customerName: order.customer_name,
     customerPhone: order.customer_phone,
+    customerEmail: order.customer_email ?? null,
     shipAddress: order.ship_address,
     shipDistrict: order.ship_district,
     total: order.total,

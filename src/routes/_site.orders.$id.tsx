@@ -15,6 +15,7 @@ import {
   type MyOrderDetail,
   type OrderReadReason,
 } from "@/lib/orders-shared";
+import { courierStatusLabel } from "@/lib/courier-shared";
 import { paymentMethodLabel } from "@/lib/checkout-shared";
 import { formatBDT, BRAND } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
@@ -264,9 +265,17 @@ function OrderDetails() {
               <span className="text-foreground">{courierProviderLabel(courier.provider)}</span>
             </p>
             {courier.courierStatus && (
-              <p className="capitalize text-muted-foreground">
+              // Use the shared label vocabulary, not a naive underscore strip: the
+              // raw status is an INTERNAL slug, and several read as the opposite of
+              // what they mean once de-underscored. `delivered_approval_pending`
+              // became "delivered approval pending", which tells the customer their
+              // parcel arrived when SteadFast has not settled it and the outcome can
+              // still flip to cancelled during review.
+              <p className="text-muted-foreground">
                 Status:{" "}
-                <span className="text-foreground">{courier.courierStatus.replace(/_/g, " ")}</span>
+                <span className="text-foreground">
+                  {courierStatusLabel(courier.provider, courier.courierStatus)}
+                </span>
               </p>
             )}
             {courier.trackingCode && (

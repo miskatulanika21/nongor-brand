@@ -655,3 +655,50 @@ catching it. Tests covering an external contract must be written from that
 contract's published source — `src/lib/__tests__/courier-shared.test.ts` now
 cites the doc for each expectation, and asserts that the old guesses map to
 `null`.
+
+## 8.2 Courier re-verification against live portals (2026-07-19)
+
+Both merchant portals were read directly (logged in as `Nongorr`) and every
+adapter contract re-checked line-by-line against the providers' own docs. **The
+§8.1 remediation is confirmed correct on every point.**
+
+| Checked                         | Source                  | Result                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| SteadFast base URL              | Portal API doc          | `https://portal.packzy.com/api/v1` — exact match                                                                                                                                                                                                                                                                                                       |
+| SteadFast auth                  | Portal API doc          | `Api-Key` + `Secret-Key` headers — match                                                                                                                                                                                                                                                                                                               |
+| SteadFast `create_order` fields | Portal API doc          | `invoice`, `recipient_name`, `recipient_phone`, `recipient_address`, `cod_amount`, `note` — all match; unused optionals: `alternative_phone`, `recipient_email`, `item_description`, `total_lot`, `delivery_type`                                                                                                                                      |
+| SteadFast booking response      | Portal API doc          | `consignment.consignment_id` + `consignment.tracking_code` — match. Initial status is **`in_review`**, not `pending`                                                                                                                                                                                                                                   |
+| SteadFast status endpoint       | Portal API doc          | `/status_by_cid/{id}` returning `{status, delivery_status}` — match                                                                                                                                                                                                                                                                                    |
+| SteadFast status vocabulary     | Portal API doc          | **All 11 exactly as in `STEADFAST_STATUS_LABELS`** — no drift                                                                                                                                                                                                                                                                                          |
+| SteadFast webhook registration  | Merchant panel → API    | `https://nongorr.com/api/webhook/steadfast`, **0 consecutive failures**, not paused                                                                                                                                                                                                                                                                    |
+| Pathao token grant              | Developer API           | _"Must use grant type `password` for issue token api"_ — verbatim; `username` = merchant email                                                                                                                                                                                                                                                         |
+| Pathao `create order` payload   | Developer API           | `store_id`, `merchant_order_id`, `recipient_name/phone/address`, `delivery_type: 48`, `item_type: 2`, `item_quantity: 1`, `item_weight: "0.5"`, `special_instruction`, `item_description`, `amount_to_collect` — **field-for-field identical**, and the doc's own example sends **no** `recipient_city/zone/area`, confirming the auto-address payload |
+| Pathao webhook registration     | Developer API → Webhook | **Active**, callback `https://nongorr.com/api/webhook/pathao`, secret set, **all 24 events selected** — matching `PATHAO_EVENT_LABELS` one-for-one, including the unguessable "Pickup" / "Payment Invoice" / "Exchange" / "Return" display names                                                                                                       |
+| Pathao store id                 | Merchant panel → Stores | `410847` ("Nongorr", Merul Badda, Dhaka) — matches `PATHAO_STORE_ID`                                                                                                                                                                                                                                                                                   |
+
+### Still open: the SteadFast customer tracking URL
+
+`courier_providers.steadfast.tracking_url_template` is
+`https://steadfast.com.bd/t/{code}`, and `courierTrackingUrl()`
+(`orders-shared.ts`) hardcodes the same shape. **It is unverified.**
+
+- `steadfast.com.bd` resolves and `/tracking` is a real page (HTTP 200).
+- `/t/DUMMY123` returns 404 — but so would a real tracking route given a fake code, so this proves nothing either way.
+- The `/tracking` page is a **client-side search box** whose field reads _"Enter public tracking token or link…"_; submitting does not change the URL, so the panel exposes no deep-link pattern to copy.
+- The API documentation describes **no** public tracking URL at all.
+- The booking response's `tracking_code` is an 8-char hex token (doc example `15BAEB8A`), which is plausibly the "public tracking token" — but that is inference, not evidence.
+
+The template was deliberately **left unchanged**: guessing wrong either way is
+worse than a flagged unknown, and the UI already degrades safely (a null
+template simply hides the "Track with…" button while still showing the code).
+
+**Resolve at the first real SteadFast booking:** take the returned
+`tracking_code`, paste it into `steadfast.com.bd/tracking`, and confirm whether
+the resulting page has a shareable URL. If it is not `/t/{code}`, update the
+`courier_providers` row **and** `courierTrackingUrl()` — they are two separate
+places and only the latter is what customers actually hit.
+
+Also note: Pathao's `tracking_url_template` points at `merchant.pathao.com`,
+which requires a merchant login. `courierTrackingUrl()` correctly returns `null`
+for Pathao rather than sending customers to a login wall — the DB column is not
+the customer-facing source of truth, and should not be wired up as one.

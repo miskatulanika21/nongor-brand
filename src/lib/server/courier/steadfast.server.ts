@@ -16,6 +16,7 @@ import type {
   CourierAdapter,
   CourierBookingRequest,
   CourierBookingResult,
+  CourierReturnResult,
   CourierStatusResult,
 } from "./types";
 
@@ -63,6 +64,92 @@ async function steadfastFetch(
   }
 }
 
+// ── Reconciliation reads ─────────────────────────────────────────────────────
+//
+// These are NOT part of the CourierAdapter interface: they are SteadFast-only
+// money reads, and inventing a cross-provider abstraction from a single
+// implementation is how the invented vocabularies got in last time. Pathao's
+// equivalents settle differently; when they are wired, the shared shape can be
+// extracted from two real cases instead of guessed from one.
+
+/** Shared defensive read — SteadFast answers non-JSON on auth failure. */
+async function steadfastRead(path: string): Promise<{ ok: boolean; body: unknown }> {
+  try {
+    const resp = await steadfastFetch(path);
+    const text = await resp.text();
+    try {
+      return { ok: resp.ok, body: JSON.parse(text) };
+    } catch {
+      return { ok: false, body: { error: text.slice(0, 500), httpStatus: resp.status } };
+    }
+  } catch (err) {
+    return { ok: false, body: { error: err instanceof Error ? err.message : "Unknown error" } };
+  }
+}
+
+/**
+ * GET /get_balance → { status: 200, current_balance: number }
+ *
+ * The merchant's collected-but-unsettled COD float. Read-only.
+ */
+export async function steadfastGetBalance(): Promise<{
+  success: boolean;
+  balance: number | null;
+  error?: string;
+}> {
+  const { ok, body } = await steadfastRead("/get_balance");
+  const parsed = body as { current_balance?: number; error?: string } | null;
+  if (ok && typeof parsed?.current_balance === "number") {
+    return { success: true, balance: parsed.current_balance };
+  }
+  return {
+    success: false,
+    balance: null,
+    error: parsed?.error ?? "Could not read SteadFast balance",
+  };
+}
+
+/** GET /payments — settlement batches SteadFast has paid out to the merchant. */
+export async function steadfastListPayments(): Promise<{
+  success: boolean;
+  payments: unknown[];
+  error?: string;
+}> {
+  const { ok, body } = await steadfastRead("/payments");
+  if (!ok) {
+    const parsed = body as { error?: string } | null;
+    return { success: false, payments: [], error: parsed?.error ?? "Could not read payments" };
+  }
+  // The endpoint has been observed returning either a bare array or a wrapped
+  // { data: [...] }; accept both rather than depending on an undocumented shape.
+  const list = Array.isArray(body)
+    ? body
+    : Array.isArray((body as { data?: unknown[] })?.data)
+      ? ((body as { data: unknown[] }).data ?? [])
+      : [];
+  return { success: true, payments: list };
+}
+
+/**
+ * GET /payments/{id} — one settlement batch WITH its consignments.
+ *
+ * This is the reconciliation payload: it ties each consignment to the fee taken
+ * and the amount actually paid out, which is what courier_fee / net_receivable /
+ * settlement_reference are meant to hold.
+ */
+export async function steadfastGetPayment(paymentId: string): Promise<{
+  success: boolean;
+  payment: unknown | null;
+  error?: string;
+}> {
+  const { ok, body } = await steadfastRead(`/payments/${encodeURIComponent(paymentId)}`);
+  if (!ok) {
+    const parsed = body as { error?: string } | null;
+    return { success: false, payment: null, error: parsed?.error ?? "Could not read payment" };
+  }
+  return { success: true, payment: (body as { data?: unknown })?.data ?? body };
+}
+
 // ── Adapter ──────────────────────────────────────────────────────────────────
 
 export const steadfastAdapter: CourierAdapter = {
@@ -70,6 +157,14 @@ export const steadfastAdapter: CourierAdapter = {
 
   async book(req: CourierBookingRequest): Promise<CourierBookingResult> {
     try {
+      // delivery_type is numeric and accepts ONLY 0 (home) or 1 (hub pickup).
+      // serviceType is free-form per-provider config, so anything that is not
+      // exactly 0 or 1 is dropped rather than POSTed — a mis-seeded row (the
+      // column shipped holding the invented value 'normal') must degrade to
+      // SteadFast's own default, never break the booking.
+      const deliveryType = Number(req.serviceType);
+      const hasDeliveryType = req.serviceType != null && (deliveryType === 0 || deliveryType === 1);
+
       const resp = await steadfastFetch("/create_order", {
         method: "POST",
         body: JSON.stringify({
@@ -79,6 +174,11 @@ export const steadfastAdapter: CourierAdapter = {
           recipient_address: req.recipientAddress,
           cod_amount: req.codAmount,
           note: req.note ?? "",
+          // Optional fields — omitted entirely when absent. SteadFast validates
+          // recipient_email as an email, so an empty string would be rejected.
+          ...(req.recipientEmail ? { recipient_email: req.recipientEmail } : {}),
+          ...(req.itemDescription ? { item_description: req.itemDescription } : {}),
+          ...(hasDeliveryType ? { delivery_type: deliveryType } : {}),
         }),
       });
 
@@ -156,5 +256,69 @@ export const steadfastAdapter: CourierAdapter = {
   // SteadFast does not support API-based cancellation.
   async cancel() {
     return { success: false, error: "SteadFast does not support API cancellation" };
+  },
+
+  /**
+   * POST /create_return_request — ask SteadFast to collect the parcel back.
+   *
+   * Accepts consignment_id OR invoice OR tracking_code; we always hold the
+   * consignment id, so that is what we send. Documented response is the return
+   * request row: { id, user_id, consignment_id, reason, status, … } where
+   * status ∈ pending|approved|processing|completed|cancelled.
+   *
+   * Parses defensively for the same reason as checkStatus: this endpoint also
+   * answers "Unauthorized Access" as bare text, and a return request must never
+   * throw into the booking orchestrator.
+   */
+  async createReturn(consignmentId: string, reason?: string): Promise<CourierReturnResult> {
+    let body: unknown = null;
+    let httpOk = false;
+    try {
+      const resp = await steadfastFetch("/create_return_request", {
+        method: "POST",
+        body: JSON.stringify({
+          consignment_id: consignmentId,
+          ...(reason ? { reason } : {}),
+        }),
+      });
+      httpOk = resp.ok;
+      const text = await resp.text();
+      try {
+        body = JSON.parse(text);
+      } catch {
+        body = { error: text.slice(0, 500), httpStatus: resp.status };
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return {
+        success: false,
+        returnRequestId: null,
+        status: null,
+        error: message.includes("abort")
+          ? "SteadFast return request timeout (10s)"
+          : `SteadFast return request error: ${message}`,
+      };
+    }
+
+    const parsed = body as { id?: number | string; status?: string; message?: string } | null;
+    // The documented response carries the return-request row directly (no
+    // {status:200} envelope like create_order), so success is judged on HTTP
+    // plus the presence of an id.
+    if (httpOk && parsed?.id != null) {
+      return {
+        success: true,
+        returnRequestId: String(parsed.id),
+        status: parsed.status ?? "pending",
+        rawResponse: body,
+      };
+    }
+
+    return {
+      success: false,
+      returnRequestId: null,
+      status: null,
+      rawResponse: body,
+      error: parsed?.message || "SteadFast rejected the return request",
+    };
   },
 };

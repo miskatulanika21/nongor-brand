@@ -14,6 +14,7 @@ import {
   orderReadReasonMessage,
   type TrackOrderResult,
 } from "@/lib/orders-shared";
+import { courierStatusLabel } from "@/lib/courier-shared";
 import { paymentMethodLabel } from "@/lib/checkout-shared";
 import { formatBDT, BRAND } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
@@ -467,9 +468,12 @@ function OrderTimeline({
               <span className="text-foreground">{courierProviderLabel(courier.provider)}</span>
             </p>
             {courier.courierStatus && (
-              <p className="capitalize text-muted-foreground">
+              // Shared label vocabulary — see the same block in _site.orders.$id.tsx.
+              <p className="text-muted-foreground">
                 Status:{" "}
-                <span className="text-foreground">{courier.courierStatus.replace(/_/g, " ")}</span>
+                <span className="text-foreground">
+                  {courierStatusLabel(courier.provider, courier.courierStatus)}
+                </span>
               </p>
             )}
             {courier.trackingCode && (

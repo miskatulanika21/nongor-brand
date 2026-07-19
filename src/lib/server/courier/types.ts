@@ -23,9 +23,23 @@ export interface CourierBookingRequest {
    */
   codAmount: number;
   note?: string;
+  /** Customer email, when known. SteadFast sends delivery notifications to it. */
+  recipientEmail?: string;
+  /** Short parcel contents description — helps couriers handle damage disputes. */
+  itemDescription?: string;
   /** Parcel weight in kg. From courier_providers.default_weight_kg. */
   weight?: number;
-  /** Provider-specific service type, e.g. 'normal' (SteadFast), '48' (Pathao). */
+  /**
+   * Provider-specific service type, from courier_providers.default_service_type.
+   *
+   * The vocabulary differs per provider and is NOT interchangeable:
+   *   SteadFast → delivery_type, numeric: '0' = home, '1' = hub pickup
+   *   Pathao    → delivery_type, numeric: '48' = standard, '12' = on-demand
+   *
+   * Each adapter validates this against its OWN vocabulary and ignores a value
+   * it cannot understand, so a mis-seeded row degrades to the provider default
+   * instead of being POSTed into a field that rejects it.
+   */
   serviceType?: string;
 }
 
@@ -77,4 +91,26 @@ export interface CourierAdapter {
 
   /** Cancel a booked shipment, if the courier supports it. */
   cancel?(consignmentId: string): Promise<{ success: boolean; error?: string }>;
+
+  /**
+   * Ask the courier to collect the parcel back from the customer.
+   *
+   * Optional because support is genuinely uneven: SteadFast exposes
+   * POST /create_return_request, Pathao has no public equivalent (returns are
+   * raised from their merchant panel). Callers must treat an absent method as
+   * "this courier cannot do it via API" and fall back to a manual record —
+   * never as an error.
+   */
+  createReturn?(consignmentId: string, reason?: string): Promise<CourierReturnResult>;
+}
+
+/** Result of asking a courier to raise a return request. */
+export interface CourierReturnResult {
+  success: boolean;
+  /** The courier's own return-request id, when it issues one. */
+  returnRequestId: string | null;
+  /** Provider-side status, e.g. SteadFast: pending|approved|processing|completed|cancelled. */
+  status: string | null;
+  rawResponse?: unknown;
+  error?: string;
 }
