@@ -17,29 +17,24 @@ import { Truck, ShieldCheck, Ruler, HandHeart, ArrowRight, Instagram, Quote } fr
 import founderPortrait from "@/assets/founder-portrait.webp";
 import founderLifestyle from "@/assets/founder-lifestyle.webp";
 
+// Homepage title/description — shared by the <title>, og: and twitter: tags so
+// they can never drift apart. Kept ~50 chars so Google does not truncate it;
+// Bengali glyphs render wider than Latin, so the budget is tighter than it looks.
+const HOME_TITLE = "Nongorr (নোঙর) — Handmade Kurti & Saree, Bangladesh";
+const HOME_DESCRIPTION =
+  "Shop handmade kurti, custom-size clothing, Jamdani saree and premium women's fashion from Nongorr. Nationwide delivery across Bangladesh.";
+
 export const Route = createFileRoute("/_site/")({
   head: () => ({
     meta: [
-      { title: "Nongorr — Premium Bangladeshi Women's Boutique" },
-      {
-        name: "description",
-        content:
-          "Handcrafted kurti, custom-size tailoring, saree, girls dress and beauty essentials — premium boutique fashion from Bangladesh.",
-      },
-      { property: "og:title", content: "Nongorr — Premium Bangladeshi Women's Boutique" },
-      {
-        property: "og:description",
-        content:
-          "Handcrafted kurti, custom-size tailoring, saree, girls dress and beauty essentials — premium boutique fashion from Bangladesh.",
-      },
+      { title: HOME_TITLE },
+      { name: "description", content: HOME_DESCRIPTION },
+      { property: "og:title", content: HOME_TITLE },
+      { property: "og:description", content: HOME_DESCRIPTION },
       { property: "og:url", content: absUrl("/") },
       { property: "og:type", content: "website" },
-      { name: "twitter:title", content: "Nongorr — Premium Bangladeshi Women's Boutique" },
-      {
-        name: "twitter:description",
-        content:
-          "Handcrafted kurti, custom-size tailoring & beauty essentials, handmade in Bangladesh.",
-      },
+      { name: "twitter:title", content: HOME_TITLE },
+      { name: "twitter:description", content: HOME_DESCRIPTION },
     ],
     links: [{ rel: "canonical", href: absUrl("/") }],
     scripts: [
@@ -49,6 +44,11 @@ export const Route = createFileRoute("/_site/")({
           "@context": "https://schema.org",
           "@type": "Organization",
           name: BRAND.name,
+          // Bengali form of the brand mark. Tells search engines that "নোঙর"
+          // and "Nongorr" are the same entity, so Bengali-script brand queries
+          // resolve here. নোঙর is also the ordinary Bengali noun for "anchor",
+          // so this is an association signal — not a claim on the word itself.
+          alternateName: "নোঙর",
           description:
             "Premium Bangladeshi women's online boutique for handmade kurti, custom-size tailoring, saree, three piece, girls dress and beauty essentials.",
           slogan: BRAND.tagline,
