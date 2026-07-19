@@ -165,6 +165,14 @@ function Checkout() {
   const [district, setDistrict] = useState("");
   const [area, setArea] = useState("");
   const [thana, setThana] = useState("");
+  // Row ids behind the chosen names. Kept beside the names rather than replacing
+  // them: ship_district / ship_area stay text (the fee tier reads the district
+  // name), while the ids give the courier an exact Pathao zone to book against.
+  const [locationIds, setLocationIds] = useState<{
+    districtId?: number;
+    thanaId?: number;
+    areaId?: number;
+  }>({});
   const [address, setAddress] = useState("");
   const [trxId, setTrxId] = useState("");
   const [screenshot, setScreenshot] = useState<ScreenshotPreview | null>(null);
@@ -217,6 +225,7 @@ function Checkout() {
     setDistrict("");
     setArea("");
     setThana("");
+    setLocationIds({});
     setAddress("");
   }
 
@@ -522,6 +531,13 @@ function Checkout() {
         district,
         address: address.trim(),
         area: locality || undefined,
+        // Level 3 + resolved ids, so the courier can address the parcel by
+        // Pathao zone instead of having Pathao parse the free-text address.
+        // All optional — a missing id degrades to auto-address, never a failure.
+        thana: thana.trim() || undefined,
+        districtId: locationIds.districtId,
+        thanaId: locationIds.thanaId,
+        areaId: locationIds.areaId,
       };
       const couponForOrder = couponStatus?.applied ? (couponCode ?? undefined) : undefined;
 
@@ -806,11 +822,21 @@ function Checkout() {
               <div className="sm:col-span-2" ref={refs.district}>
                 <div ref={refs.locality}>
                   <LocationPicker
-                    value={{ district, thana, area }}
+                    // The ids must round-trip: the picker spreads the incoming
+                    // value to preserve levels above the one being changed, so
+                    // omitting them here silently dropped districtId and
+                    // thanaId as soon as a lower level was picked (caught by
+                    // placing a real order — types and tests were both happy).
+                    value={{ district, thana, area, ...locationIds }}
                     onChange={(next: LocationSelection) => {
                       setDistrict(next.district);
                       setThana(next.thana);
                       setArea(next.area);
+                      setLocationIds({
+                        districtId: next.districtId,
+                        thanaId: next.thanaId,
+                        areaId: next.areaId,
+                      });
                       if (next.district) {
                         const mapped = suggestDeliveryZoneForDistrict(next.district);
                         if (mapped) setDeliveryZone(mapped);

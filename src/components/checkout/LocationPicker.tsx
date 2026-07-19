@@ -43,6 +43,14 @@ export interface LocationSelection {
   thana: string;
   /** Area (metropolitan) or union (rural) name — the finest level chosen. */
   area: string;
+  /**
+   * Resolved row ids. Carried so the order can store them and the courier can
+   * resolve a Pathao zone directly instead of relying on address parsing.
+   * Undefined until the corresponding level is chosen.
+   */
+  districtId?: number;
+  thanaId?: number;
+  areaId?: number;
 }
 
 interface Props {
@@ -176,7 +184,7 @@ export function LocationPicker({ value, onChange, districtError, localityError, 
       setDistrictId(idNum);
       setThanaId(null);
       const d = districts.find((x) => x.id === idNum);
-      onChange({ district: d?.name ?? "", thana: "", area: "" });
+      onChange({ district: d?.name ?? "", thana: "", area: "", districtId: d?.id });
     },
     [districts, onChange],
   );
@@ -186,7 +194,7 @@ export function LocationPicker({ value, onChange, districtError, localityError, 
       const idNum = Number(v);
       setThanaId(idNum);
       const t = thanas.find((x) => x.id === idNum);
-      onChange({ ...value, thana: t?.name ?? "", area: "" });
+      onChange({ ...value, thana: t?.name ?? "", area: "", thanaId: t?.id, areaId: undefined });
     },
     [thanas, onChange, value],
   );
@@ -195,7 +203,7 @@ export function LocationPicker({ value, onChange, districtError, localityError, 
     (v: string) => {
       const idNum = Number(v);
       const a = areas.find((x) => x.id === idNum);
-      onChange({ ...value, area: a?.name ?? "" });
+      onChange({ ...value, area: a?.name ?? "", areaId: a?.id });
     },
     [areas, onChange, value],
   );

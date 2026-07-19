@@ -189,7 +189,21 @@ export const pathaoAdapter: CourierAdapter = {
           recipient_name: req.recipientName,
           recipient_phone: req.recipientPhone,
           recipient_address: req.recipientAddress,
-          // Auto-address: do NOT send recipient_city/zone/area
+          // Explicit city/zone when the order carried a resolved location;
+          // otherwise omitted entirely so Pathao falls back to auto-address.
+          //
+          // Auto-address parses the free-text address, which mis-routes on
+          // unstructured Bangladeshi addresses — and a mis-routed COD parcel
+          // comes back at our cost. Sending ids we resolved at checkout removes
+          // the guesswork. Area is only meaningful alongside a zone, so it is
+          // gated on the same condition.
+          ...(req.recipientCityId && req.recipientZoneId
+            ? {
+                recipient_city: req.recipientCityId,
+                recipient_zone: req.recipientZoneId,
+                ...(req.recipientAreaId ? { recipient_area: req.recipientAreaId } : {}),
+              }
+            : {}),
           delivery_type: Number(req.serviceType) || 48,
           item_type: 2, // parcel
           item_quantity: 1,
