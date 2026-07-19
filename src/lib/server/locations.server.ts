@@ -80,7 +80,11 @@ export async function listThanas(districtId: number): Promise<ThanaOption[]> {
     const { data, error } = await db
       .from("bd_upazilas")
       .select("id, district_id, name, bn_name, source")
-      .eq("district_id", districtId);
+      .eq("district_id", districtId)
+      // Pathao's zone list doubles as an operational routing table — it holds
+      // "Bulk Merchant", "Pathao Central FTL", even "lost". Those are not
+      // places a customer can live. See migration 20260719150000.
+      .eq("selectable", true);
     if (error) throw new Error(`listThanas: ${error.message}`);
     return byName(
       (data ?? []).map((r) => ({
@@ -143,7 +147,8 @@ export async function listAreas(thanaId: number): Promise<AreaOption[]> {
     const { data, error } = await db
       .from("bd_unions")
       .select("id, upazila_id, name, bn_name, source")
-      .eq("upazila_id", thanaId);
+      .eq("upazila_id", thanaId)
+      .eq("selectable", true);
     if (error) throw new Error(`listAreas: ${error.message}`);
     return byName(
       (data ?? []).map((r) => ({

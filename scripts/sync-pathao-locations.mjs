@@ -218,6 +218,20 @@ const db = createClient(url, key, { auth: { persistSession: false } });
 const ZONE_OFFSET = 1_000_000;
 const AREA_OFFSET = 10_000_000;
 
+// Pathao's zone list doubles as an operational routing table: alongside real
+// thanas it contains "Bulk Merchant", "Central Fulfillment", "Pathao Central
+// FTL", "On-Demand" — and literally "lost". Found by driving the real checkout
+// page, where they sat among 372 Dhaka options and a customer could have picked
+// one as their address. They are still stored (their ids stay resolvable if
+// Pathao ever reports one back) but flagged unselectable so the picker hides
+// them. Keep this in step with migration 20260719150000.
+const OPERATIONAL =
+  /(pathao|central fulfillment|bulk merchant|on-demand|on demand|document-|inbound|outbound| ftl| ltl)/i;
+const isSelectable = (name) => {
+  const n = String(name || "").trim();
+  return !OPERATIONAL.test(n) && !["lost", "test", "central fulfillment"].includes(n.toLowerCase());
+};
+
 console.log(`\n=== Pathao location sync — env=${ENV} write=${WRITE} ===`);
 console.log(`base: ${cfg.baseUrl}\n`);
 
@@ -283,6 +297,7 @@ for (const { city, district } of matched) {
     name: z.zone_name,
     source: "pathao",
     pathao_zone_id: z.zone_id,
+    selectable: isSelectable(z.zone_name),
   }));
 
   const areaRows = [];
@@ -296,6 +311,7 @@ for (const { city, district } of matched) {
         name: a.area_name,
         source: "pathao",
         pathao_area_id: a.area_id,
+        selectable: isSelectable(a.area_name),
       });
     }
   }
