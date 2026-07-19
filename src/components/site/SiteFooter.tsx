@@ -640,7 +640,11 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
                   href="https://github.com/kazisalman21"
                   target="_blank"
                   rel="noopener noreferrer nofollow"
-                  className="text-gold/80 underline-offset-4 transition-colors hover:text-gold hover:underline"
+                  // Underlined at rest, not just on hover: the gold sits inside
+                  // a muted text block, so colour alone fails axe's
+                  // link-in-text-block (contrast to surrounding text is 1.37,
+                  // the rule wants 3). The underline is the non-colour cue.
+                  className="text-gold/80 underline decoration-gold/40 underline-offset-4 transition-colors hover:text-gold hover:decoration-gold"
                 >
                   Kazi Salman
                 </a>
