@@ -626,7 +626,30 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
         {/* 6 — BOTTOM BAR */}
         <div className="border-t border-gold/15 bg-[oklch(0.2_0.05_20)]">
           <div className="mx-auto flex max-w-7xl flex-col items-center gap-3 px-4 py-5 text-xs text-primary-foreground/60 sm:px-6 md:flex-row md:justify-between">
-            <p>© 2026 Nongorr Studio. All rights reserved.</p>
+            <div className="flex flex-col items-center gap-1 md:items-start">
+              <p>© 2026 Nongorr Studio. All rights reserved.</p>
+              {/* Developer credit. Cormorant italic rather than a script face:
+                  the italic is already self-hosted (zero extra bytes on a page
+                  whose LCP is over budget), and a cursive signature on a
+                  boutique reads as the FOUNDER signing her own brand. Opacities
+                  match the values already used in this bar so the axe WCAG AA
+                  sweep over the storefront routes keeps passing. */}
+              <p className="font-display text-sm italic">
+                Developed by{" "}
+                <a
+                  href="https://github.com/kazisalman21"
+                  target="_blank"
+                  rel="noopener noreferrer nofollow"
+                  // Underlined at rest, not just on hover: the gold sits inside
+                  // a muted text block, so colour alone fails axe's
+                  // link-in-text-block (contrast to surrounding text is 1.37,
+                  // the rule wants 3). The underline is the non-colour cue.
+                  className="text-gold/80 underline decoration-gold/40 underline-offset-4 transition-colors hover:text-gold hover:decoration-gold"
+                >
+                  Kazi Salman
+                </a>
+              </p>
+            </div>
             <p className="inline-flex items-center gap-1.5 text-gold/80">
               <Sparkles className="size-3.5" /> Handcrafted with love in Bangladesh
             </p>
