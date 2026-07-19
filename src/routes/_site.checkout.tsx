@@ -19,13 +19,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Card } from "@/components/ui/card";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -390,14 +383,6 @@ function Checkout() {
         />
       </div>
     );
-  }
-
-  function selectDistrict(v: string) {
-    setDistrict(v);
-    setArea("");
-    setThana("");
-    const mapped = suggestDeliveryZoneForDistrict(v);
-    if (mapped) setDeliveryZone(mapped);
   }
 
   function acceptFile(file: File | undefined) {

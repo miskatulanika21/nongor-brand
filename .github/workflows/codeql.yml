@@ -1,0 +1,51 @@
+name: CodeQL
+
+# Static application security testing (SAST). CodeQL scans the JS/TS source for
+# injection, auth, and data-flow vulnerability patterns and surfaces them in the
+# repo's Security → Code scanning tab.
+#
+# Runs on pushes to main, on every PR, and weekly (so a newly-published query
+# pack can flag code that has not changed since the last push).
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    - cron: "0 4 * * 1"
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write # upload results to code scanning
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          # `security-and-quality` adds maintainability queries on top of the
+          # default security set.
+          queries: security-and-quality
+
+      # No build step needed: CodeQL analyzes JS/TS from source directly, and a
+      # full TanStack Start build would pull the app config (router/nitro) we
+      # deliberately keep out of the analysis path.
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"

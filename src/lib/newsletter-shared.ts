@@ -6,6 +6,7 @@
  * Consent management / unsubscribe UI are Stage 6; this only captures opt-ins.
  */
 import { z } from "zod";
+import { BD_PHONE_REGEX } from "@/lib/bd-phone";
 
 export const newsletterSubscribeSchema = z.object({
   email: z.string().trim().min(3).max(255).email("Enter a valid email address."),
@@ -17,7 +18,7 @@ export const newsletterSubscribeSchema = z.object({
     .string()
     .trim()
     .max(20)
-    .refine((v) => v === "" || /^01[3-9]\d{8}$/.test(v.replace(/[\s-]/g, "")), {
+    .refine((v) => v === "" || BD_PHONE_REGEX.test(v.replace(/[\s-]/g, "")), {
       message: "Enter a valid Bangladesh number (e.g. 01XXXXXXXXX).",
     })
     .optional()

@@ -3,6 +3,33 @@
 Authoritative record of verified project state. Code and live-environment
 behavior are the source of truth; this file is updated after every stage.
 
+\_Last updated: 2026-07-19 — **launch-prep batch merged (PRs #25–#36, `main` @
+`befa617`; CI green; 744 Vitest; 90 migrations).** No stage opened or closed;
+all owner-mergeable polish on top of the 2026-07-17 cut-over:
+
+- **#25/#26 Founder profile + category SEO** — DB-backed founder profile
+  (`/founder` public page + `/admin/founder` editor; migration
+  `20260718202331`, applied to prod) and crawlable category landing pages
+  (`/shop/:category` now a distinct URL per category, not a query-string filter).
+- **#28/#29 Real Bangladesh address hierarchy** — location tables + seed
+  (migrations `20260719124612`, `…125350`, `…143415`, `…151130`) so Pathao is
+  booked **by zone id** rather than parsed free text; also repaired
+  `list_shipments` and closed the API gaps that repair exposed (#28).
+- **#27** guest capability token surfaced as **"access code"** in the UI.
+- **#30 SEO** — Bengali brand name **নোঙর** + product keywords in the homepage
+  `<title>`. **#32** owner-settable About-page logo (migration `20260719171741`).
+  **#35** the About founder block reads from the CMS instead of hardcoded copy.
+- **#31** aligned two location migration filenames with prod history. **#33**
+  footer developer credit. **#34** the axe a11y suite now **actually runs** in CI.
+  **#36** post-deploy smoke targets the **public** domain on prod deploys, not the
+  SSO-protected per-deploy URL.
+
+**What remains to go live is still owner-gated** — `docs/stage-7-launch-cutover.md`
+§7. ⚠ Now tracked there as an explicit **blocker**: purge `TEST_CREDENTIALS.md`
+(committed to the public repo, in history since `5f8a7e9`) **and delete/rotate its
+6 live prod accounts** — incl. the full-owner `owner@nongorr.test`. No code work is
+blocking.\_
+
 \_Last updated: 2026-07-18 (evening) — **strict CSP fixed for cached pages, §4
 verification passed, and the cut-over cleaned up** (PR #24 `788ffe9`, then
 `2c7480f`, `ec5b1b8`, `59e9423`, `8ea8b19`; **708 Vitest** green).
@@ -526,11 +553,17 @@ verification complete · (4) operator action pending.**
 
 ## Migrations (live project xomjxtmhkglhuiccekld)
 
-**67 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
-ledger matches the 67 repo files exactly (versions + names), in order. _(MCP-applied
+**90 migrations**, all applied; the remote `supabase_migrations.schema_migrations`
+ledger matches the 90 repo files exactly (versions + names), in order. _(MCP-applied
 migrations are stamped with the prod-server clock then the repo file is named to
 match; the six `…627211*` Pass-4 RPCs were recovered earlier — see the header
-notes. Parity is verified after every apply via `supabase migration list`.)_ In order:
+notes. Parity is verified after every apply via `supabase migration list`.)_ The
+in-order list below covers the first **67** (through Stage 6, 2026-07-12); the
+remaining **23** are the Stage-7 hardening + launch-prep migrations
+(`…712124515` F-14 promote-to-staff, `…712171719` healthz, courier/webhook fixes,
+`…717175716` focal columns, `…717120221` record_shipment_event, `…718202331`
+founder_profile, the `…719124612`→`…719171741` BD-location + site-logo set) — see
+the git ledger for the exact tail. In order:
 
 ```
 …143927 create_private_schema            …623000000 advisor_hardening
@@ -1008,7 +1041,7 @@ checkout calls the real `place_order` RPC.
 ## CI (honest)
 
 `ci.yml` runs (genuinely): frozen Bun install, typecheck, lint, format, test, build,
-**migrate-from-empty** (boots a local Supabase, applies all 67 migrations to a
+**migrate-from-empty** (boots a local Supabase, applies all 90 migrations to a
 blank DB — incl. the Stage 3 order schema/reservations/RPCs/payment-method
 settings, the Pass-4 order-lifecycle/read RPCs, the Stage-4 account tables/RPCs,
 the Stage-5 courier schema + audit/contact RPCs, and the Stage-6
