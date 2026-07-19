@@ -1,6 +1,7 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { AdminHeader } from "@/components/admin/AdminUI";
+import { MediaPickerField } from "@/components/admin/MediaPickerField";
 import { loadAdminSettings, saveSettings } from "@/lib/settings.api";
 import type { AdminSettings, ManualPaymentMethod } from "@/lib/settings.schema";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,7 @@ type FormState = Record<StringFields, string> & {
 type FormFields = {
   store_name: string;
   tagline: string;
+  logo_url: string;
   announcement_enabled: boolean;
   announcement_text: string;
   announcement_link: string;
@@ -83,6 +85,7 @@ function toFormState(s: AdminSettings): FormState {
   return {
     store_name: txt(s.store_name),
     tagline: txt(s.tagline),
+    logo_url: txt(s.logo_url),
     announcement_enabled: s.announcement_enabled,
     announcement_text: txt(s.announcement_text),
     announcement_link: txt(s.announcement_link),
@@ -162,14 +165,29 @@ function SettingsForm({ initial }: { initial: AdminSettings }) {
         <Section
           title="Store Info"
           busy={saving === "Store info"}
-          onSave={() => save("Store info", { store_name: s.store_name, tagline: s.tagline })}
+          onSave={() =>
+            save("Store info", {
+              store_name: s.store_name,
+              tagline: s.tagline,
+              logo_url: s.logo_url,
+            })
+          }
         >
           <Field label="Store name" value={s.store_name} onChange={(v) => set("store_name", v)} />
           <Field label="Tagline" value={s.tagline} onChange={(v) => set("tagline", v)} />
-          <p className="flex items-start gap-2 text-xs text-muted-foreground">
-            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Logo &amp; favicon uploads arrive with
-            the media library.
-          </p>
+          <div className="space-y-1.5">
+            <Label>Brand logo</Label>
+            <MediaPickerField
+              value={s.logo_url === "" ? null : s.logo_url}
+              onChange={(url) => set("logo_url", url ?? "")}
+              previewAlt="Brand logo"
+              emptyHint="Using the built-in logo."
+            />
+            <p className="flex items-start gap-2 text-xs text-muted-foreground">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Shown on the About page. The header
+              and footer use a fixed lockup and are not affected.
+            </p>
+          </div>
         </Section>
 
         {/* Payment methods (which options appear at checkout) */}
