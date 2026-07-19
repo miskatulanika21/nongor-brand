@@ -86,7 +86,7 @@ function Orders() {
         <EmptyState
           icon={<PackageSearch className="h-6 w-6" />}
           title="Sign in to see your orders"
-          description="Your order history is tied to your account. Placed an order as a guest? Track it with your order number and tracking code."
+          description="Your order history is tied to your account. Placed an order as a guest? Track it with your order number and access code."
           action={
             <div className="flex flex-wrap justify-center gap-2">
               <Button asChild>
