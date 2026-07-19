@@ -251,22 +251,42 @@ if (unmatched.length) {
   for (const u of unmatched) console.log(`  - ${u.city.city_name} (city_id ${u.city.city_id})`);
 }
 
-const zoneRows = [];
-const areaRows = [];
-const cityUpdates = [];
+async function upsert(table, rows, onConflict = "id") {
+  if (!rows.length) return;
+  const CHUNK = 500;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const { error } = await db.from(table).upsert(rows.slice(i, i + CHUNK), { onConflict });
+    if (error) throw new Error(`${table} @${i}: ${error.message}`);
+  }
+}
+
+// Commit PER CITY, not once at the end.
+//
+// The first version accumulated every row in memory and wrote after the final
+// city. Pathao's rate limiting makes a full run take about an hour, so that
+// design threw away the entire job if anything failed at minute 59 — and it
+// meant a run could be "12 cities in" while the database still held nothing.
+// Writing per city makes progress durable and the run resumable: re-running
+// simply upserts the cities already done, since every write is keyed on a
+// deterministic id.
+let totalZones = 0;
+let totalAreas = 0;
+let doneCities = 0;
 
 for (const { city, district } of matched) {
-  cityUpdates.push({ id: district.id, pathao_city_id: city.city_id });
   const zones = await get(`/aladdin/api/v1/cities/${city.city_id}/zone-list`);
   if (!Array.isArray(zones)) continue;
+
+  const zoneRows = zones.map((z) => ({
+    id: ZONE_OFFSET + z.zone_id,
+    district_id: district.id,
+    name: z.zone_name,
+    source: "pathao",
+    pathao_zone_id: z.zone_id,
+  }));
+
+  const areaRows = [];
   for (const z of zones) {
-    zoneRows.push({
-      id: ZONE_OFFSET + z.zone_id,
-      district_id: district.id,
-      name: z.zone_name,
-      source: "pathao",
-      pathao_zone_id: z.zone_id,
-    });
     const areas = await get(`/aladdin/api/v1/zones/${z.zone_id}/area-list`);
     if (!Array.isArray(areas)) continue;
     for (const a of areas) {
@@ -279,37 +299,26 @@ for (const { city, district } of matched) {
       });
     }
   }
-  console.log(`  ${city.city_name}: ${zones.length} zones`);
-}
 
-console.log(`\ntotals: ${cityUpdates.length} cities, ${zoneRows.length} zones, ${areaRows.length} areas`);
-
-if (!WRITE) {
-  console.log("\nDRY RUN — nothing written. Sample:");
-  console.log(zoneRows.slice(0, 3));
-  console.log(areaRows.slice(0, 3));
-  console.log("\nRe-run with --env production --write to persist.");
-  process.exit(0);
-}
-
-async function upsert(table, rows, onConflict = "id") {
-  const CHUNK = 500;
-  for (let i = 0; i < rows.length; i += CHUNK) {
-    const { error } = await db.from(table).upsert(rows.slice(i, i + CHUNK), { onConflict });
-    if (error) throw new Error(`${table} @${i}: ${error.message}`);
+  if (WRITE) {
+    // Zones before areas — areas FK to zones.
+    await upsert("bd_upazilas", zoneRows);
+    await upsert("bd_unions", areaRows);
+    const { error } = await db
+      .from("bd_districts")
+      .update({ pathao_city_id: city.city_id })
+      .eq("id", district.id);
+    if (error) throw new Error(`bd_districts ${district.id}: ${error.message}`);
   }
-  console.log(`${table}: ${rows.length} rows`);
+
+  totalZones += zoneRows.length;
+  totalAreas += areaRows.length;
+  doneCities++;
+  console.log(
+    `  [${doneCities}/${matched.length}] ${city.city_name}: ` +
+      `${zoneRows.length} zones, ${areaRows.length} areas${WRITE ? " — saved" : ""}`,
+  );
 }
 
-// Zones before areas — areas FK to zones.
-await upsert("bd_upazilas", zoneRows);
-await upsert("bd_unions", areaRows);
-for (const u of cityUpdates) {
-  const { error } = await db
-    .from("bd_districts")
-    .update({ pathao_city_id: u.pathao_city_id })
-    .eq("id", u.id);
-  if (error) throw new Error(`bd_districts ${u.id}: ${error.message}`);
-}
-console.log(`bd_districts: ${cityUpdates.length} pathao_city_id set`);
-console.log("\nsync complete");
+console.log(`\ntotals: ${doneCities} cities, ${totalZones} zones, ${totalAreas} areas`);
+console.log(WRITE ? "\nsync complete" : "\nDRY RUN — nothing written.");

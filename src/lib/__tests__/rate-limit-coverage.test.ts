@@ -150,6 +150,15 @@ const CLASSIFICATION: Record<string, Classification> = {
   // customers.api.ts
   listCustomersFn: "rbac-read",
 
+  // locations.api.ts — public reference data (divisions/districts/thanas/areas).
+  // Checkout runs pre-auth so a guest must be able to pick an address, and the
+  // rows hold nothing sensitive: this is the same data printed on every
+  // government form.
+  listDivisionsFn: "public-read",
+  listDistrictsFn: "public-read",
+  listThanasFn: "public-read",
+  listAreasFn: "public-read",
+
   // evidence.api.ts
   submitPaymentEvidenceFn: "rate-limited",
   getEvidenceUrlFn: "rbac-read",
