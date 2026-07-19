@@ -55,6 +55,7 @@ export const Route = createFileRoute("/_site/about")({
           about: {
             "@type": "Organization",
             name: "Nongorr",
+            alternateName: "নোঙর",
             description:
               "Premium Bangladeshi women's boutique offering custom-fit kurti, saree, three piece and more.",
             founder: { "@type": "Person", name: "Miskatul Afrin Anika" },
@@ -256,9 +257,10 @@ function About() {
               use. This boutique is one attempt to keep it working.
             </p>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              The anchor in our identity stands for steadiness and belonging; the flowing maroon
-              fabric for the grace of Bangladeshi women's wear. From the first kurti onward the goal
-              has stayed simple — clothing made with real care, for women who intend to keep it.
+              The name comes from <span lang="bn">নোঙর</span> — Bengali for anchor. It stands for
+              steadiness and belonging; the flowing maroon fabric for the grace of Bangladeshi
+              women's wear. From the first kurti onward the goal has stayed simple — clothing made
+              with real care, for women who intend to keep it.
             </p>
           </div>
           <div className="relative mx-auto grid w-full max-w-md place-items-center">

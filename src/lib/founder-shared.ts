@@ -319,7 +319,7 @@ export const FOUNDER_FALLBACK: FounderContent = {
         icon: "anchor",
         chapter: "The name",
         title: "Choosing the anchor",
-        body: "The anchor in the emblem was chosen deliberately. It stands for steadiness and for belonging somewhere. The maroon fabric beside it is a nod to Bangladeshi women's wear. The identity was settled before a single piece had sold.",
+        body: "Nongorr comes from নোঙর, the Bengali word for anchor. It was chosen deliberately: it stands for steadiness and for belonging somewhere. The maroon fabric beside it is a nod to Bangladeshi women's wear. The identity was settled before a single piece had sold.",
       },
       {
         icon: "scissors",
