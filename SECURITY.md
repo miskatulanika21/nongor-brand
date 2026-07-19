@@ -8,7 +8,7 @@ If you believe you have found a security vulnerability, please report it to us
 **privately** — do **not** open a public GitHub issue or disclose it publicly
 before it is resolved.
 
-**Email:** hello@nongorr.com
+**Email:** nongorr.anika@gmail.com
 
 Please include as much of the following as you can:
 
