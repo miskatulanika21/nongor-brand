@@ -3,8 +3,10 @@ import { defineConfig, devices } from "@playwright/test";
 // Playwright E2E / visual tests. SEPARATE from the Vitest unit suite — Vitest
 // only includes its src test files, while these live under e2e/.
 //
-// One-time per machine (the browser binary is NOT committed):
-//   bunx playwright install chromium
+// One-time per machine (the browser binaries are NOT committed):
+//   bunx playwright install chromium webkit firefox
+// (or `bunx playwright install --with-deps` in CI). Run one engine with
+// `bun run test:e2e -- --project=webkit`.
 //
 // Run: `bun run test:e2e` (headless) or `bunx playwright test --headed`.
 //
@@ -33,5 +35,14 @@ export default defineConfig({
         }
       : {}),
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  // Cross-engine matrix. WebKit is the important one for a BD storefront —
+  // iOS Safari is a large share of mobile commerce and has its own layout/JS
+  // quirks. Mobile Safari catches viewport/touch regressions the desktop
+  // engines miss. Target one engine with `--project=<name>` when iterating.
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "webkit", use: { ...devices["Desktop Safari"] } },
+    { name: "firefox", use: { ...devices["Desktop Firefox"] } },
+    { name: "mobile-safari", use: { ...devices["iPhone 13"] } },
+  ],
 });

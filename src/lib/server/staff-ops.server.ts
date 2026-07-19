@@ -12,14 +12,12 @@
  * Logic is unchanged from the original staff.api.ts (see its authorization
  * summary): CSRF + role gate + owner-safety re-checks + AAL2 step-up + audit.
  */
-import { z } from "zod";
+import type { StaffRole } from "@/lib/auth-types";
 
 async function setNoCache(): Promise<void> {
   const { setNoStore } = await import("./admin-guard.server");
   await setNoStore();
 }
-
-const roleEnum = z.enum(["staff", "admin", "owner"]);
 
 /**
  * Step-up (AAL2) gate for sensitive staff mutations. Only enforced when
@@ -42,11 +40,13 @@ export async function requireStepUp(
   };
 }
 
-const updateRoleSchema = z.object({ targetUserId: z.string().uuid(), newRole: roleEnum });
-const setActiveSchema = z.object({ targetUserId: z.string().uuid(), active: z.boolean() });
+// Input shapes only. Authoritative zod validation lives in staff.api.ts at the
+// createServerFn boundary; these handlers receive already-validated data.
+type UpdateStaffRoleInput = { targetUserId: string; newRole: StaffRole };
+type SetStaffActiveInput = { targetUserId: string; active: boolean };
 
 /** Update a staff member's role (createServerFn handler delegates here). */
-export async function performUpdateStaffRole(data: z.infer<typeof updateRoleSchema>) {
+export async function performUpdateStaffRole(data: UpdateStaffRoleInput) {
   await setNoCache();
   const { getPublicSupabaseEnv } = await import("./env.server");
   const { checkCsrfOrigin } = await import("./security.server");
@@ -113,7 +113,7 @@ export async function performUpdateStaffRole(data: z.infer<typeof updateRoleSche
 }
 
 /** Activate / deactivate a staff member (createServerFn handler delegates here). */
-export async function performSetStaffActive(data: z.infer<typeof setActiveSchema>) {
+export async function performSetStaffActive(data: SetStaffActiveInput) {
   await setNoCache();
   const { getPublicSupabaseEnv } = await import("./env.server");
   const { checkCsrfOrigin } = await import("./security.server");

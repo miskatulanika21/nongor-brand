@@ -5,6 +5,7 @@
  * form (submit validation) and the admin inbox (list/triage DTOs).
  */
 import { z } from "zod";
+import { BD_PHONE_REGEX } from "@/lib/bd-phone";
 
 // ── Reasons (the storefront dropdown; also the stored `reason`) ──────────────
 
@@ -24,7 +25,7 @@ const bdPhone = z
   .trim()
   .min(1, "Phone number is required.")
   .max(20)
-  .refine((v) => /^01[3-9]\d{8}$/.test(v.replace(/[\s-]/g, "")), {
+  .refine((v) => BD_PHONE_REGEX.test(v.replace(/[\s-]/g, "")), {
     message: "Enter a valid Bangladesh number (e.g. 01XXXXXXXXX).",
   });
 

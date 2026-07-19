@@ -22,6 +22,12 @@ dist-ssr
 !.env.example
 !.env.staging.example
 
+# Test/login credentials — MUST NOT be committed. TEST_CREDENTIALS.md was
+# tracked publicly (with LIVE prod accounts) and has been removed; this guard
+# stops it (or similar) coming back. Keep such files local-only.
+TEST_CREDENTIALS.md
+*credentials*.md
+
 # Test / coverage / report artifacts
 coverage
 playwright-report

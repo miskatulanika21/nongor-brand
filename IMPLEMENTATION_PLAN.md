@@ -4,6 +4,24 @@ Stage-by-stage plan with exit criteria. Derived from
 `nongorr-phase-2-antigravity-prompt.md` (V3). Update after each stage; keep in
 sync with `CURRENT_STATUS.md`.
 
+> **2026-07-19 — Launch-prep batch (PRs #25–#36, `main` @ `befa617`, CI green;
+> 744 Vitest; 90 migrations).** Non-stage-opening work on top of the cut-over:
+> **#25/#26** DB-backed founder profile (`/founder` + `/admin/founder`, migration
+> `20260718202331`) + crawlable category landing pages (`/shop/:category` as
+> distinct URLs); **#27** guest capability token renamed to "access code" in the
+> UI; **#28** repaired `list_shipments` (and closed the API gaps it exposed);
+> **#29** real Bangladesh address hierarchy — Pathao now booked **by zone id**
+> instead of parsed free text (migrations `20260719124612` `…125350` `…143415`
+> `…151130`); **#30** SEO: Bengali brand name নোঙর + product keywords in the
+> homepage `<title>`; **#31** aligned two location migration filenames with prod
+> history; **#32** owner-settable About-page logo from the admin panel (migration
+> `20260719171741`); **#33** footer developer credit; **#34** the axe a11y suite
+> now **actually runs** in CI; **#35** the About founder block reads from the CMS
+> instead of being hardcoded; **#36** the post-deploy smoke targets the **public**
+> domain on production deploys, not the SSO-protected per-deploy URL. Remaining
+> launch work is unchanged and owner-gated — see `docs/stage-7-launch-cutover.md`
+> §7 (now incl. the `TEST_CREDENTIALS.md` purge blocker).
+>
 > **2026-07-18 (evening) — Strict CSP fixed for cached pages + §4 verification +
 > cut-over cleanup** (PR #24 `788ffe9`, then `2c7480f`, `ec5b1b8`, `59e9423`,
 > `8ea8b19`; **708 Vitest**). `CSP_ENFORCE_STRICT=true` was a **partial no-op**:
@@ -185,7 +203,8 @@ once the admin write path is DB-backed.
       guard, optimistic concurrency (`gallery_revision` → `gallery_conflict`).
 - [x] Pass 3g (2026-06-27) — **admin dashboard cut off mock `PRODUCTS`**: dashboard
       Low Stock / Best Sellers widgets read the live product table.
-- [ ] Pass 3g+ — retire the legacy `PRODUCTS` array entirely; further catalog polish.
+- [x] Pass 3g+ — retire the legacy `PRODUCTS` array entirely. **Done in Stage 5**
+      (`orders.ts` + `admin-ops.ts` deleted; no `const PRODUCTS` remains in `src/`).
 
 **Exit:** admin changes persist and drive the storefront; no mock array for
 catalog; permissions enforced server-side. (Pass 3g+ outstanding.)
@@ -586,14 +605,19 @@ about them. Sub-passes:
   optimization** (shrink the 609 KiB entry chunk + 158 KiB CSS + self-host
   fonts) is a scoped follow-up (iterative bundle work). Bundle-budget CI
   guard + manual keyboard walkthrough also outstanding.
-- [ ] **P5 — CI/CD & release engineering**: post-deploy Playwright smoke on
-      the preview URL, gated preview→prod promotion, migration-parity guard,
-      rollback runbook (app = Vercel instant revert; DB = forward-only +
-      PITR break-glass) drilled once, release-notes convention.
-- [ ] **P6 — backup / restore / DR**: runbook + **a real restore drill** with
-      recorded RTO/RPO; Storage-bucket backup (`payment-evidence` is not
-      re-derivable); data-export/deletion path; DR decision tree (corrupt DB /
-      bad migration / wiped bucket / region outage).
+- [x] **P5 — CI/CD & release engineering** (SHIPPED, 2026-07-16): post-deploy
+      Playwright smoke (`smoke.yml`) on the deploy URL, gated preview→prod
+      promotion, migration-parity guard, rollback runbook (app = Vercel instant
+      revert; DB = forward-only + PITR break-glass), release-notes convention. See
+      `docs/stage-7-cicd-and-rollback.md`. (2026-07-19 `#36`: the smoke job now
+      targets the **public** domain on production deploys, not the SSO-protected
+      per-deploy URL.)
+- [x] **P6 — backup / restore / DR** (SHIPPED, 2026-07-16; restore drill VERIFIED
+      GREEN, RTO ≈ 1 s): runbook + working tooling (`backup.yml`,
+      `restore-drill.yml`, `scripts/backup-db.sh`, `scripts/backup-storage.mjs`);
+      Storage-bucket backup verified live; DR decision tree. See
+      `docs/stage-7-backup-and-dr.md`. _(Owner action: add the three backup secrets
+      per §7 to enable the encrypted DB backup — the drill needs none of them.)_
 - [ ] **P7 — content, legal & launch cut-over**: visual-audit fix list (real
       photography, badge clutter, star rounding, ৳ glyph, social buttons);
       legal copy finalized via the P4 CMS `site_pages`; domain + TLS + HSTS

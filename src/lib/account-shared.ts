@@ -14,11 +14,12 @@
  * client-safe validation + mapping, never authorization.
  */
 import { z } from "zod";
-import { normalizeBDPhone } from "@/lib/bd-phone";
+import { BD_PHONE_REGEX, normalizeBDPhone } from "@/lib/bd-phone";
 
 // ── Constants (mirror the DB CHECKs) ─────────────────────────────────────────
 
-export const BD_PHONE_RE = /^01[3-9]\d{8}$/;
+/** Re-exported from the canonical source so existing consumers keep this name. */
+export const BD_PHONE_RE = BD_PHONE_REGEX;
 
 export const MAX_SAVED_ADDRESSES = 10;
 export const MAX_SAVED_MEASUREMENTS = 12;

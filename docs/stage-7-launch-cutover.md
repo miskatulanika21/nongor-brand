@@ -471,6 +471,17 @@ The single page the operator ticks through on launch day. Unchecked items are
 
 ### Security
 
+- [ ] **⚠ BLOCKER — purge `TEST_CREDENTIALS.md` and kill its accounts.** The file
+      is committed to the **public** repo (working tree **and** git history back to
+      `5f8a7e9`) and lists **6 live accounts in the _production_ Supabase project**,
+      including `owner@nongorr.test` — a **full-owner admin login readable by
+      anyone** who clones the repo. Removing the file from the tree is **not
+      enough**: it survives in history. Required actions, all three: 1. **Delete / disable those 6 accounts in prod** (Supabase → Auth → Users) —
+      or at minimum rotate every password — so a leaked copy grants nothing. 2. **Remove `TEST_CREDENTIALS.md` from the tree** and stop tracking it
+      (add to `.gitignore`). 3. **Scrub it from git history** (`git filter-repo` / BFG) and force-push, or
+      accept that the credentials are permanently public and rely on step 1.
+      Until the accounts are dead, this is the single hardest go-live blocker and it
+      is **independent of the routine secret rotation below**.
 - [ ] Disable the **Vercel Toolbar** in production — CSP Report-Only was
       **verified clean 2026-07-16** (browser walk + raw-HTML nonce audit): the
       app is 100% strict-CSP compatible and the _only_ violation is the

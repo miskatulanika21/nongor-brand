@@ -1,0 +1,37 @@
+# Automated dependency-update PRs.
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates
+#
+# `npm` covers package.json (the app deps). Grouped so a routine week is a
+# couple of review-able PRs, not dozens. Security updates are never grouped and
+# never limited — they always come through immediately as their own PRs.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+    groups:
+      # One PR for the routine patch/minor churn across dev tooling + runtime.
+      minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Majors land as their own PR (breaking — review individually), which the
+      # group rule above already leaves ungrouped.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # Keep the GitHub Actions used by our workflows current (and patched).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "ci"
