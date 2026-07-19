@@ -23,11 +23,11 @@ on:
         description: "Base URL to smoke (e.g. https://nongor-brand.vercel.app)"
         required: true
         type: string
-  # Weekly axe run against production. Without this the accessibility suite is
-  # effectively inert: deployment_status hands us the PROTECTED per-deploy URL
-  # for previews AND production, so every automatic run skips until
-  # VERCEL_AUTOMATION_BYPASS_SECRET exists. The schedule targets the public
-  # domain, needs no secret, and so actually executes.
+  # Weekly axe run against production, kept as a backstop: it catches drift on
+  # a quiet week when nothing deploys. Production deploy_status events now smoke
+  # the public domain directly (see "Resolve target URL"), so this is no longer
+  # the only run that executes — PREVIEW runs are still gated on
+  # VERCEL_AUTOMATION_BYPASS_SECRET, since their per-deploy URLs are protected.
   schedule:
     - cron: "0 3 * * 1"
 
@@ -61,16 +61,30 @@ jobs:
           INPUT_URL: ${{ inputs.url }}
           BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
           EVENT: ${{ github.event_name }}
+          # Vercel sets this to exactly "Production" or "Preview".
+          DEPLOY_ENV: ${{ github.event.deployment_status.environment }}
         run: |
           # Manual dispatch wins. Otherwise prefer the live deployment URL
           # (environment_url); only fall back to target_url if it is the SITE and
           # not Vercel's dashboard inspector (vercel.com/...), which some
           # integration versions put in target_url and which is NOT smokeable.
+          PROD_URL="https://nongorr.com"
+
           URL="$INPUT_URL"
           # Scheduled runs carry no deployment payload and no input — they always
           # target the public production domain.
           if [ -z "$URL" ] && [ "$EVENT" = "schedule" ]; then
-            URL="https://nongorr.com"
+            URL="$PROD_URL"
+          fi
+          # A PRODUCTION deployment_status still hands us the per-deploy URL
+          # (nongor-brand-<hash>-nongorr.vercel.app), which Vercel keeps behind
+          # Deployment Protection — so smoking it asserted against an SSO login
+          # page ("Login – Vercel") rather than the site. Smoke the public domain
+          # instead: it is unprotected, needs no bypass secret, and is the surface
+          # customers actually load, which is what a post-deploy gate should prove.
+          # Previews keep using their per-deploy URL (each one is a distinct build).
+          if [ -z "$URL" ] && printf '%s' "$DEPLOY_ENV" | grep -qi '^production$'; then
+            URL="$PROD_URL"
           fi
           if [ -z "$URL" ]; then
             URL="$ENV_URL"
