@@ -133,7 +133,15 @@ const CLASSIFICATION: Record<string, Classification> = {
   // courier.api.ts
   listShipmentsFn: "rbac-read",
   listCourierProvidersFn: "rbac-read",
+  // COD reconciliation reads: courier.view only. They READ money data from the
+  // courier; asserting it onto a shipment is updateReconciliationFn, which is
+  // admin-guarded. Seeing what you are owed and recording it are separate rights.
+  courierBalanceFn: "rbac-read",
+  courierPaymentsFn: "rbac-read",
+  courierPaymentDetailFn: "rbac-read",
   bookCourierFn: "admin-guarded",
+  // Moves a real parcel and incurs a return fee — a write in every sense.
+  createReturnFn: "admin-guarded",
   cancelShipmentFn: "admin-guarded",
   resolveStaleAttemptFn: "admin-guarded",
   pollShipmentStatusFn: "admin-guarded",
