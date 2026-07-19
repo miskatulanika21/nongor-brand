@@ -83,7 +83,7 @@ export async function listThanas(districtId: number): Promise<ThanaOption[]> {
       .eq("district_id", districtId)
       // Pathao's zone list doubles as an operational routing table — it holds
       // "Bulk Merchant", "Pathao Central FTL", even "lost". Those are not
-      // places a customer can live. See migration 20260719150000.
+      // places a customer can live. See migration 20260719143415.
       .eq("selectable", true);
     if (error) throw new Error(`listThanas: ${error.message}`);
     return byName(

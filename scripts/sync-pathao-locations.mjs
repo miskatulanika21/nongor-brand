@@ -224,7 +224,7 @@ const AREA_OFFSET = 10_000_000;
 // page, where they sat among 372 Dhaka options and a customer could have picked
 // one as their address. They are still stored (their ids stay resolvable if
 // Pathao ever reports one back) but flagged unselectable so the picker hides
-// them. Keep this in step with migration 20260719150000.
+// them. Keep this in step with migration 20260719143415.
 const OPERATIONAL =
   /(pathao|central fulfillment|bulk merchant|on-demand|on demand|document-|inbound|outbound| ftl| ltl)/i;
 const isSelectable = (name) => {
