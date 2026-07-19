@@ -48,7 +48,7 @@ export const Route = createFileRoute("/_site/track")({
       {
         name: "description",
         content:
-          "Track your Nongorr order with your order number and tracking code. Signed-in customers can also view orders from their account.",
+          "Track your Nongorr order with your order number and access code. Signed-in customers can also view orders from their account.",
       },
       { name: "robots", content: "noindex,nofollow" },
     ],
@@ -85,7 +85,7 @@ function Track() {
     setToken(t);
   }, [o, t]);
 
-  // Fetch whenever the URL carries both an order number and a tracking code.
+  // Fetch whenever the URL carries both an order number and an access code.
   useEffect(() => {
     if (!o || !t) {
       setState({ phase: "idle" });
@@ -129,7 +129,7 @@ function Track() {
     // Both fields are required to form a valid capability pair.
     const errs: { orderNo?: string; token?: string } = {};
     if (!no) errs.orderNo = "Enter your order number.";
-    if (!tok) errs.token = "Enter your tracking code.";
+    if (!tok) errs.token = "Enter your access code.";
     setFieldErrors(errs);
     if (Object.keys(errs).length > 0) {
       (errs.orderNo ? orderNoRef : tokenRef).current?.focus();
@@ -161,7 +161,7 @@ function Track() {
     <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
       <h1 className="mb-2 font-display text-4xl text-foreground">Track Your Order</h1>
       <p className="mb-8 text-sm text-muted-foreground">
-        Enter your order number and the tracking code from your confirmation. Have an account?{" "}
+        Enter your order number and the access code from your confirmation. Have an account?{" "}
         <Link to="/orders" className="text-primary underline-offset-4 hover:underline">
           View all your orders
         </Link>
@@ -195,7 +195,7 @@ function Track() {
         </div>
         <div>
           <label htmlFor="track-token" className="sr-only">
-            Tracking code
+            Access code
           </label>
           <Input
             id="track-token"
@@ -205,9 +205,9 @@ function Track() {
               setToken(e.target.value);
               if (fieldErrors.token) setFieldErrors((f) => ({ ...f, token: undefined }));
             }}
-            placeholder="Tracking code"
+            placeholder="Access code"
             className={cn("bg-card font-mono", fieldErrors.token && "border-destructive")}
-            aria-label="Tracking code"
+            aria-label="Access code"
             aria-invalid={fieldErrors.token ? true : undefined}
             aria-describedby={fieldErrors.token ? "track-token-error" : undefined}
           />
@@ -256,7 +256,7 @@ function Track() {
         <EmptyState
           icon={<PackageSearch className="h-6 w-6" />}
           title="Order not found"
-          description="Double-check your order number and tracking code, or paste the tracking link from your confirmation."
+          description="Double-check your order number and access code, or paste the tracking link from your confirmation."
           action={
             <Button variant="outline" asChild>
               <a href={`https://wa.me/${BRAND.whatsapp}`} target="_blank" rel="noreferrer">
@@ -285,7 +285,7 @@ function Track() {
         <EmptyState
           icon={<Package className="h-6 w-6" />}
           title="Enter your order details"
-          description="Your order number and tracking code are on your order confirmation page."
+          description="Your order number and access code are on your order confirmation page."
         />
       )}
     </div>

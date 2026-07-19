@@ -369,9 +369,9 @@ function ServerOrderSuccess({
       {/* Guest tracking link — surface the capability so guests can return later */}
       {guestToken && (
         <div className="mt-6 rounded-xl border border-gold/40 bg-gold/5 p-5 text-sm">
-          <p className="font-medium text-foreground">Save your tracking link</p>
+          <p className="font-medium text-foreground">Save your tracking details</p>
           <p className="mt-1 text-muted-foreground">
-            You&apos;re checking out as a guest. Bookmark the link below to track this order later —
+            You&apos;re checking out as a guest. Save the link below to track this order later —
             it&apos;s the only way to find it without an account.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -381,6 +381,14 @@ function ServerOrderSuccess({
               </Link>
             </Button>
             <CopyTrackLink orderNo={receipt.orderNo} token={guestToken} />
+          </div>
+
+          {/* The raw pair, so a guest who loses the link can still use the
+              manual form on /track. Without this the two-field form is
+              unusable — the code is never shown anywhere else. */}
+          <div className="mt-4 grid gap-3 border-t border-gold/30 pt-4">
+            <CopyField label="Order number" value={receipt.orderNo} />
+            <CopyField label="Access code" value={guestToken} />
           </div>
         </div>
       )}
@@ -427,6 +435,39 @@ function ServerOrderSuccess({
   );
 }
 
+/**
+ * A labelled, selectable value with its own copy button. Used to surface the
+ * order number + access code pair that the manual /track form asks for.
+ */
+function CopyField({ label, value }: { label: string; value: string }) {
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success(`${label} copied`);
+    } catch {
+      toast.error(`Could not copy the ${label.toLowerCase()}`);
+    }
+  };
+  return (
+    <div>
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <div className="mt-1 flex items-start gap-2">
+        <code className="min-w-0 flex-1 break-all rounded-md bg-card px-2 py-1.5 font-mono text-xs text-foreground">
+          {value}
+        </code>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={copy}
+          aria-label={`Copy ${label.toLowerCase()}`}
+        >
+          <Copy className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function CopyTrackLink({ orderNo, token }: { orderNo: string; token: string }) {
   const copy = async () => {
     if (typeof window === "undefined") return;
@@ -459,7 +500,7 @@ function NoOrderFallback() {
       </h1>
       <p className="mt-3 text-muted-foreground">
         This link may be incomplete or expired. If you just placed an order, track it with your
-        order number and tracking code, or reach us on WhatsApp.
+        order number and access code, or reach us on WhatsApp.
       </p>
       <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
         <Button asChild>
