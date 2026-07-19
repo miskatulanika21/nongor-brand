@@ -8,6 +8,8 @@ import logo from "@/assets/nongorr-logo-transparent.webp";
 import sizeChart from "@/assets/size-chart.webp";
 import { absUrl } from "@/lib/site-config";
 import type { PublicSettings } from "@/lib/settings.schema";
+import { getFounderProfile } from "@/lib/founder.api";
+import { FOUNDER_FALLBACK, type FounderContent } from "@/lib/founder-shared";
 import {
   ArrowRight,
   Ruler,
@@ -24,47 +26,54 @@ import {
 } from "lucide-react";
 
 export const Route = createFileRoute("/_site/about")({
-  head: () => ({
-    meta: [
-      { title: "About Nongorr · Rooted in Craft, Made for Her" },
-      {
-        name: "description",
-        content:
-          "Nongorr is a premium Bangladeshi women's boutique by Miskatul Afrin Anika — craftsmanship, custom-fit clothing and feminine elegance.",
-      },
-      { property: "og:title", content: "About Nongorr · Rooted in Craft, Made for Her" },
-      {
-        property: "og:description",
-        content:
-          "Meet founder Miskatul Afrin Anika and the story behind Nongorr — a premium women's boutique rooted in Bangladeshi craft.",
-      },
-      { property: "og:url", content: absUrl("/about") },
-      { property: "og:type", content: "website" },
-      { property: "og:image", content: absUrl(founderPortrait) },
-      { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:image", content: absUrl(founderPortrait) },
-    ],
-    links: [{ rel: "canonical", href: absUrl("/about") }],
-    scripts: [
-      {
-        type: "application/ld+json",
-        children: JSON.stringify({
-          "@context": "https://schema.org",
-          "@type": "AboutPage",
-          name: "About Nongorr",
-          url: absUrl("/about"),
-          about: {
-            "@type": "Organization",
-            name: "Nongorr",
-            alternateName: "নোঙর",
-            description:
-              "Premium Bangladeshi women's boutique offering custom-fit kurti, saree, three piece and more.",
-            founder: { "@type": "Person", name: "Miskatul Afrin Anika" },
-          },
-        }),
-      },
-    ],
-  }),
+  // The founder block below is the same person the /founder CMS describes, so
+  // it reads that profile rather than repeating her details as literals — an
+  // owner editing her name, role or portrait must not leave this page stale.
+  // The read is the same cached public one /founder uses, so it is cheap.
+  loader: () => getFounderProfile(),
+  head: ({ loaderData }) => {
+    const c = (loaderData as FounderContent | null) ?? FOUNDER_FALLBACK;
+    const portrait = absUrl(c.hero.portraitUrl ?? founderPortrait);
+    return {
+      meta: [
+        { title: "About Nongorr · Rooted in Craft, Made for Her" },
+        {
+          name: "description",
+          content: `Nongorr is a premium Bangladeshi women's boutique by ${c.name} — craftsmanship, custom-fit clothing and feminine elegance.`,
+        },
+        { property: "og:title", content: "About Nongorr · Rooted in Craft, Made for Her" },
+        {
+          property: "og:description",
+          content: `Meet founder ${c.name} and the story behind Nongorr — a premium women's boutique rooted in Bangladeshi craft.`,
+        },
+        { property: "og:url", content: absUrl("/about") },
+        { property: "og:type", content: "website" },
+        { property: "og:image", content: portrait },
+        { name: "twitter:card", content: "summary_large_image" },
+        { name: "twitter:image", content: portrait },
+      ],
+      links: [{ rel: "canonical", href: absUrl("/about") }],
+      scripts: [
+        {
+          type: "application/ld+json",
+          children: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "AboutPage",
+            name: "About Nongorr",
+            url: absUrl("/about"),
+            about: {
+              "@type": "Organization",
+              name: "Nongorr",
+              alternateName: "নোঙর",
+              description:
+                "Premium Bangladeshi women's boutique offering custom-fit kurti, saree, three piece and more.",
+              founder: { "@type": "Person", name: c.name },
+            },
+          }),
+        },
+      ],
+    };
+  },
   component: About,
 });
 
@@ -140,6 +149,12 @@ function About() {
   };
   const logoSrc = publicSettings?.logo_url || logo;
 
+  // Founder identity comes from the /founder CMS so the two pages can never
+  // disagree about who she is. Unset image fields fall back to the bundled
+  // asset, the same rule /founder applies.
+  const founder: FounderContent = Route.useLoaderData() ?? FOUNDER_FALLBACK;
+  const portraitSrc = founder.hero.portraitUrl ?? founderPortrait;
+
   return (
     <div className="overflow-x-clip">
       {/* 1 — HERO */}
@@ -207,16 +222,19 @@ function About() {
             />
             <div className="overflow-hidden rounded-3xl border border-gold/40 bg-card p-2 shadow-card">
               <img
-                src={founderPortrait}
-                alt="Miskatul Afrin Anika, founder of Nongorr, in a maroon and gold saree"
+                src={portraitSrc}
+                alt={founder.hero.portraitAlt}
                 width={1024}
                 height={1280}
                 loading="lazy"
                 className="aspect-[4/5] w-full rounded-[1.4rem] object-cover object-top"
               />
             </div>
-            <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-gold/40 bg-card px-5 py-2 text-xs font-medium uppercase tracking-[0.18em] text-primary shadow-soft">
-              Founder &amp; Creative Lead
+            {/* max-w + centring replaces the old whitespace-nowrap: the role is
+                owner-editable now, so a longer one must wrap instead of
+                overflowing the card. */}
+            <div className="absolute -bottom-4 left-1/2 max-w-[90%] -translate-x-1/2 rounded-full border border-gold/40 bg-card px-5 py-2 text-center text-xs font-medium uppercase tracking-[0.18em] text-primary shadow-soft">
+              {founder.role}
             </div>
           </div>
 
@@ -228,14 +246,18 @@ function About() {
                 to="/founder"
                 className="underline decoration-gold/50 underline-offset-8 transition-colors hover:text-primary"
               >
-                Miskatul Afrin Anika
+                {founder.name}
               </Link>
             </h2>
             <p className="text-sm font-medium uppercase tracking-[0.18em] text-gold">
-              Founder &amp; Creative Lead of Nongorr
+              {founder.role}
             </p>
             {/* Teaser only — her full story, letter, journey and quote live on
-                /founder so the two pages never repeat each other. */}
+                /founder so the two pages never repeat each other.
+                Deliberately NOT CMS-backed: the founder schema has no
+                about-teaser field, and hero.intro is written for /founder. If
+                this needs to be owner-editable, add a field to the schema
+                rather than reusing one written for another page. */}
             <p className="text-sm leading-relaxed text-muted-foreground">
               Anika started Nongorr for the nakshi kantha — the layered, hand-stitched quilts
               Bengali women spent months making, and that fewer families pass down each year. She
