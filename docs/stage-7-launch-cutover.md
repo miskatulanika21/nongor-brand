@@ -471,17 +471,21 @@ The single page the operator ticks through on launch day. Unchecked items are
 
 ### Security
 
-- [ ] **⚠ BLOCKER — purge `TEST_CREDENTIALS.md` and kill its accounts.** The file
-      is committed to the **public** repo (working tree **and** git history back to
-      `5f8a7e9`) and lists **6 live accounts in the _production_ Supabase project**,
-      including `owner@nongorr.test` — a **full-owner admin login readable by
-      anyone** who clones the repo. Removing the file from the tree is **not
-      enough**: it survives in history. Required actions, all three: 1. **Delete / disable those 6 accounts in prod** (Supabase → Auth → Users) —
-      or at minimum rotate every password — so a leaked copy grants nothing. 2. **Remove `TEST_CREDENTIALS.md` from the tree** and stop tracking it
-      (add to `.gitignore`). 3. **Scrub it from git history** (`git filter-repo` / BFG) and force-push, or
-      accept that the credentials are permanently public and rely on step 1.
-      Until the accounts are dead, this is the single hardest go-live blocker and it
-      is **independent of the routine secret rotation below**.
+- [ ] **⚠ BLOCKER — rotate/delete the 6 exposed prod accounts.** `TEST_CREDENTIALS.md`
+      listed **6 live accounts in the _production_ Supabase project**, including
+      `owner@nongorr.test` (a full-owner admin login), and was committed to the
+      **public** repo. Repo-side cleanup is **DONE (2026-07-20):** the file was
+      removed from the tree (PR #37) **and purged from git history**
+      (`git filter-repo`, `main` force-pushed `db6aa88`→`bb3a7c7`, 33 stale
+      file-carrying branches deleted, verified `0` commits reach it in a fresh
+      clone); a `.gitignore` guard + GitHub **secret-scanning push protection**
+      now block a recurrence.
+      **What REMAINS — and is the part that actually matters:** the credentials
+      were public for the whole exposure window, and a history scrub does **not**
+      undo that (GitHub retains unreachable blobs by SHA for a while, and any
+      fork keeps them). So the accounts must be treated as **compromised**: - [ ] **Delete / disable all 6 accounts** in prod (Supabase → Auth → Users),
+      or at minimum rotate every password. This is the single fix that closes
+      the leak; it is **independent of the routine secret rotation below**.
 - [ ] Disable the **Vercel Toolbar** in production — CSP Report-Only was
       **verified clean 2026-07-16** (browser walk + raw-HTML nonce audit): the
       app is 100% strict-CSP compatible and the _only_ violation is the

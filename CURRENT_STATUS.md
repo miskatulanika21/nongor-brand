@@ -25,10 +25,14 @@ all owner-mergeable polish on top of the 2026-07-17 cut-over:
   SSO-protected per-deploy URL.
 
 **What remains to go live is still owner-gated** — `docs/stage-7-launch-cutover.md`
-§7. ⚠ Now tracked there as an explicit **blocker**: purge `TEST_CREDENTIALS.md`
-(committed to the public repo, in history since `5f8a7e9`) **and delete/rotate its
-6 live prod accounts** — incl. the full-owner `owner@nongorr.test`. No code work is
-blocking.\_
+§7. ⚠ **Credential exposure — repo cleanup DONE, account rotation still owed
+(2026-07-20):** `TEST_CREDENTIALS.md` (6 live prod accounts, incl. full-owner
+`owner@nongorr.test`) was removed from the tree (PR #37) **and purged from git
+history** (`git filter-repo`, `main` `db6aa88`→`bb3a7c7` force-pushed, 33 stale
+branches deleted, verified 0 refs reach it; push protection now on). The scrub does
+**not** undo the public exposure, so the **6 prod accounts must still be
+deleted/rotated in Supabase** — that is the only step that closes the leak. No code
+work is blocking.\_
 
 \_Last updated: 2026-07-18 (evening) — **strict CSP fixed for cached pages, §4
 verification passed, and the cut-over cleaned up** (PR #24 `788ffe9`, then

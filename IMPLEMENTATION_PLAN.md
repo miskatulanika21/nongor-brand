@@ -20,7 +20,10 @@ sync with `CURRENT_STATUS.md`.
 > instead of being hardcoded; **#36** the post-deploy smoke targets the **public**
 > domain on production deploys, not the SSO-protected per-deploy URL. Remaining
 > launch work is unchanged and owner-gated — see `docs/stage-7-launch-cutover.md`
-> §7 (now incl. the `TEST_CREDENTIALS.md` purge blocker).
+> §7. Credential exposure (2026-07-20): `TEST_CREDENTIALS.md` removed + **purged
+> from git history** (`main` `db6aa88`→`bb3a7c7`, 33 stale branches deleted, push
+> protection on); the **6 exposed prod accounts still must be rotated/deleted** —
+> the scrub does not undo the public exposure.
 >
 > **2026-07-18 (evening) — Strict CSP fixed for cached pages + §4 verification +
 > cut-over cleanup** (PR #24 `788ffe9`, then `2c7480f`, `ec5b1b8`, `59e9423`,
