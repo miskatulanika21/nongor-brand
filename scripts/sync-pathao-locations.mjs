@@ -86,10 +86,9 @@ const env = Object.fromEntries(
 
 const sandbox = ENV === "sandbox";
 const cfg = {
-  baseUrl: (
-    sandbox
-      ? env.PATHAO_SANDBOX_BASE_URL || "https://courier-api-sandbox.pathao.com"
-      : env.PATHAO_BASE_URL || "https://api-hermes.pathao.com"
+  baseUrl: (sandbox
+    ? env.PATHAO_SANDBOX_BASE_URL || "https://courier-api-sandbox.pathao.com"
+    : env.PATHAO_BASE_URL || "https://api-hermes.pathao.com"
   ).replace(/\/+$/, ""),
   clientId: sandbox ? env.PATHAO_SANDBOX_CLIENT_ID : env.PATHAO_CLIENT_ID,
   clientSecret: sandbox ? env.PATHAO_SANDBOX_CLIENT_SECRET : env.PATHAO_CLIENT_SECRET,
@@ -142,7 +141,8 @@ async function get(path) {
     const text = await r.text();
 
     if (r.status === 429) {
-      if (attempt >= MAX_RETRIES) throw new Error(`${path}: still 429 after ${MAX_RETRIES} retries`);
+      if (attempt >= MAX_RETRIES)
+        throw new Error(`${path}: still 429 after ${MAX_RETRIES} retries`);
       // Honour Retry-After when present; otherwise exponential backoff.
       const ra = Number(r.headers.get("retry-after"));
       const waitMs = Number.isFinite(ra) && ra > 0 ? ra * 1000 : 2000 * 2 ** attempt;

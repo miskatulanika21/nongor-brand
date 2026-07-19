@@ -94,6 +94,48 @@ export async function listThanas(districtId: number): Promise<ThanaOption[]> {
   });
 }
 
+/**
+ * Resolve a saved address back to cascade ids.
+ *
+ * A saved address stores only names (ship_district / area text), but the picker
+ * drives off ids — so without this a returning customer would see empty
+ * dropdowns sitting on top of populated state, and could submit a stale
+ * address they never confirmed.
+ *
+ * Best-effort by design: an unresolvable name returns nulls and the customer
+ * simply re-picks, which is safe. Matching is case-insensitive on the exact
+ * name — deliberately NOT fuzzy, because silently resolving to the wrong
+ * district would ship a parcel to the wrong place.
+ */
+export async function resolveLocation(
+  districtName: string,
+  thanaName?: string,
+): Promise<{ divisionId: number | null; districtId: number | null; thanaId: number | null }> {
+  const db = createAdminSupabaseClient();
+  const { data: d } = await db
+    .from("bd_districts")
+    .select("id, division_id")
+    .ilike("name", districtName.trim())
+    .limit(1)
+    .maybeSingle();
+
+  if (!d) return { divisionId: null, districtId: null, thanaId: null };
+
+  let thanaId: number | null = null;
+  if (thanaName?.trim()) {
+    const { data: t } = await db
+      .from("bd_upazilas")
+      .select("id")
+      .eq("district_id", d.id)
+      .ilike("name", thanaName.trim())
+      .limit(1)
+      .maybeSingle();
+    thanaId = t?.id ?? null;
+  }
+
+  return { divisionId: d.division_id, districtId: d.id, thanaId };
+}
+
 /** Level 4 for a thana/upazila: rural unions or metropolitan areas. */
 export async function listAreas(thanaId: number): Promise<AreaOption[]> {
   return cached(`areas:${thanaId}`, async () => {

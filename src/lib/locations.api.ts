@@ -62,6 +62,35 @@ export const listThanasFn = createServerFn({ method: "GET" })
     }
   });
 
+/**
+ * Resolve a saved address's names back to cascade ids, so a returning customer
+ * sees their address prefilled rather than empty dropdowns over stale state.
+ */
+export const resolveLocationFn = createServerFn({ method: "GET" })
+  .validator(
+    z.object({
+      district: z.string().trim().min(1).max(100),
+      thana: z.string().trim().max(100).optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { resolveLocation } = await import("@/lib/server/locations.server");
+    try {
+      return { success: true as const, ...(await resolveLocation(data.district, data.thana)) };
+    } catch (e) {
+      const { safeServerLog } = await import("@/lib/server/security.server");
+      safeServerLog("error", "resolveLocation failed", {
+        error: e instanceof Error ? e.message : "unknown",
+      });
+      return {
+        success: false as const,
+        divisionId: null,
+        districtId: null,
+        thanaId: null,
+      };
+    }
+  });
+
 export const listAreasFn = createServerFn({ method: "GET" })
   .validator(z.object({ thanaId: id }))
   .handler(async ({ data }) => {

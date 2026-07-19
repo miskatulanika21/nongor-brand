@@ -158,6 +158,7 @@ const CLASSIFICATION: Record<string, Classification> = {
   listDistrictsFn: "public-read",
   listThanasFn: "public-read",
   listAreasFn: "public-read",
+  resolveLocationFn: "public-read",
 
   // evidence.api.ts
   submitPaymentEvidenceFn: "rate-limited",

@@ -51,13 +51,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import {
-  DISTRICTS,
-  DHAKA_AREAS,
-  computeShipping,
-  suggestDeliveryZoneForDistrict,
-  zoneLabel,
-} from "@/lib/checkout-ui";
+import { computeShipping, suggestDeliveryZoneForDistrict, zoneLabel } from "@/lib/checkout-ui";
+import { LocationPicker, type LocationSelection } from "@/components/checkout/LocationPicker";
 import {
   enabledMethodList,
   isManualMethod,
@@ -192,13 +187,14 @@ function Checkout() {
       setDistrict(a.district);
       const mapped = suggestDeliveryZoneForDistrict(a.district);
       if (mapped) setDeliveryZone(mapped);
-      if (a.district === "Dhaka") {
-        setArea(a.area);
-        setThana("");
-      } else {
-        setThana(a.area);
-        setArea("");
-      }
+      // A saved address stores one free-text locality, with no record of which
+      // level it came from. Treat it as the thana/upazila (level 3): that is
+      // where a Dhaka "Dhanmondi" genuinely belongs now — it is a Pathao zone,
+      // not a sub-area — and the picker resolves it by name within the
+      // district. If it does not resolve, the field simply stays unset and the
+      // customer picks again, which is safe.
+      setThana(a.area);
+      setArea("");
       setAddress(a.address);
     },
     [setDeliveryZone],
@@ -332,11 +328,11 @@ function Checkout() {
   const phoneValue = normalizePhone(phone);
   const phoneValid = BD_PHONE.test(phoneValue);
   const trxValid = trxId.trim().length >= 10;
-  const locality = district === "Dhaka" ? area : thana.trim();
-
-  // A saved address may carry a free-text Dhaka area — surface it as an option
-  // so applying the address keeps the select valid.
-  const areaOptions = area && !DHAKA_AREAS.includes(area) ? [area, ...DHAKA_AREAS] : DHAKA_AREAS;
+  // The finest location the customer actually chose. Area/union when one was
+  // picked, otherwise the thana/upazila — some metropolitan thanas legitimately
+  // list no sub-areas, and requiring one there would make checkout impossible
+  // for those customers.
+  const locality = area.trim() || thana.trim();
 
   const deliveryComplete = Boolean(
     name.trim() && phoneValid && district && locality && address.trim(),
@@ -445,10 +441,9 @@ function Checkout() {
     const err: Errors = {};
     if (!name.trim()) err.name = "Please enter your name";
     if (!phoneValid) err.phone = "Enter a valid Bangladesh number (e.g. 01712345678)";
-    if (!district) err.district = "Please select your district";
-    if (district === "Dhaka" ? !area : !thana.trim())
-      err.locality =
-        district === "Dhaka" ? "Please select your area" : "Please enter thana / upazila";
+    if (!district) err.district = "Please select your division and district";
+    // Area/union is optional — a thana with no listed sub-areas is legitimate.
+    if (!thana.trim()) err.locality = "Please select your thana / upazila";
     if (!address.trim()) err.address = "Please enter your full address";
     if (isManual && !trxValid) err.trxId = "TrxID must be at least 10 characters";
     return err;
@@ -801,73 +796,40 @@ function Checkout() {
                 </div>
               </Field>
 
-              <Field
-                label="District"
-                required
-                error={errors.district}
-                fieldRef={refs.district}
-                htmlFor="checkout-district"
-              >
-                <Select value={district} onValueChange={selectDistrict}>
-                  {/* aria goes on the actual combobox trigger, not the Radix root (#9) */}
-                  <SelectTrigger
-                    id="checkout-district"
-                    aria-label="District"
-                    aria-required
-                    aria-invalid={errors.district ? true : undefined}
-                    aria-describedby={errors.district ? "checkout-district-error" : undefined}
-                  >
-                    <SelectValue placeholder="Select district" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DISTRICTS.map((d) => (
-                      <SelectItem key={d} value={d}>
-                        {d}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-
-              <Field
-                label={district === "Dhaka" ? "Area" : "Thana / Upazila"}
-                required
-                error={errors.locality}
-                fieldRef={refs.locality}
-                htmlFor="checkout-locality"
-              >
-                {district === "Dhaka" ? (
-                  <Select value={area} onValueChange={setArea}>
-                    <SelectTrigger
-                      id="checkout-locality"
-                      aria-label="Area"
-                      aria-required
-                      aria-invalid={errors.locality ? true : undefined}
-                      aria-describedby={errors.locality ? "checkout-locality-error" : undefined}
-                    >
-                      <SelectValue placeholder="Select area" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {areaOptions.map((a) => (
-                        <SelectItem key={a} value={a}>
-                          {a}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Input
-                    id="checkout-locality"
-                    value={thana}
-                    onChange={(e) => setThana(e.target.value)}
-                    placeholder="e.g. Kotwali"
-                    disabled={!district}
-                    aria-required
-                    aria-invalid={errors.locality ? true : undefined}
-                    aria-describedby={errors.locality ? "checkout-locality-error" : undefined}
+              {/* Division → District → Thana/Upazila → Area/Union.
+                  Replaces the old split where only Dhaka got a curated area
+                  list and every other district got a free-text thana box —
+                  which is why addresses outside Dhaka reached the courier
+                  unstructured. The picker reports NAMES, so submission,
+                  saved addresses and the district-derived fee tier are all
+                  unchanged. */}
+              <div className="sm:col-span-2" ref={refs.district}>
+                <div ref={refs.locality}>
+                  <LocationPicker
+                    value={{ district, thana, area }}
+                    onChange={(next: LocationSelection) => {
+                      setDistrict(next.district);
+                      setThana(next.thana);
+                      setArea(next.area);
+                      if (next.district) {
+                        const mapped = suggestDeliveryZoneForDistrict(next.district);
+                        if (mapped) setDeliveryZone(mapped);
+                      }
+                    }}
+                    districtError={Boolean(errors.district)}
+                    localityError={Boolean(errors.locality)}
                   />
+                </div>
+                {(errors.district || errors.locality) && (
+                  <p
+                    id="checkout-district-error"
+                    className="mt-2 text-xs text-destructive"
+                    role="alert"
+                  >
+                    {errors.district ?? errors.locality}
+                  </p>
                 )}
-              </Field>
+              </div>
             </div>
             <Field
               label="Full address"
