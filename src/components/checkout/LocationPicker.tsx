@@ -19,13 +19,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect, type SelectOption } from "@/components/checkout/SearchableSelect";
 import {
   listAreasFn,
   listDistrictsFn,
@@ -208,84 +202,74 @@ export function LocationPicker({ value, onChange, districtError, localityError, 
 
   const busy = (which: typeof loading) => loading === which;
 
+  // cmdk matches on the option's value string, so fold the Bengali name in as
+  // searchable keywords — a customer typing "ঢাকা" should find Dhaka.
+  const toOptions = (
+    rows: Array<{ id: number; name: string; bnName: string | null }>,
+  ): SelectOption[] =>
+    rows.map((r) => ({
+      value: String(r.id),
+      label: locationLabel(r),
+      keywords: r.bnName ?? undefined,
+    }));
+
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       <Field label={LOCATION_LABELS.division}>
-        <Select
+        <SearchableSelect
+          options={toOptions(divisions)}
           value={divisionId ? String(divisionId) : undefined}
-          onValueChange={pickDivision}
-          disabled={disabled || busy("divisions")}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder={LOCATION_PLACEHOLDERS.division} />
-          </SelectTrigger>
-          <SelectContent>
-            {divisions.map((d) => (
-              <SelectItem key={d.id} value={String(d.id)}>
-                {locationLabel(d)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          onChange={pickDivision}
+          placeholder={LOCATION_PLACEHOLDERS.division}
+          searchPlaceholder="Search division…"
+          disabled={disabled}
+          loading={busy("divisions")}
+          ariaLabel="Division"
+        />
       </Field>
 
       <Field label={LOCATION_LABELS.district} error={districtError}>
-        <Select
+        <SearchableSelect
+          id="checkout-district"
+          options={toOptions(districts)}
           value={districtId ? String(districtId) : undefined}
-          onValueChange={pickDistrict}
-          disabled={disabled || divisionId == null || busy("districts")}
-        >
-          <SelectTrigger aria-invalid={districtError || undefined}>
-            <SelectValue
-              placeholder={busy("districts") ? "Loading…" : LOCATION_PLACEHOLDERS.district}
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {districts.map((d) => (
-              <SelectItem key={d.id} value={String(d.id)}>
-                {locationLabel(d)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          onChange={pickDistrict}
+          placeholder={LOCATION_PLACEHOLDERS.district}
+          searchPlaceholder="Search district…"
+          disabled={disabled || divisionId == null}
+          loading={busy("districts")}
+          invalid={districtError}
+          ariaLabel="District"
+        />
       </Field>
 
       <Field label={LOCATION_LABELS.thana} error={localityError}>
-        <Select
+        <SearchableSelect
+          id="checkout-locality"
+          options={toOptions(thanas)}
           value={thanaId ? String(thanaId) : undefined}
-          onValueChange={pickThana}
-          disabled={disabled || districtId == null || busy("thanas")}
-        >
-          <SelectTrigger aria-invalid={localityError || undefined}>
-            <SelectValue placeholder={busy("thanas") ? "Loading…" : LOCATION_PLACEHOLDERS.thana} />
-          </SelectTrigger>
-          <SelectContent>
-            {thanas.map((t) => (
-              <SelectItem key={t.id} value={String(t.id)}>
-                {locationLabel(t)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          onChange={pickThana}
+          placeholder={LOCATION_PLACEHOLDERS.thana}
+          searchPlaceholder="Search thana / upazila…"
+          disabled={disabled || districtId == null}
+          loading={busy("thanas")}
+          invalid={localityError}
+          ariaLabel="Thana or Upazila"
+        />
       </Field>
 
       <Field label={LOCATION_LABELS.area} error={localityError}>
-        <Select
+        <SearchableSelect
+          options={toOptions(areas)}
           value={areas.find((a) => a.name === value.area)?.id?.toString()}
-          onValueChange={pickArea}
-          disabled={disabled || thanaId == null || busy("areas")}
-        >
-          <SelectTrigger aria-invalid={localityError || undefined}>
-            <SelectValue placeholder={busy("areas") ? "Loading…" : LOCATION_PLACEHOLDERS.area} />
-          </SelectTrigger>
-          <SelectContent>
-            {areas.map((a) => (
-              <SelectItem key={a.id} value={String(a.id)}>
-                {locationLabel(a)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          onChange={pickArea}
+          placeholder={LOCATION_PLACEHOLDERS.area}
+          searchPlaceholder="Search area / union…"
+          disabled={disabled || thanaId == null}
+          loading={busy("areas")}
+          invalid={localityError}
+          ariaLabel="Area or Union"
+        />
         {/* A thana with no listed areas is legitimate — some metropolitan zones
             carry none. The thana alone is then the finest location we have, and
             validation accepts it (see localityValue in checkout). */}
