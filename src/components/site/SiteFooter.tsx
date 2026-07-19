@@ -228,7 +228,7 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
     e.preventDefault();
     const no = orderId.trim();
     // Prefill the order number on the track page; the customer adds their
-    // tracking code there (guest tracking needs order number + code).
+    // access code there (guest tracking needs order number + code).
     navigate({ to: "/track", search: no ? { o: no } : {} });
   };
 

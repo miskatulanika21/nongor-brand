@@ -69,7 +69,7 @@ function OrderErrorPanel({
       ? "Order not found"
       : "We couldn't load this order";
   const description = needsAuth
-    ? "This order is tied to an account. Sign in to view it, or track a guest order with its tracking code."
+    ? "This order is tied to an account. Sign in to view it, or track a guest order with its access code."
     : reason === "not_found"
       ? "We couldn't find this order on your account."
       : orderReadReasonMessage(reason);
