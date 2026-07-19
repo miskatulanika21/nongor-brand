@@ -467,6 +467,12 @@ export const pollStatusSchema = z.object({
   shipmentId: uuid,
 });
 
+export const createReturnSchema = z.object({
+  /** The FORWARD shipment being returned — the return leg is created from it. */
+  parentShipmentId: uuid,
+  reason: z.string().trim().max(500).optional(),
+});
+
 export const reconciliationSchema = z.object({
   shipmentId: uuid,
   courierFee: z.number().min(0).optional(),
@@ -480,7 +486,17 @@ export const listShipmentsSchema = z.object({
   orderId: uuid,
 });
 
+export const courierAccountSchema = z.object({
+  provider: z.enum(COURIER_PROVIDERS),
+});
+
+export const courierPaymentSchema = z.object({
+  provider: z.enum(COURIER_PROVIDERS),
+  paymentId: z.string().trim().min(1).max(100),
+});
+
 export type BookCourierInput = z.infer<typeof bookCourierSchema>;
+export type CreateReturnInput = z.infer<typeof createReturnSchema>;
 export type CancelShipmentInput = z.infer<typeof cancelShipmentSchema>;
 export type ReconciliationInput = z.infer<typeof reconciliationSchema>;
 
@@ -502,6 +518,9 @@ export const COURIER_ERROR_MESSAGES: Record<string, string> = {
   empty_courier_reference:
     "The courier accepted the booking but returned no tracking reference. Please retry.",
   actor_not_authorized: "You are not authorized to perform this action.",
+  duplicate_return: "A return is already open for this shipment.",
+  return_not_supported:
+    "This courier has no return API — record the return in their merchant panel.",
 };
 
 export const KNOWN_COURIER_ERROR_CODES = new Set(Object.keys(COURIER_ERROR_MESSAGES));

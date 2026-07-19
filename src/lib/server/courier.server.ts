@@ -58,12 +58,52 @@ export interface BookShipmentParams {
     orderNo: string;
     customerName: string;
     customerPhone: string;
+    customerEmail?: string | null;
     shipAddress: string;
     shipDistrict: string;
     total: number;
     paymentMethod: PaymentMethod;
     paymentStatus: PaymentStatus;
   };
+}
+
+/**
+ * Per-provider booking defaults, read from courier_providers at book time.
+ *
+ * These columns existed and were seeded since Stage 5 but nothing ever read
+ * them, so every Pathao parcel booked at the adapter's hardcoded 0.5 kg
+ * regardless of the configured value — and Pathao prices by weight. Reading
+ * them here is what makes the admin-facing configuration actually mean
+ * something.
+ *
+ * Failure is non-fatal: a booking must not be blocked because a defaults lookup
+ * failed. Falling back to undefined reproduces the previous adapter defaults.
+ */
+async function getProviderDefaults(
+  provider: string,
+): Promise<{ weight?: number; serviceType?: string }> {
+  try {
+    const admin = createAdminSupabaseClient();
+    const { data } = await admin
+      .from("courier_providers")
+      .select("default_weight_kg, default_service_type")
+      .eq("id", provider)
+      .maybeSingle();
+
+    if (!data) return {};
+    // default_weight_kg is numeric → the driver hands it back as a string.
+    const weight = data.default_weight_kg == null ? undefined : Number(data.default_weight_kg);
+    return {
+      weight: weight != null && Number.isFinite(weight) && weight > 0 ? weight : undefined,
+      serviceType: data.default_service_type ?? undefined,
+    };
+  } catch (err) {
+    safeServerLog("warn", "Could not read courier provider defaults", {
+      provider,
+      error: err instanceof Error ? err.message : "unknown",
+    });
+    return {};
+  }
 }
 
 export interface BookShipmentResult {
@@ -156,14 +196,25 @@ export async function bookShipment(params: BookShipmentParams): Promise<BookShip
   }
 
   // ── Phase 2: call external courier API (no open transaction) ───────────
+  // Provider defaults are read AFTER the pending row is committed so a slow or
+  // failing lookup cannot hold a transaction open across the network call.
+  const defaults = await getProviderDefaults(provider);
+
   const bookingReq: CourierBookingRequest = {
     orderNo: order.orderNo,
     recipientName: order.customerName,
     recipientPhone: order.customerPhone,
+    recipientEmail: order.customerEmail ?? undefined,
     recipientAddress: order.shipAddress,
     district: order.shipDistrict,
     codAmount,
     note,
+    // Not the product list: item names would leak the customer's purchase to
+    // anyone handling the parcel. The order number is enough for the courier to
+    // identify it in a damage or loss dispute.
+    itemDescription: `Nongorr order ${order.orderNo}`,
+    weight: defaults.weight,
+    serviceType: defaults.serviceType,
   };
 
   const result = await adapter.book(bookingReq);
@@ -237,6 +288,104 @@ export async function recordShipmentEvent(
     p_raw_payload: rawPayload,
     p_source: source,
   });
+}
+
+// ── Returns ──────────────────────────────────────────────────────────────────
+
+export interface CreateReturnResult {
+  shipmentId: string;
+  success: boolean;
+  returnRequestId: string | null;
+  /** True when the courier has no return API and the leg was recorded manually. */
+  manual: boolean;
+  error?: string;
+}
+
+/**
+ * Raise a return leg for a delivered/failed forward shipment.
+ *
+ * Same 3-phase shape as bookShipment — the pending row is committed before any
+ * network call, so a hung courier API can never hold a transaction open:
+ *   Phase 1: create_return_shipment  → pending return row (committed)
+ *   Phase 2: adapter.createReturn()  → external call (no open transaction)
+ *   Phase 3: mark success / failure  → committed
+ *
+ * Providers without a return API (Pathao, manual) are NOT an error: the return
+ * leg is recorded so the timeline and reconciliation stay truthful, flagged
+ * `manual: true` so the admin knows to raise it in the merchant panel.
+ */
+export async function createReturnShipment(
+  actorId: string,
+  parentShipmentId: string,
+  reason?: string,
+): Promise<CreateReturnResult> {
+  // ── Phase 1: create the pending return row (committed) ──────────────────
+  const created = await rpc<{
+    shipment_id: string;
+    provider: string;
+    consignment_id: string;
+  }>("create_return_shipment", {
+    p_actor: actorId,
+    p_parent_id: parentShipmentId,
+    p_reason: reason ?? null,
+  });
+
+  const { shipment_id: shipmentId, provider, consignment_id: consignmentId } = created;
+
+  let adapter;
+  try {
+    adapter = getCourierAdapter(provider);
+  } catch (err) {
+    await rpc<void>("fail_shipment_booking", {
+      p_shipment_id: shipmentId,
+      p_error: err instanceof Error ? err.message : "provider_not_configured",
+    });
+    throw new CourierError("provider_not_configured");
+  }
+
+  // Provider has no return API — record the leg and tell the caller plainly.
+  if (typeof adapter.createReturn !== "function") {
+    await rpc<void>("mark_shipment_booking_success", {
+      p_shipment_id: shipmentId,
+      p_consignment_id: consignmentId,
+      p_tracking_code: null,
+      p_raw_response: { manual: true, reason: "provider has no return API" },
+    });
+    return { shipmentId, success: true, returnRequestId: null, manual: true };
+  }
+
+  // ── Phase 2: external call ─────────────────────────────────────────────
+  const result = await adapter.createReturn(consignmentId, reason);
+
+  // ── Phase 3: record the outcome ────────────────────────────────────────
+  if (result.success) {
+    await rpc<void>("mark_shipment_booking_success", {
+      p_shipment_id: shipmentId,
+      // The courier's return-request id is this leg's own reference; the parent
+      // consignment stays as the consignment so the two legs remain linked.
+      p_consignment_id: consignmentId,
+      p_tracking_code: result.returnRequestId,
+      p_raw_response: result.rawResponse ?? null,
+    });
+    return {
+      shipmentId,
+      success: true,
+      returnRequestId: result.returnRequestId,
+      manual: false,
+    };
+  }
+
+  await rpc<void>("fail_shipment_booking", {
+    p_shipment_id: shipmentId,
+    p_error: result.error ?? "Unknown return request error",
+  });
+  return {
+    shipmentId,
+    success: false,
+    returnRequestId: null,
+    manual: false,
+    error: result.error,
+  };
 }
 
 // ── Cancel ────────────────────────────────────────────────────────────────────
@@ -372,6 +521,48 @@ export async function updateReconciliation(
     p_cod_settled_at: data.codSettledAt ?? null,
     p_settlement_ref: data.settlementRef ?? null,
   });
+}
+
+// ── Courier account reads (COD reconciliation) ───────────────────────────────
+//
+// Read-only money data pulled from the courier so reconciliation stops being a
+// hand-typed exercise. Deliberately NOT auto-written into shipments: these
+// numbers decide what the business is owed, so a human confirms them via
+// updateReconciliation. The API surfaces them; it does not silently apply them.
+
+export async function getCourierBalance(
+  provider: string,
+): Promise<{ success: boolean; balance: number | null; error?: string }> {
+  if (provider !== "steadfast") {
+    return { success: false, balance: null, error: "Balance is only available for SteadFast." };
+  }
+  // Validates credentials are present and the provider is known.
+  getCourierAdapter(provider);
+  const { steadfastGetBalance } = await import("./courier/steadfast.server");
+  return steadfastGetBalance();
+}
+
+export async function listCourierPayments(
+  provider: string,
+): Promise<{ success: boolean; payments: unknown[]; error?: string }> {
+  if (provider !== "steadfast") {
+    return { success: false, payments: [], error: "Payments are only available for SteadFast." };
+  }
+  getCourierAdapter(provider);
+  const { steadfastListPayments } = await import("./courier/steadfast.server");
+  return steadfastListPayments();
+}
+
+export async function getCourierPayment(
+  provider: string,
+  paymentId: string,
+): Promise<{ success: boolean; payment: unknown | null; error?: string }> {
+  if (provider !== "steadfast") {
+    return { success: false, payment: null, error: "Payments are only available for SteadFast." };
+  }
+  getCourierAdapter(provider);
+  const { steadfastGetPayment } = await import("./courier/steadfast.server");
+  return steadfastGetPayment(paymentId);
 }
 
 // ── Providers ────────────────────────────────────────────────────────────────

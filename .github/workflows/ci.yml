@@ -197,6 +197,19 @@ jobs:
           [ -z "$DB_URL" ] && DB_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
           psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/stage5_db.test.sql
 
+      # Courier RPC smoke test: calls EVERY api.* courier RPC once to prove each
+      # body actually executes. A plpgsql body is not resolved until called, so a
+      # bad function reference inside one applies cleanly and passes db lint —
+      # exactly how api.list_shipments (row_to_jsonb, which does not exist) raised
+      # on every call from Stage 5 until 2026-07-19 with CI fully green. Includes
+      # a coverage guard that fails if a courier RPC is ever left un-called.
+      - name: DB integration tests (courier RPC smoke)
+        run: |
+          command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
+          DB_URL=$(supabase status -o env 2>/dev/null | sed -n 's/^DB_URL=//p' | tr -d '"')
+          [ -z "$DB_URL" ] && DB_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/courier_rpc_smoke.test.sql
+
       # Stage-6: banners (grant posture, upsert create/update/not-found,
       # media-library-only images, CHECK coherence, public window filtering +
       # sort ordering + no updated_by leak, live flag, delete_media in-use guard,

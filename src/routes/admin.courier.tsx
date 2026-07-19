@@ -26,6 +26,7 @@ import {
   AlertTriangle,
   CheckCircle,
   XCircle,
+  Undo2,
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -33,10 +34,12 @@ import { listOrdersFn } from "@/lib/orders.api";
 import {
   bookCourierFn,
   cancelShipmentFn,
+  createReturnFn,
   listShipmentsFn,
   listCourierProvidersFn,
   pollShipmentStatusFn,
 } from "@/lib/courier.api";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { formatBDT } from "@/lib/brand";
 import { orderStatusMeta, type OrderStatus } from "@/lib/orders-shared";
 import type { CourierProviderId } from "@/lib/courier-shared";
@@ -59,6 +62,7 @@ const STATUS_COLORS: Record<string, string> = {
 const BOOKABLE_STATUSES: OrderStatus[] = ["ready_to_ship", "courier_booked", "delivery_failed"];
 
 function CourierPage() {
+  const confirm = useConfirm();
   const [orders, setOrders] = useState<
     Array<{
       id: string;
@@ -139,19 +143,31 @@ function CourierPage() {
         );
       }
 
-      // Load shipments for each order
+      // Load shipments for each order.
+      // Failures must be visible: silently skipping them renders a booked order
+      // as though it has no shipment — no tracking code, no Cancel button — which
+      // is exactly how the broken api.list_shipments went unnoticed for so long.
       const shipMap: typeof shipments = {};
+      let shipmentLoadFailures = 0;
       for (const o of all) {
         try {
           const shipResult = await listShipmentsFn({ data: { orderId: o.id } });
           if (shipResult.success && Array.isArray(shipResult.shipments)) {
             shipMap[o.id] = shipResult.shipments as (typeof shipments)[string];
+          } else {
+            shipmentLoadFailures++;
           }
         } catch {
-          /* ignore */
+          shipmentLoadFailures++;
         }
       }
       setShipments(shipMap);
+      if (shipmentLoadFailures > 0) {
+        toast.error(
+          `Could not load shipment details for ${shipmentLoadFailures} order(s). ` +
+            `Tracking and cancel actions may be missing.`,
+        );
+      }
     } catch {
       toast.error("Failed to load orders");
     } finally {
@@ -213,6 +229,39 @@ function CourierPage() {
       }
     },
     [loadOrders],
+  );
+
+  // ── Raise a return leg ───────────────────────────────────────────────────
+  const handleReturn = useCallback(
+    async (shipmentId: string) => {
+      const ok = await confirm({
+        title: "Request a return?",
+        description:
+          "This asks the courier to collect the parcel back from the customer. " +
+          "A return fee usually applies and it cannot be undone from here.",
+        confirmText: "Request return",
+      });
+      if (!ok) return;
+
+      try {
+        const result = await createReturnFn({ data: { parentShipmentId: shipmentId } });
+        if (result.success) {
+          // A provider without a return API still records the leg — say so
+          // plainly rather than implying the courier was actually notified.
+          toast.success(
+            result.manual
+              ? "Return recorded. This courier has no return API — raise it in their merchant panel too."
+              : `Return requested${result.returnRequestId ? ` (${result.returnRequestId})` : ""}.`,
+          );
+          await loadOrders();
+        } else {
+          toast.error(result.error ?? "Could not request return");
+        }
+      } catch {
+        toast.error("Return request failed");
+      }
+    },
+    [confirm, loadOrders],
   );
 
   // ── Cancel shipment ──────────────────────────────────────────────────────
@@ -352,6 +401,14 @@ function CourierPage() {
                           onClick={() => handlePoll(activeShipment.id)}
                         >
                           <RefreshCw className="mr-1 h-3 w-3" /> Refresh status
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          onClick={() => handleReturn(activeShipment.id)}
+                        >
+                          <Undo2 className="mr-1 h-3 w-3" /> Request return
                         </Button>
                         <Button
                           size="sm"
