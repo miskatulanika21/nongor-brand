@@ -68,6 +68,67 @@ export interface BookShipmentParams {
 }
 
 /**
+ * Translate an order's stored location ids into the courier's own ids.
+ *
+ * orders.ship_*_id point at bd_* rows; the Pathao ids live on those rows. Both
+ * hops are best-effort: any miss returns undefined and the adapter falls back
+ * to auto-address, which is exactly the pre-existing behaviour. A location
+ * lookup must never block a booking.
+ */
+async function getPathaoLocationIds(orderId: string): Promise<{
+  cityId?: number;
+  zoneId?: number;
+  areaId?: number;
+}> {
+  try {
+    const admin = createAdminSupabaseClient();
+    const { data: order } = await admin
+      .from("orders")
+      .select("ship_district_id, ship_thana_id, ship_area_id")
+      .eq("id", orderId)
+      .maybeSingle();
+    if (!order?.ship_district_id || !order?.ship_thana_id) return {};
+
+    const [{ data: d }, { data: t }, areaRes] = await Promise.all([
+      admin
+        .from("bd_districts")
+        .select("pathao_city_id")
+        .eq("id", order.ship_district_id)
+        .maybeSingle(),
+      admin
+        .from("bd_upazilas")
+        .select("pathao_zone_id")
+        .eq("id", order.ship_thana_id)
+        .maybeSingle(),
+      order.ship_area_id
+        ? admin
+            .from("bd_unions")
+            .select("pathao_area_id")
+            .eq("id", order.ship_area_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+
+    // City AND zone are required together — Pathao rejects a zone without its
+    // city, and a city alone is no better than auto-address.
+    if (!d?.pathao_city_id || !t?.pathao_zone_id) return {};
+    return {
+      cityId: d.pathao_city_id,
+      zoneId: t.pathao_zone_id,
+      areaId:
+        (areaRes as { data: { pathao_area_id: number | null } | null }).data?.pathao_area_id ??
+        undefined,
+    };
+  } catch (err) {
+    safeServerLog("warn", "Could not resolve Pathao location ids; using auto-address", {
+      orderId,
+      error: err instanceof Error ? err.message : "unknown",
+    });
+    return {};
+  }
+}
+
+/**
  * Per-provider booking defaults, read from courier_providers at book time.
  *
  * These columns existed and were seeded since Stage 5 but nothing ever read
@@ -199,6 +260,8 @@ export async function bookShipment(params: BookShipmentParams): Promise<BookShip
   // Provider defaults are read AFTER the pending row is committed so a slow or
   // failing lookup cannot hold a transaction open across the network call.
   const defaults = await getProviderDefaults(provider);
+  // Only Pathao consumes these; skip the lookup entirely for other providers.
+  const pathaoIds = provider === "pathao" ? await getPathaoLocationIds(orderId) : {};
 
   const bookingReq: CourierBookingRequest = {
     orderNo: order.orderNo,
@@ -215,6 +278,9 @@ export async function bookShipment(params: BookShipmentParams): Promise<BookShip
     itemDescription: `Nongorr order ${order.orderNo}`,
     weight: defaults.weight,
     serviceType: defaults.serviceType,
+    recipientCityId: pathaoIds.cityId,
+    recipientZoneId: pathaoIds.zoneId,
+    recipientAreaId: pathaoIds.areaId,
   };
 
   const result = await adapter.book(bookingReq);

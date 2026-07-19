@@ -157,6 +157,18 @@ export interface CheckoutCustomer {
   address: string;
   email?: string;
   area?: string;
+  /**
+   * Level 3 of the address hierarchy — thana (metropolitan) or upazila (rural).
+   *
+   * Carried alongside the resolved ids because a Pathao booking needs
+   * recipient_city / recipient_zone, and the zone IS the thana. Without these
+   * the courier falls back to parsing the free-text address, which is what the
+   * location work exists to stop.
+   */
+  thana?: string;
+  districtId?: number;
+  thanaId?: number;
+  areaId?: number;
 }
 
 export interface PlaceOrderResult {
@@ -390,6 +402,18 @@ export const checkoutCustomerSchema = z.object({
       z.string().trim().max(200).optional(),
     )
     .optional(),
+  // Level 3 + resolved ids. All optional: an order placed without them still
+  // succeeds and the courier falls back to auto-address, so a location lookup
+  // failure can never block a sale.
+  thana: z
+    .preprocess(
+      (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+      z.string().trim().max(200).optional(),
+    )
+    .optional(),
+  districtId: z.number().int().positive().optional(),
+  thanaId: z.number().int().positive().optional(),
+  areaId: z.number().int().positive().optional(),
 });
 
 /** Validator for placeOrderFn. */

@@ -89,5 +89,49 @@ export async function placeOrder(args: PlaceOrderArgs): Promise<PlaceOrderResult
     p_guest_token_hash: args.guestTokenHash ?? null,
   });
   if (error) throwCheckoutError(error);
-  return data as PlaceOrderResult;
+  const result = data as PlaceOrderResult;
+
+  // Attach the level-3 thana and the resolved location ids.
+  //
+  // Written separately rather than threaded through place_order: that function
+  // is ~8.7KB of pricing, stock-reservation, coupon and idempotency logic, and
+  // rewriting it to carry four more fields would risk the most safety-critical
+  // path in the app for a feature that degrades gracefully.
+  //
+  // Best-effort ON PURPOSE. If this fails the order still stands and courier
+  // booking falls back to parsing the address — exactly the behaviour before
+  // these columns existed. A location lookup must never cost a sale.
+  const c = args.customer as {
+    thana?: string;
+    districtId?: number;
+    thanaId?: number;
+    areaId?: number;
+  };
+  if (c.thana || c.districtId || c.thanaId || c.areaId) {
+    try {
+      const { error: locError } = await admin.schema("api").rpc("set_order_location", {
+        p_order_id: result.order_id,
+        p_thana: c.thana ?? null,
+        p_district_id: c.districtId ?? null,
+        p_thana_id: c.thanaId ?? null,
+        p_area_id: c.areaId ?? null,
+      });
+      if (locError) {
+        const { safeServerLog } = await import("./security.server");
+        safeServerLog("warn", "set_order_location failed; order stands without ids", {
+          orderNo: result.order_no,
+          code: locError.code,
+          message: locError.message,
+        });
+      }
+    } catch (err) {
+      const { safeServerLog } = await import("./security.server");
+      safeServerLog("warn", "set_order_location threw; order stands without ids", {
+        orderNo: result.order_no,
+        error: err instanceof Error ? err.message : "unknown",
+      });
+    }
+  }
+
+  return result;
 }
