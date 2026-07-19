@@ -24,7 +24,8 @@
     "staging:guard": "node scripts/staging-guard.mjs",
     "staging:migrations": "node scripts/staging-guard.mjs && npx -y supabase@2.33.9 migration list --linked",
     "staging:push": "node scripts/staging-guard.mjs && npx -y supabase@2.33.9 db push",
-    "staging:reset": "node scripts/staging-guard.mjs && npx -y supabase@2.33.9 db reset --linked"
+    "staging:reset": "node scripts/staging-guard.mjs && npx -y supabase@2.33.9 db reset --linked",
+    "test:a11y": "playwright test e2e/a11y.spec.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

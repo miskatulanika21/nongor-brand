@@ -1,6 +1,7 @@
-name: Post-deploy smoke
+name: Post-deploy checks
 
-# Runs the read-only Playwright smoke suite against a freshly-deployed URL.
+# Runs the read-only Playwright smoke suite AND the axe accessibility suite
+# against a freshly-deployed URL.
 #
 # Two entry points:
 #   1. deployment_status — Vercel's GitHub integration creates a GitHub
@@ -22,6 +23,13 @@ on:
         description: "Base URL to smoke (e.g. https://nongor-brand.vercel.app)"
         required: true
         type: string
+  # Weekly axe run against production. Without this the accessibility suite is
+  # effectively inert: deployment_status hands us the PROTECTED per-deploy URL
+  # for previews AND production, so every automatic run skips until
+  # VERCEL_AUTOMATION_BYPASS_SECRET exists. The schedule targets the public
+  # domain, needs no secret, and so actually executes.
+  schedule:
+    - cron: "0 3 * * 1"
 
 # Never smoke the same target twice concurrently; cancel a superseded run.
 concurrency:
@@ -36,12 +44,12 @@ env:
 
 jobs:
   smoke:
-    name: Smoke deployed URL
+    name: Smoke + a11y (deployed URL)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Only run on a SUCCESSFUL deployment (skip pending/failure/error states),
     # or on a manual dispatch. Non-success deployment_status events are no-ops.
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.deployment_status.state == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.event.deployment_status.state == 'success' }}
     steps:
       - name: Resolve target URL
         id: target
@@ -52,12 +60,18 @@ jobs:
           TGT_URL: ${{ github.event.deployment_status.target_url }}
           INPUT_URL: ${{ inputs.url }}
           BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          EVENT: ${{ github.event_name }}
         run: |
           # Manual dispatch wins. Otherwise prefer the live deployment URL
           # (environment_url); only fall back to target_url if it is the SITE and
           # not Vercel's dashboard inspector (vercel.com/...), which some
           # integration versions put in target_url and which is NOT smokeable.
           URL="$INPUT_URL"
+          # Scheduled runs carry no deployment payload and no input — they always
+          # target the public production domain.
+          if [ -z "$URL" ] && [ "$EVENT" = "schedule" ]; then
+            URL="https://nongorr.com"
+          fi
           if [ -z "$URL" ]; then
             URL="$ENV_URL"
           fi
@@ -118,10 +132,25 @@ jobs:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: bun run test:smoke
 
+      # Accessibility (axe-core, WCAG 2 A/AA) over the key storefront routes.
+      # This suite existed from Stage 7 P4 but ran in NO workflow, so a serious
+      # violation could reach production with CI fully green — which is exactly
+      # what happened on 2026-07-19 (a footer link distinguished by colour alone,
+      # link-in-text-block, on all six routes rendering the footer).
+      #
+      # `always()` so a smoke failure above does not mask the a11y result; the
+      # skip guard still applies.
+      - name: Run a11y suite (axe WCAG 2 A/AA)
+        if: ${{ always() && steps.target.outputs.skip != 'true' && steps.target.outputs.url != '' }}
+        env:
+          E2E_BASE_URL: ${{ steps.target.outputs.url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: bun run test:a11y
+
       - name: Upload Playwright report
         if: ${{ failure() && steps.target.outputs.skip != 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-smoke-report
+          name: playwright-report
           path: playwright-report/
           retention-days: 7
