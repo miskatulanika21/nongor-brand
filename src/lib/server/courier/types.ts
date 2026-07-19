@@ -14,9 +14,21 @@ export interface CourierBookingRequest {
   recipientName: string;
   /** Normalized Bangladesh mobile: 01XXXXXXXXX. */
   recipientPhone: string;
-  /** Full delivery address (Pathao auto-resolves city/zone from this). */
+  /**
+   * Full delivery address. Pathao auto-resolves city/zone from this when no
+   * explicit ids are supplied — see recipientCityId / recipientZoneId.
+   */
   recipientAddress: string;
   district: string;
+  /**
+   * Pathao's own city / zone / area ids, when the order carried a resolved
+   * location. Supplying them removes the dependence on Pathao parsing the
+   * free-text address, which mis-routes on unstructured Bangladeshi addresses
+   * and costs a return fee on COD. Absent → auto-address, exactly as before.
+   */
+  recipientCityId?: number;
+  recipientZoneId?: number;
+  recipientAreaId?: number;
   /**
    * Amount the courier should collect on delivery.
    * Computed server-side: COD → amount_due, prepaid → 0.
