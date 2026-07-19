@@ -18,6 +18,11 @@ import { z } from "zod";
 export type PublicSettings = {
   store_name: string;
   tagline: string | null;
+  /**
+   * Owner-set brand mark (a media-library URL). NULL means "use the bundled
+   * asset" — consumers treat this as an override, never a requirement.
+   */
+  logo_url: string | null;
   announcement_enabled: boolean;
   announcement_text: string | null;
   announcement_link: string | null;
@@ -111,6 +116,7 @@ const nonNegInt = (max?: number) => {
 export const settingsSaveSchema = z.object({
   store_name: reqText(80),
   tagline: optText(160),
+  logo_url: optUrl(500),
   announcement_enabled: z.boolean().optional(),
   announcement_text: optText(200),
   announcement_link: optUrl(300),
@@ -172,6 +178,7 @@ export function normalizePublicSettings(raw: unknown): PublicSettings | null {
   return {
     store_name: str(raw.store_name) ?? "Nongorr",
     tagline: str(raw.tagline),
+    logo_url: str(raw.logo_url),
     announcement_enabled: bool(raw.announcement_enabled, true),
     announcement_text: str(raw.announcement_text),
     announcement_link: str(raw.announcement_link),
