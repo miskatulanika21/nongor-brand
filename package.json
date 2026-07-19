@@ -13,9 +13,10 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:smoke": "playwright test e2e/smoke.spec.ts",
+    "test:smoke": "playwright test e2e/smoke.spec.ts --project=chromium",
     "check:migrations": "node scripts/check-migrations.mjs",
     "provision-admin": "npx tsx scripts/provision-admin.ts",
     "seed-catalog": "npx tsx scripts/seed-catalog.ts",
@@ -25,7 +26,7 @@
     "staging:migrations": "node scripts/staging-guard.mjs && npx -y supabase@2.33.9 migration list --linked",
     "staging:push": "node scripts/staging-guard.mjs && npx -y supabase@2.33.9 db push",
     "staging:reset": "node scripts/staging-guard.mjs && npx -y supabase@2.33.9 db reset --linked",
-    "test:a11y": "playwright test e2e/a11y.spec.ts"
+    "test:a11y": "playwright test e2e/a11y.spec.ts --project=chromium"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

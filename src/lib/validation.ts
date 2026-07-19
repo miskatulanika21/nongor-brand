@@ -5,10 +5,9 @@
  * No server-only imports — safe for browser bundles.
  */
 import { z } from "zod";
+import { BD_PHONE_REGEX } from "@/lib/bd-phone";
 
 // ---- Bangladesh phone ----
-
-const BD_PHONE_REGEX = /^01[3-9]\d{8}$/;
 
 /** Strip whitespace, dashes, and +880/880 prefixes. */
 export function normalizeBDPhone(value: string): string {

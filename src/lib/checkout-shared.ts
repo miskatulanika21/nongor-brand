@@ -14,6 +14,7 @@
  *     the coupon under a row lock. The client never computes a discount.
  */
 import { z } from "zod";
+import { BD_PHONE_REGEX } from "@/lib/bd-phone";
 import type { CartItem } from "@/lib/store";
 import type { DeliveryZone } from "@/lib/checkout-ui";
 import type { ManualPaymentMethod, PublicSettings } from "@/lib/settings.schema";
@@ -21,7 +22,7 @@ import type { ManualPaymentMethod, PublicSettings } from "@/lib/settings.schema"
 /** Delivery zones, matching the DB CHECK and DeliveryZone union. */
 export const DELIVERY_ZONE_VALUES = ["dhaka", "major", "outside"] as const;
 /** Bangladesh mobile, normalized to 01XXXXXXXXX (matches the checkout form). */
-export const BD_PHONE_RE = /^01[3-9]\d{8}$/;
+export const BD_PHONE_RE = BD_PHONE_REGEX;
 
 // ── Payment methods ──────────────────────────────────────────────────────────
 
