@@ -68,6 +68,28 @@ describe("settingsSaveSchema", () => {
     }
   });
 
+  it("treats logo_url as a clearable, scheme-restricted link", () => {
+    // Null/empty means "fall back to the bundled asset", so clearing must parse.
+    expect(settingsSaveSchema.parse({ logo_url: "" }).logo_url).toBeNull();
+    expect(
+      settingsSaveSchema.safeParse({ logo_url: "https://cdn.example.com/logo.webp" }).success,
+    ).toBe(true);
+    // Same F-15 posture as the other operator-supplied URLs.
+    expect(settingsSaveSchema.safeParse({ logo_url: "javascript:alert(1)" }).success).toBe(false);
+    expect(settingsSaveSchema.safeParse({ logo_url: "//evil.com" }).success).toBe(false);
+    expect(
+      settingsSaveSchema.safeParse({ logo_url: `https://x.test/${"a".repeat(500)}` }).success,
+    ).toBe(false);
+  });
+
+  it("defaults logo_url to null when the DB has not set one", () => {
+    expect(normalizePublicSettings({ store_name: "Nongorr" })?.logo_url).toBeNull();
+    expect(
+      normalizePublicSettings({ store_name: "Nongorr", logo_url: "https://cdn.test/l.webp" })
+        ?.logo_url,
+    ).toBe("https://cdn.test/l.webp");
+  });
+
   it("accepts http(s) and site-relative links", () => {
     expect(
       settingsSaveSchema.safeParse({ instagram: "https://instagram.com/nongorr" }).success,

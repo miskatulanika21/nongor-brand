@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -7,6 +7,7 @@ import founderPortrait from "@/assets/founder-portrait.webp";
 import logo from "@/assets/nongorr-logo-transparent.webp";
 import sizeChart from "@/assets/size-chart.webp";
 import { absUrl } from "@/lib/site-config";
+import type { PublicSettings } from "@/lib/settings.schema";
 import {
   ArrowRight,
   Ruler,
@@ -130,6 +131,15 @@ function AboutNav() {
 }
 
 function About() {
+  // The owner can set a brand mark in admin Settings; it overrides the bundled
+  // asset here. The _site layout has already fetched public settings for this
+  // navigation, so reading them costs no extra request, and an unset logo
+  // falls back to the build-time import — no network, no broken image.
+  const { publicSettings } = useRouteContext({ from: "/_site" }) as {
+    publicSettings: PublicSettings | null;
+  };
+  const logoSrc = publicSettings?.logo_url || logo;
+
   return (
     <div className="overflow-x-clip">
       {/* 1 — HERO */}
@@ -145,13 +155,13 @@ function About() {
         />
         <img
           aria-hidden
-          src={logo}
+          src={logoSrc}
           alt=""
           className="pointer-events-none absolute -right-10 top-1/2 -z-10 hidden w-[34rem] max-w-none -translate-y-1/2 opacity-[0.05] md:block"
         />
         <div className="mx-auto max-w-4xl px-4 py-20 text-center sm:px-6 sm:py-28 animate-fade-in">
           <img
-            src={logo}
+            src={logoSrc}
             alt="Nongorr"
             width={72}
             height={72}
@@ -270,7 +280,7 @@ function About() {
             />
             <div className="grid aspect-square w-full place-items-center rounded-[2.5rem] border border-gold/30 bg-card p-12 shadow-card">
               <img
-                src={logo}
+                src={logoSrc}
                 alt="The Nongorr anchor emblem"
                 width={320}
                 height={320}
