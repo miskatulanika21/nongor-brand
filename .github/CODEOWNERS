@@ -1,0 +1,16 @@
+# Code owners — GitHub auto-requests review from these owners on matching PRs.
+# Last match wins, so the security-sensitive paths below override the catch-all.
+
+* @miskatulanika21
+
+# Database: migrations are forward-only and applied to production by hand.
+/supabase/migrations/ @miskatulanika21
+
+# Auth, RLS boundaries, and server-only code (includes csp-hash.server.ts).
+/src/lib/server/ @miskatulanika21
+/src/lib/auth-types.ts @miskatulanika21
+/src/routes/api.csp-report.ts @miskatulanika21
+
+# CI, deploy, and repo security configuration.
+/.github/ @miskatulanika21
+/vercel.json @miskatulanika21
