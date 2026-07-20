@@ -1,0 +1,77 @@
+name: Dependabot lockfile sync
+
+# Dependabot's npm ecosystem rewrites package.json but does NOT maintain
+# bun.lock, so its PRs land with a stale lockfile and CI's
+# `bun install --frozen-lockfile` correctly refuses them. That gate is load
+# bearing (see the bun-vs-npm lockfile drift noted in the docs) and must not be
+# weakened, so instead this workflow regenerates bun.lock on the PR branch.
+#
+# ONE MANUAL STEP REMAINS, by GitHub's design: the commit below is pushed with
+# GITHUB_TOKEN, and events from GITHUB_TOKEN create workflow runs in an
+# "approval required" state. The PR will show "Approve and run" — click it and
+# CI runs against the synced lockfile. Using a PAT or GitHub App token here
+# would remove that click; a PAT is deliberately NOT used, to avoid storing a
+# long-lived credential with write access in this repo.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+concurrency:
+  group: dependabot-lockfile-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  BUN_VERSION: "1.3.14"
+
+jobs:
+  sync:
+    name: Regenerate bun.lock
+    runs-on: ubuntu-latest
+    # Dependabot PRs only. The branch check is belt-and-braces: this job pushes
+    # commits, so it must never be reachable from an arbitrary contributor's PR.
+    if: >-
+      github.actor == 'dependabot[bot]' &&
+      startsWith(github.head_ref, 'dependabot/')
+    steps:
+      # Check out the PR branch itself (not the merge ref) so the commit can be
+      # pushed back to it. persist-credentials (default true) supplies the token.
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      # Deliberately NOT --frozen-lockfile: resolving the manifest Dependabot
+      # just edited is the entire point of this job.
+      - name: Resolve dependencies against the updated manifest
+        run: bun install
+
+      - name: Commit bun.lock if it changed
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- bun.lock; then
+            echo "bun.lock already in sync — nothing to push."
+            exit 0
+          fi
+          # Guard: this job may only ever touch the lockfile. If bun somehow
+          # dirtied anything else, stop rather than push an unreviewed change.
+          changed=$(git diff --name-only)
+          if [ "$changed" != "bun.lock" ]; then
+            echo "Refusing to push: expected only bun.lock, got:"
+            echo "$changed"
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bun.lock
+          git commit -m "chore(deps): sync bun.lock with the updated manifest"
+          git push origin "HEAD:${{ github.head_ref }}"
+          echo "::notice title=bun.lock synced::Pushed a lockfile commit. The new CI run needs 'Approve and run' on the PR (GITHUB_TOKEN pushes are approval-gated by GitHub)."

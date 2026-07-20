@@ -4,6 +4,11 @@
 # `npm` covers package.json (the app deps). Grouped so a routine week is a
 # couple of review-able PRs, not dozens. Security updates are never grouped and
 # never limited — they always come through immediately as their own PRs.
+#
+# NOTE: this project installs with bun, and Dependabot's npm ecosystem does NOT
+# update bun.lock — it rewrites package.json only, which fails CI's
+# `bun install --frozen-lockfile`. The .github/workflows/dependabot-lockfile.yml
+# workflow regenerates the lockfile on each Dependabot PR. Don't drop it.
 version: 2
 updates:
   - package-ecosystem: "npm"
