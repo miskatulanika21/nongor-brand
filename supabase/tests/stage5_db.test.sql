@@ -495,27 +495,55 @@ BEGIN
   IF (v->>'attempt_no')::int <> 2 THEN RAISE EXCEPTION 'FAIL: attempt_no expected 2, got %', v->>'attempt_no'; END IF;
 END $$;
 
--- #12: newsletter subscribe — insert, idempotent re-consent, invalid rejected
+-- #12: newsletter double opt-in — subscribe (pending), confirm, unsubscribe,
+--       re-subscribe idempotency, invalid rejected (Stage-6 P2)
 DO $$
-DECLARE v jsonb; v_id uuid; v_id2 uuid; raised boolean;
+DECLARE v jsonb; v_id uuid; v_confirm text; v_unsub text; raised boolean;
 BEGIN
+  -- new subscriber → pending with tokens; email normalized (trim + lower)
   v := api.subscribe_newsletter('  Buyer@Example.COM  ', NULL);
-  v_id := (v->>'id')::uuid;
-  IF (SELECT email FROM public.newsletter_subscribers WHERE id = v_id) <> 'buyer@example.com' THEN
-    RAISE EXCEPTION 'FAIL: email not normalized'; END IF;
+  IF (v->>'status') <> 'pending' THEN RAISE EXCEPTION 'FAIL: new subscribe not pending: %', v->>'status'; END IF;
+  v_confirm := v->>'confirm_token';
+  v_unsub   := v->>'unsubscribe_token';
+  IF v_confirm IS NULL OR v_unsub IS NULL THEN RAISE EXCEPTION 'FAIL: opt-in tokens missing'; END IF;
+  SELECT id INTO v_id FROM public.newsletter_subscribers WHERE email = 'buyer@example.com';
+  IF v_id IS NULL THEN RAISE EXCEPTION 'FAIL: email not normalized/stored'; END IF;
+  IF (SELECT status FROM public.newsletter_subscribers WHERE id = v_id) <> 'pending' THEN
+    RAISE EXCEPTION 'FAIL: stored row not pending'; END IF;
 
-  -- re-subscribe: same row, whatsapp added, unsubscribed_at cleared
-  UPDATE public.newsletter_subscribers SET unsubscribed_at = now() WHERE id = v_id;
+  -- confirm → confirmed (records confirmed_at)
+  v := api.confirm_newsletter(v_confirm);
+  IF (v->>'status') <> 'confirmed' THEN RAISE EXCEPTION 'FAIL: confirm not confirmed: %', v->>'status'; END IF;
+  IF (SELECT status FROM public.newsletter_subscribers WHERE id = v_id) <> 'confirmed'
+     OR (SELECT confirmed_at FROM public.newsletter_subscribers WHERE id = v_id) IS NULL THEN
+    RAISE EXCEPTION 'FAIL: row not confirmed'; END IF;
+
+  -- confirm again → idempotent (already_confirmed, no error, no double welcome)
+  v := api.confirm_newsletter(v_confirm);
+  IF (v->>'status') <> 'already_confirmed' THEN RAISE EXCEPTION 'FAIL: re-confirm not idempotent: %', v->>'status'; END IF;
+
+  -- subscribing an already-confirmed address → no-op 'confirmed', whatsapp refreshed, no new token
   v := api.subscribe_newsletter('buyer@example.com', '01712345678');
-  v_id2 := (v->>'id')::uuid;
-  IF v_id2 <> v_id THEN RAISE EXCEPTION 'FAIL: re-subscribe created a new row'; END IF;
-  IF (SELECT unsubscribed_at FROM public.newsletter_subscribers WHERE id = v_id) IS NOT NULL THEN
-    RAISE EXCEPTION 'FAIL: re-subscribe did not clear unsubscribed_at'; END IF;
+  IF (v->>'status') <> 'confirmed' THEN RAISE EXCEPTION 'FAIL: resubscribe confirmed not idempotent: %', v->>'status'; END IF;
+  IF (v ? 'confirm_token') THEN RAISE EXCEPTION 'FAIL: confirmed re-subscribe should not issue a token'; END IF;
   IF (SELECT whatsapp FROM public.newsletter_subscribers WHERE id = v_id) <> '01712345678' THEN
     RAISE EXCEPTION 'FAIL: whatsapp not stored'; END IF;
 
-  -- re-subscribe WITHOUT whatsapp keeps the existing one
-  PERFORM api.subscribe_newsletter('buyer@example.com', NULL);
+  -- unsubscribe via stable token → unsubscribed
+  v := api.unsubscribe_newsletter(v_unsub);
+  IF (v->>'status') <> 'unsubscribed' THEN RAISE EXCEPTION 'FAIL: unsubscribe failed: %', v->>'status'; END IF;
+  IF (SELECT status FROM public.newsletter_subscribers WHERE id = v_id) <> 'unsubscribed'
+     OR (SELECT unsubscribed_at FROM public.newsletter_subscribers WHERE id = v_id) IS NULL THEN
+    RAISE EXCEPTION 'FAIL: row not unsubscribed'; END IF;
+
+  -- re-subscribe after unsubscribe → same row, back to pending, unsubscribed_at cleared
+  v := api.subscribe_newsletter('buyer@example.com', NULL);
+  IF (v->>'status') <> 'pending' THEN RAISE EXCEPTION 'FAIL: resubscribe after unsub not pending: %', v->>'status'; END IF;
+  IF (SELECT id FROM public.newsletter_subscribers WHERE email = 'buyer@example.com') <> v_id THEN
+    RAISE EXCEPTION 'FAIL: re-subscribe created a new row'; END IF;
+  IF (SELECT unsubscribed_at FROM public.newsletter_subscribers WHERE id = v_id) IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL: re-subscribe did not clear unsubscribed_at'; END IF;
+  -- omitted whatsapp keeps the existing one
   IF (SELECT whatsapp FROM public.newsletter_subscribers WHERE id = v_id) <> '01712345678' THEN
     RAISE EXCEPTION 'FAIL: omitted whatsapp clobbered the stored one'; END IF;
 
@@ -527,16 +555,28 @@ BEGIN
     IF SQLERRM <> 'invalid_subscription' THEN RAISE EXCEPTION 'FAIL: invalid code %', SQLERRM; END IF;
   END;
   IF NOT raised THEN RAISE EXCEPTION 'FAIL: invalid email accepted'; END IF;
+
+  -- unknown tokens → 'invalid' (no error)
+  IF (api.confirm_newsletter('nope')->>'status') <> 'invalid' THEN
+    RAISE EXCEPTION 'FAIL: bad confirm token not invalid'; END IF;
+  IF (api.unsubscribe_newsletter('nope')->>'status') <> 'invalid' THEN
+    RAISE EXCEPTION 'FAIL: bad unsubscribe token not invalid'; END IF;
 END $$;
 
--- grant posture: newsletter RPC is service-role only
+-- grant posture: newsletter RPCs are service-role only
 DO $$
-DECLARE r text;
+DECLARE r text; fn text;
 BEGIN
   FOREACH r IN ARRAY ARRAY['anon','authenticated'] LOOP
-    IF has_function_privilege(r, 'api.subscribe_newsletter(text,text)', 'EXECUTE') THEN
-      RAISE EXCEPTION 'FAIL: % should not hold EXECUTE on subscribe_newsletter', r;
-    END IF;
+    FOREACH fn IN ARRAY ARRAY[
+      'api.subscribe_newsletter(text,text,text,text)',
+      'api.confirm_newsletter(text)',
+      'api.unsubscribe_newsletter(text)'
+    ] LOOP
+      IF has_function_privilege(r, fn, 'EXECUTE') THEN
+        RAISE EXCEPTION 'FAIL: % should not hold EXECUTE on %', r, fn;
+      END IF;
+    END LOOP;
   END LOOP;
 END $$;
 

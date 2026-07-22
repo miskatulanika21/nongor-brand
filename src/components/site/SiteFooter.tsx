@@ -186,7 +186,7 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [waToggle, setWaToggle] = useState(false);
-  const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "confirm" | "success" | "error">("idle");
   const [subscribing, setSubscribing] = useState(false);
   const [subscribeError, setSubscribeError] = useState<string | null>(null);
 
@@ -209,7 +209,9 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
     try {
       const res = await subscribeNewsletterFn({ data: parsed.data });
       if (res.success) {
-        setStatus("success");
+        // "pending" → a confirmation email just went out (double opt-in);
+        // "confirmed" → the address was already on the list.
+        setStatus(res.status === "confirmed" ? "success" : "confirm");
         setEmail("");
         setPhone("");
       } else {
@@ -253,11 +255,13 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
             exclusive offers.
           </p>
 
-          {status === "success" ? (
+          {status === "confirm" || status === "success" ? (
             <div className="mx-auto mt-7 flex max-w-md animate-scale-in items-center justify-center gap-2 rounded-2xl border border-gold/40 bg-gold/15 px-5 py-4 text-gold">
               <CheckCircle2 className="size-5" />
               <span className="font-medium">
-                You're in! We'll let you know about new drops and offers.
+                {status === "confirm"
+                  ? "Almost there — check your inbox to confirm your subscription."
+                  : "You're already subscribed! We'll keep you posted."}
               </span>
             </div>
           ) : (
