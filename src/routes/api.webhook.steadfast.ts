@@ -143,6 +143,15 @@ export const Route = createFileRoute("/api/webhook/steadfast")({
             safeServerLog(procError ? "error" : "info", "SteadFast webhook processed", {
               error: procError ?? "none",
             });
+
+            // Best-effort: push any freshly-enqueued customer notification now, so
+            // shipment emails go out within seconds instead of waiting for the
+            // daily cron catch-up. Never blocks the webhook's 200 response.
+            if (!procError) {
+              const { drainNotificationsBestEffort } =
+                await import("@/lib/server/notifications.server");
+              await drainNotificationsBestEffort();
+            }
           }
         } catch (err) {
           safeServerLog("error", "SteadFast webhook error", {

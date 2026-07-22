@@ -69,9 +69,12 @@ import { Route as SiteOrdersIndexRouteImport } from './routes/_site.orders.index
 import { Route as SiteAccountIndexRouteImport } from './routes/_site.account.index'
 import { Route as ApiWebhookSteadfastRouteImport } from './routes/api.webhook.steadfast'
 import { Route as ApiWebhookPathaoRouteImport } from './routes/api.webhook.pathao'
+import { Route as ApiCronNotificationsRouteImport } from './routes/api.cron.notifications'
 import { Route as SiteShopCategoryRouteImport } from './routes/_site.shop_.$category'
 import { Route as SiteProductSlugRouteImport } from './routes/_site.product.$slug'
 import { Route as SiteOrdersIdRouteImport } from './routes/_site.orders.$id'
+import { Route as SiteNewsletterUnsubscribeRouteImport } from './routes/_site.newsletter.unsubscribe'
+import { Route as SiteNewsletterConfirmRouteImport } from './routes/_site.newsletter.confirm'
 import { Route as SiteAccountSecurityRouteImport } from './routes/_site.account.security'
 import { Route as SiteAccountProfileRouteImport } from './routes/_site.account.profile'
 import { Route as SiteAccountMeasurementsRouteImport } from './routes/_site.account.measurements'
@@ -376,6 +379,11 @@ const ApiWebhookPathaoRoute = ApiWebhookPathaoRouteImport.update({
   path: '/api/webhook/pathao',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCronNotificationsRoute = ApiCronNotificationsRouteImport.update({
+  id: '/api/cron/notifications',
+  path: '/api/cron/notifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SiteShopCategoryRoute = SiteShopCategoryRouteImport.update({
   id: '/shop_/$category',
   path: '/shop/$category',
@@ -390,6 +398,17 @@ const SiteOrdersIdRoute = SiteOrdersIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => SiteOrdersRoute,
+} as any)
+const SiteNewsletterUnsubscribeRoute =
+  SiteNewsletterUnsubscribeRouteImport.update({
+    id: '/newsletter/unsubscribe',
+    path: '/newsletter/unsubscribe',
+    getParentRoute: () => SiteRoute,
+  } as any)
+const SiteNewsletterConfirmRoute = SiteNewsletterConfirmRouteImport.update({
+  id: '/newsletter/confirm',
+  path: '/newsletter/confirm',
+  getParentRoute: () => SiteRoute,
 } as any)
 const SiteAccountSecurityRoute = SiteAccountSecurityRouteImport.update({
   id: '/security',
@@ -472,9 +491,12 @@ export interface FileRoutesByFullPath {
   '/account/measurements': typeof SiteAccountMeasurementsRoute
   '/account/profile': typeof SiteAccountProfileRoute
   '/account/security': typeof SiteAccountSecurityRoute
+  '/newsletter/confirm': typeof SiteNewsletterConfirmRoute
+  '/newsletter/unsubscribe': typeof SiteNewsletterUnsubscribeRoute
   '/orders/$id': typeof SiteOrdersIdRoute
   '/product/$slug': typeof SiteProductSlugRoute
   '/shop/$category': typeof SiteShopCategoryRoute
+  '/api/cron/notifications': typeof ApiCronNotificationsRoute
   '/api/webhook/pathao': typeof ApiWebhookPathaoRoute
   '/api/webhook/steadfast': typeof ApiWebhookSteadfastRoute
   '/account/': typeof SiteAccountIndexRoute
@@ -537,9 +559,12 @@ export interface FileRoutesByTo {
   '/account/measurements': typeof SiteAccountMeasurementsRoute
   '/account/profile': typeof SiteAccountProfileRoute
   '/account/security': typeof SiteAccountSecurityRoute
+  '/newsletter/confirm': typeof SiteNewsletterConfirmRoute
+  '/newsletter/unsubscribe': typeof SiteNewsletterUnsubscribeRoute
   '/orders/$id': typeof SiteOrdersIdRoute
   '/product/$slug': typeof SiteProductSlugRoute
   '/shop/$category': typeof SiteShopCategoryRoute
+  '/api/cron/notifications': typeof ApiCronNotificationsRoute
   '/api/webhook/pathao': typeof ApiWebhookPathaoRoute
   '/api/webhook/steadfast': typeof ApiWebhookSteadfastRoute
   '/account': typeof SiteAccountIndexRoute
@@ -607,9 +632,12 @@ export interface FileRoutesById {
   '/_site/account/measurements': typeof SiteAccountMeasurementsRoute
   '/_site/account/profile': typeof SiteAccountProfileRoute
   '/_site/account/security': typeof SiteAccountSecurityRoute
+  '/_site/newsletter/confirm': typeof SiteNewsletterConfirmRoute
+  '/_site/newsletter/unsubscribe': typeof SiteNewsletterUnsubscribeRoute
   '/_site/orders/$id': typeof SiteOrdersIdRoute
   '/_site/product/$slug': typeof SiteProductSlugRoute
   '/_site/shop_/$category': typeof SiteShopCategoryRoute
+  '/api/cron/notifications': typeof ApiCronNotificationsRoute
   '/api/webhook/pathao': typeof ApiWebhookPathaoRoute
   '/api/webhook/steadfast': typeof ApiWebhookSteadfastRoute
   '/_site/account/': typeof SiteAccountIndexRoute
@@ -677,9 +705,12 @@ export interface FileRouteTypes {
     | '/account/measurements'
     | '/account/profile'
     | '/account/security'
+    | '/newsletter/confirm'
+    | '/newsletter/unsubscribe'
     | '/orders/$id'
     | '/product/$slug'
     | '/shop/$category'
+    | '/api/cron/notifications'
     | '/api/webhook/pathao'
     | '/api/webhook/steadfast'
     | '/account/'
@@ -742,9 +773,12 @@ export interface FileRouteTypes {
     | '/account/measurements'
     | '/account/profile'
     | '/account/security'
+    | '/newsletter/confirm'
+    | '/newsletter/unsubscribe'
     | '/orders/$id'
     | '/product/$slug'
     | '/shop/$category'
+    | '/api/cron/notifications'
     | '/api/webhook/pathao'
     | '/api/webhook/steadfast'
     | '/account'
@@ -811,9 +845,12 @@ export interface FileRouteTypes {
     | '/_site/account/measurements'
     | '/_site/account/profile'
     | '/_site/account/security'
+    | '/_site/newsletter/confirm'
+    | '/_site/newsletter/unsubscribe'
     | '/_site/orders/$id'
     | '/_site/product/$slug'
     | '/_site/shop_/$category'
+    | '/api/cron/notifications'
     | '/api/webhook/pathao'
     | '/api/webhook/steadfast'
     | '/_site/account/'
@@ -830,6 +867,7 @@ export interface RootRouteChildren {
   AuthCallbackRoute: typeof AuthCallbackRoute
   AuthConfirmRoute: typeof AuthConfirmRoute
   AuthUpdatePasswordRoute: typeof AuthUpdatePasswordRoute
+  ApiCronNotificationsRoute: typeof ApiCronNotificationsRoute
   ApiWebhookPathaoRoute: typeof ApiWebhookPathaoRoute
   ApiWebhookSteadfastRoute: typeof ApiWebhookSteadfastRoute
 }
@@ -1256,6 +1294,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWebhookPathaoRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/cron/notifications': {
+      id: '/api/cron/notifications'
+      path: '/api/cron/notifications'
+      fullPath: '/api/cron/notifications'
+      preLoaderRoute: typeof ApiCronNotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_site/shop_/$category': {
       id: '/_site/shop_/$category'
       path: '/shop/$category'
@@ -1276,6 +1321,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/orders/$id'
       preLoaderRoute: typeof SiteOrdersIdRouteImport
       parentRoute: typeof SiteOrdersRoute
+    }
+    '/_site/newsletter/unsubscribe': {
+      id: '/_site/newsletter/unsubscribe'
+      path: '/newsletter/unsubscribe'
+      fullPath: '/newsletter/unsubscribe'
+      preLoaderRoute: typeof SiteNewsletterUnsubscribeRouteImport
+      parentRoute: typeof SiteRoute
+    }
+    '/_site/newsletter/confirm': {
+      id: '/_site/newsletter/confirm'
+      path: '/newsletter/confirm'
+      fullPath: '/newsletter/confirm'
+      preLoaderRoute: typeof SiteNewsletterConfirmRouteImport
+      parentRoute: typeof SiteRoute
     }
     '/_site/account/security': {
       id: '/_site/account/security'
@@ -1368,6 +1427,8 @@ interface SiteRouteChildren {
   SiteTrackRoute: typeof SiteTrackRoute
   SiteWishlistRoute: typeof SiteWishlistRoute
   SiteIndexRoute: typeof SiteIndexRoute
+  SiteNewsletterConfirmRoute: typeof SiteNewsletterConfirmRoute
+  SiteNewsletterUnsubscribeRoute: typeof SiteNewsletterUnsubscribeRoute
   SiteProductSlugRoute: typeof SiteProductSlugRoute
   SiteShopCategoryRoute: typeof SiteShopCategoryRoute
 }
@@ -1398,6 +1459,8 @@ const SiteRouteChildren: SiteRouteChildren = {
   SiteTrackRoute: SiteTrackRoute,
   SiteWishlistRoute: SiteWishlistRoute,
   SiteIndexRoute: SiteIndexRoute,
+  SiteNewsletterConfirmRoute: SiteNewsletterConfirmRoute,
+  SiteNewsletterUnsubscribeRoute: SiteNewsletterUnsubscribeRoute,
   SiteProductSlugRoute: SiteProductSlugRoute,
   SiteShopCategoryRoute: SiteShopCategoryRoute,
 }
@@ -1466,6 +1529,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthCallbackRoute: AuthCallbackRoute,
   AuthConfirmRoute: AuthConfirmRoute,
   AuthUpdatePasswordRoute: AuthUpdatePasswordRoute,
+  ApiCronNotificationsRoute: ApiCronNotificationsRoute,
   ApiWebhookPathaoRoute: ApiWebhookPathaoRoute,
   ApiWebhookSteadfastRoute: ApiWebhookSteadfastRoute,
 }

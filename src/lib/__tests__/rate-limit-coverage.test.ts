@@ -179,6 +179,11 @@ const CLASSIFICATION: Record<string, Classification> = {
 
   // newsletter.api.ts
   subscribeNewsletterFn: "rate-limited",
+  // Token-gated email-link completions (high-entropy per-subscriber tokens),
+  // each acting only on the row that token identifies — same shape as the
+  // confirmEmail / confirmAuthToken completions above.
+  confirmNewsletterFn: "session-scoped",
+  unsubscribeNewsletterFn: "session-scoped",
 
   // orders.api.ts
   listOrdersFn: "rbac-read",
