@@ -3,6 +3,44 @@
 Authoritative record of verified project state. Code and live-environment
 behavior are the source of truth; this file is updated after every stage.
 
+\_Last updated: 2026-07-23 — **Stage 6 P1 + P2 shipped, plus a complete free-tier
+email stack (Resend + Cloudflare).** PR #44 merged to `main` (`61ca92a`); **750
+Vitest**; both prod migrations applied (`20260723120000` outbox sender,
+`20260723120100` newsletter double opt-in).
+
+- **P1 — notification outbox sender** (was owner-deferred pending an email
+  provider): drains `notification_events` and emails the customer on every
+  shipment lifecycle event via **Resend**, from `orders@nongorr.com` (Reply-To
+  `support@`). Atomic claim RPC `api.claim_notification_batch` (FOR UPDATE SKIP
+  LOCKED) + `claimed_at/attempts/last_error`; best-effort inline drain at both
+  courier webhooks + `/api/cron/notifications` catch-up (`CRON_SECRET`-gated,
+  daily on Vercel Hobby). Shared `email.server.ts` (fetch Resend client +
+  branded HTML/text layout, unit-tested for escaping).
+- **P2 — newsletter double opt-in**: footer subscribe now emails a confirmation
+  link (address only joins the list on confirm); welcome + `List-Unsubscribe`;
+  `/newsletter/confirm` + `/newsletter/unsubscribe` routes; consent trail
+  (status/confirm+unsubscribe tokens/source/ip). Existing single-opt-in rows
+  grandfathered to confirmed. Stage-5 DB test updated for the new flow.
+- **Email infrastructure (all free-tier).** Resend account `nongorr.anika`,
+  domain `nongorr.com` verified (DKIM+SPF); `RESEND_API_KEY`,
+  `RESEND_FROM_EMAIL`, `CRON_SECRET` in `.env` + **Vercel prod** (⚠ add Vercel
+  env via `printf '%s' | vercel env add`, NOT a PowerShell pipe — a trailing
+  newline on `CRON_SECRET` failed the prod build once). **Supabase Auth SMTP**
+  now routes signup-confirm/password-reset through Resend
+  (`smtp.resend.com`/`resend`/`noreply@nongorr.com`), lifting the ~3-4/hr cap.
+  **DNS migrated Namecheap → Cloudflare** (registration stays at Namecheap;
+  nameservers `addilyn`/`nick.ns.cloudflare.com`) so **Cloudflare Email Routing**
+  forwards `support@nongorr.com` → owner inbox alongside Resend's `send` MX;
+  Vercel A/`www` kept **DNS-only**; the Resend DKIM was re-added by hand (CF's
+  scan missed it). ⚠ **DNS is now managed in Cloudflare, not Namecheap Advanced
+  DNS.**
+- The failing **"Supabase Preview"** CI check was the stale Supabase↔GitHub
+  branching integration (Pro-gated, deploy-to-prod dead since Jun 24); it was
+  **disconnected**. The 6 exposed test accounts are **kept for testing** (owner
+  decision) — but their leaked passwords should be reset in Supabase.
+
+Remaining launch-gated items are unchanged (`docs/stage-7-launch-cutover.md` §7).\_
+
 \_Last updated: 2026-07-19 — **launch-prep batch merged (PRs #25–#36, `main` @
 `befa617`; CI green; 744 Vitest; 90 migrations).** No stage opened or closed;
 all owner-mergeable polish on top of the 2026-07-17 cut-over:

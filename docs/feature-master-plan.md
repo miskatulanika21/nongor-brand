@@ -55,15 +55,20 @@ order is accepted, send an OTP (SMS or WhatsApp) to confirm the phone is real an
 the buyer intends to receive. Dramatically cuts return-to-origin losses.
 _Note: SMS/WhatsApp is the one place a paid channel is justified — see 4.4._
 
-### 1.3 Order tracking & notifications (the "outbox sender") `P0` 🟢
+### 1.3 Order tracking & notifications (the "outbox sender") `P0` 🟢 — ✅ SHIPPED 2026-07-23 (PR #44)
 
-**Already unblocked — Resend is live.** Drain the existing `notification_events`
-outbox and email customers on every shipment lifecycle event
-(booked → picked up → in transit → delivered / failed / returned), plus a
-self-serve **track-my-order** page fed by courier status. This was deferred
-Stage-6 P1; the account, verified domain, and API key are now in place.
-_Builds on: `notification_events`, courier webhooks, Resend `RESEND_API_KEY`._
-_Design sketch in §A below._
+**DONE.** The `notification_events` outbox is drained and customers are emailed on
+every shipment lifecycle event (booked → picked up → in transit → delivered /
+failed / returned) via Resend, from `orders@nongorr.com`. Inline drain at both
+courier webhooks + a `CRON_SECRET`-gated `/api/cron/notifications` catch-up.
+The self-serve **track-my-order** page (`/track`) already existed; the CTA links to
+it. _Fast-follow: add an `order_placed` confirmation email (new event type + enqueue
+at checkout)._ _Built on: `notification_events`, courier webhooks, `email.server.ts`,
+`RESEND_API_KEY`. Design in §A._
+
+Also shipped alongside: **Supabase Auth SMTP → Resend** (auth mail) and
+**Cloudflare Email Routing** for inbound `support@nongorr.com → owner inbox`
+(DNS migrated Namecheap → Cloudflare, Vercel records DNS-only).
 
 ### 1.4 Abandoned-cart & post-purchase email flows `P1` 🟢
 
@@ -258,7 +263,12 @@ Concrete because it's next and fully unblocked:
 
 - Local payment gateway account (SSLCommerz/aamarPay) — owner signup.
 - SMS/WhatsApp provider for OTP + notifications — owner decision (paid channel).
-- Mail forwarding `contact@nongorr.com` → main inbox (free Namecheap forwarding) —
-  awaiting owner's chosen address(es).
 - Prod-account password reset for the 6 exposed test logins (kept for testing) —
   owner action in Supabase.
+- _(Optional)_ Gmail **"Send mail as" `support@nongorr.com`** via Resend SMTP so the
+  owner can also _reply from_ support@ (inbound already forwards via Cloudflare).
+
+**Done 2026-07-23 (were open):** email provider (Resend, `nongorr.com` verified);
+outbox sender + newsletter double opt-in (PR #44); Supabase Auth SMTP → Resend;
+`support@nongorr.com` inbound forwarding via **Cloudflare Email Routing** (DNS
+migrated Namecheap → Cloudflare).

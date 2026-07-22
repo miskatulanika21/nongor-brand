@@ -1,12 +1,14 @@
 # Stage 6 — Master Plan: Content & Operational Modules
 
-**Status:** CLOSED for the content scope (2026-07-12) — P3 banners
-(`96eac40`), P4 policies CMS (`3425d5b`), P6 reports + CSV (`bd84563`), P5
-size charts (`657802a`), P7 closure. **P1 (outbox sender) + P2 (newsletter
-consent) are DEFERRED BY THE OWNER** until they connect their own domain and
-pick the provider (email DNS: SPF/DKIM); they resume as an addendum to this
-plan. Checklist lives in `IMPLEMENTATION_PLAN.md`; verified state in
-`CURRENT_STATUS.md`. Original header follows.
+**Status:** **FULLY CLOSED (2026-07-23).** Content scope closed 2026-07-12 — P3
+banners (`96eac40`), P4 policies CMS (`3425d5b`), P6 reports + CSV (`bd84563`),
+P5 size charts (`657802a`), P7 closure. **P1 (notification outbox sender) + P2
+(newsletter double opt-in) — the two owner-deferred items — SHIPPED 2026-07-23
+(PR #44 `61ca92a`)** once **Resend** was connected as the email provider
+(domain `nongorr.com` verified, DKIM+SPF). Provider = Resend (free tier);
+`support@` inbound handled by Cloudflare Email Routing. Checklist in
+`IMPLEMENTATION_PLAN.md` (P1/P2 now `[x]`); verified state in `CURRENT_STATUS.md`
+(2026-07-23 entry). Original header follows.
 
 _Originally:_ PLANNED (plan created 2026-07-11). Not started. Predecessors:
 Stage 5 courier IMPLEMENTED + REMEDIATED (Parts 1–7, `173d434`→`462c42b`,

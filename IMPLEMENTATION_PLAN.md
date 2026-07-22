@@ -462,20 +462,24 @@ consumer. Sub-passes:
       the owner will set up the provider (e.g. Resend needs their own domain's
       DNS for SPF/DKIM) when they connect their own domain; do not start P1/P2
       until then.
-- [ ] **P1 — notification-outbox sender** — **DEFERRED (owner, 2026-07-12)**
-      until the owner connects their own domain + provider account: extend
-      `notification_events`
-      (status/attempts/backoff/`dedupe_key`/recipient snapshot),
-      `claim_notification_batch` (FOR UPDATE SKIP LOCKED) +
-      `mark_notification_result` (backoff + dead-letter),
-      `NotificationChannelAdapter` seam (mirror of `CourierAdapter`),
-      secret-gated drain endpoint driven by pg_cron + pg_net every minute
-      (+ opportunistic post-enqueue drains), Settings kill switch, admin
-      visibility tab with manual retry.
-- [ ] **P2 — newsletter consent management** — **DEFERRED (owner,
-      2026-07-12)** with P1 (needs the email rail): `unsubscribe_token` +
-      one-click `/newsletter/unsubscribe` route + `List-Unsubscribe`
-      header, admin subscriber list + CSV export.
+- [x] **P1 — notification-outbox sender** — **DONE (2026-07-23, PR #44
+      `61ca92a`)** once Resend was connected. Migration `20260723120000` extends
+      `notification_events` (`claimed_at/attempts/last_error`) + adds
+      `api.claim_notification_batch` (FOR UPDATE SKIP LOCKED, 15-min lease,
+      5-attempt ceiling, joins `orders` for recipient). `email.server.ts` =
+      fetch-based Resend client (no SDK) with three sender identities
+      (`orders@`/`hello@` send-only, `support@` Reply-To) + branded HTML/text
+      layout; `notifications.server.ts` renders per-event templates and settles
+      each row. Trigger = **best-effort inline drain at both courier webhooks** + `/api/cron/notifications` (`CRON_SECRET`-gated, daily on Vercel Hobby).
+      (Simpler than the original pg_cron/pg_net + admin-tab design — inline drain
+      covers timeliness on the free plan; kill-switch = unset `RESEND_API_KEY`.)
+- [x] **P2 — newsletter consent management** — **DONE (2026-07-23, PR #44)**.
+      Migration `20260723120100` upgrades `newsletter_subscribers` to
+      status + `confirm_token`/`unsubscribe_token` + consent trail (source/ip),
+      grandfathering existing rows to confirmed. Double opt-in: footer subscribe
+      emails a confirm link (address joins only on confirm), welcome mail carries
+      `List-Unsubscribe`; `/newsletter/confirm` + `/newsletter/unsubscribe`
+      routes. (Admin subscriber list + CSV export not built — deferrable.)
 - [x] **P3 — banners** (2026-07-11, migration `20260711162017`): `banners`
       table (schedule window, sort, media-library-only image, RPC-only
       deny-all) + cached public read + admin CRUD (`content.manage`, audited
