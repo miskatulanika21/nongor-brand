@@ -37,6 +37,8 @@ export async function sendNewsletterConfirmation(
   const url = confirmUrl(confirmToken);
   const { html, text } = renderBrandedEmail({
     preheader: "Confirm your subscription to Nongorr updates",
+    eyebrow: "Almost there",
+    accent: "gold",
     heading: "One quick step — confirm your email",
     paragraphs: [
       "Thanks for signing up for Nongorr updates: new drops, restocks, and members-only offers.",
@@ -69,6 +71,8 @@ export async function sendNewsletterWelcome(email: string, unsubToken: string): 
   const unsub = unsubscribeUrl(unsubToken);
   const { html, text } = renderBrandedEmail({
     preheader: "You're in — welcome to Nongorr",
+    eyebrow: "Welcome to the circle",
+    accent: "maroon",
     heading: "Welcome to Nongorr",
     paragraphs: [
       "You're subscribed. You'll be first to hear about new collections, restocks, and members-only offers.",

@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light only" />
+    <meta name="supported-color-schemes" content="light" />
+  </head>
+  <body style="margin: 0; padding: 0; background: #faf7f1">
+    <table
+      role="presentation"
+      width="100%"
+      cellpadding="0"
+      cellspacing="0"
+      style="background: #faf7f1; padding: 34px 12px"
+    >
+      <tr>
+        <td align="center">
+          <table
+            role="presentation"
+            width="100%"
+            cellpadding="0"
+            cellspacing="0"
+            style="
+              max-width: 600px;
+              background: #ffffff;
+              border: 1px solid #ece2d3;
+              border-radius: 16px;
+              overflow: hidden;
+            "
+          >
+            <tr>
+              <td
+                style="
+                  height: 4px;
+                  line-height: 4px;
+                  font-size: 0;
+                  background: linear-gradient(90deg, #b8863b, #7a1f2f);
+                "
+              >
+                &nbsp;
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding: 32px 40px 20px">
+                <img
+                  src="https://nongorr.com/apple-touch-icon.png"
+                  width="58"
+                  height="58"
+                  alt="Nongorr"
+                  style="display: block; border: 0; margin: 0 auto 12px"
+                />
+                <div
+                  style="
+                    font-family: Georgia, &quot;Times New Roman&quot;, serif;
+                    font-size: 22px;
+                    font-weight: 700;
+                    letter-spacing: 0.3em;
+                    text-transform: uppercase;
+                    color: #241f1d;
+                    padding-left: 0.3em;
+                  "
+                >
+                  Nongorr
+                </div>
+                <div
+                  style="
+                    font-family: Georgia, serif;
+                    font-size: 16px;
+                    color: #b8863b;
+                    margin-top: 2px;
+                  "
+                >
+                  নোঙর
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 0 40px">
+                <div style="height: 1px; background: #ece2d3; font-size: 0; line-height: 0">
+                  &nbsp;
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 30px 40px 8px">
+                <div
+                  style="
+                    font-family:
+                      -apple-system, &quot;Segoe UI&quot;, Roboto, Helvetica, Arial, sans-serif;
+                    font-size: 12px;
+                    font-weight: 700;
+                    letter-spacing: 0.16em;
+                    text-transform: uppercase;
+                    color: #b8863b;
+                    margin: 0 0 10px;
+                  "
+                >
+                  Secure sign-in
+                </div>
+                <h1
+                  style="
+                    margin: 0 0 18px;
+                    font-family: Georgia, &quot;Times New Roman&quot;, serif;
+                    font-size: 25px;
+                    line-height: 1.28;
+                    color: #241f1d;
+                    font-weight: 600;
+                  "
+                >
+                  Your sign-in link
+                </h1>
+                <p
+                  style="
+                    margin: 0 0 16px;
+                    font-family:
+                      -apple-system, &quot;Segoe UI&quot;, Roboto, Helvetica, Arial, sans-serif;
+                    font-size: 16px;
+                    line-height: 1.65;
+                    color: #4a433d;
+                  "
+                >
+                  Use the button below to sign in to Nongorr. For your security this link expires
+                  shortly and can only be used once.
+                </p>
+                <div style="margin: 22px 0 4px">
+                  <table
+                    role="presentation"
+                    cellpadding="0"
+                    cellspacing="0"
+                    style="display: inline-block"
+                  >
+                    <tr>
+                      <td style="border-radius: 8px; background: #7a1f2f">
+                        <a
+                          href="{{ .ConfirmationURL }}"
+                          style="
+                            display: inline-block;
+                            padding: 14px 30px;
+                            font-family:
+                              -apple-system, &quot;Segoe UI&quot;, Roboto, Helvetica, Arial,
+                              sans-serif;
+                            font-size: 15px;
+                            font-weight: 600;
+                            letter-spacing: 0.02em;
+                            text-decoration: none;
+                            color: #ffffff;
+                          "
+                          >Sign in to Nongorr</a
+                        >
+                      </td>
+                    </tr>
+                  </table>
+                </div>
+                <p
+                  style="
+                    margin: 18px 0 0;
+                    font-family:
+                      -apple-system, &quot;Segoe UI&quot;, Roboto, Helvetica, Arial, sans-serif;
+                    font-size: 13px;
+                    line-height: 1.55;
+                    color: #8a8078;
+                  "
+                >
+                  If you did not try to sign in, you can safely ignore this email.
+                </p>
+                <p
+                  style="
+                    margin: 12px 0 0;
+                    font-family:
+                      -apple-system, &quot;Segoe UI&quot;, Roboto, Helvetica, Arial, sans-serif;
+                    font-size: 12px;
+                    line-height: 1.5;
+                    color: #8a8078;
+                  "
+                >
+                  Or paste this link into your browser:<br />
+                  <span style="color: #b8863b; word-break: break-all">{{ .ConfirmationURL }}</span>
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 28px 40px 34px">
+                <div
+                  style="
+                    height: 1px;
+                    background: #ece2d3;
+                    margin-bottom: 20px;
+                    font-size: 0;
+                    line-height: 0;
+                  "
+                >
+                  &nbsp;
+                </div>
+                <div
+                  align="center"
+                  style="
+                    font-family: Georgia, serif;
+                    font-style: italic;
+                    font-size: 15px;
+                    color: #b8863b;
+                    margin-bottom: 14px;
+                  "
+                >
+                  Anchored in tradition, styled for you
+                </div>
+                <p
+                  style="
+                    margin: 0;
+                    text-align: center;
+                    font-family:
+                      -apple-system, &quot;Segoe UI&quot;, Roboto, Helvetica, Arial, sans-serif;
+                    font-size: 12px;
+                    line-height: 1.7;
+                    color: #8a8078;
+                  "
+                >
+                  <strong style="color: #4a433d">Nongorr &middot; নোঙর</strong> — crafted in
+                  Bangladesh.<br />
+                  Questions?
+                  <a href="mailto:support@nongorr.com" style="color: #b8863b; text-decoration: none"
+                    >support@nongorr.com</a
+                  >
+                  &middot;
+                  <a href="https://nongorr.com" style="color: #8a8078; text-decoration: none"
+                    >nongorr.com</a
+                  >
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
