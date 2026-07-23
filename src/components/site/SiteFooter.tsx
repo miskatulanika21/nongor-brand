@@ -43,9 +43,8 @@ import {
 
 type FooterLink = {
   label: string;
-  to?: string;
+  to: string;
   search?: Record<string, string>;
-  placeholder?: boolean;
 };
 
 const shopLinks: FooterLink[] = [
@@ -101,16 +100,8 @@ function FooterLinkItem({ link }: { link: FooterLink }) {
       <span className="absolute -bottom-0.5 left-0 h-px w-full origin-right scale-x-0 bg-gold transition-transform duration-300 group-hover:origin-left group-hover:scale-x-100" />
     </span>
   );
-  if (link.placeholder) {
-    // TODO: create dedicated route for this policy and replace button with Link.
-    return (
-      <button type="button" className={cls} aria-label={`${link.label} (coming soon)`}>
-        {underline}
-      </button>
-    );
-  }
   return (
-    <Link to={link.to!} search={link.search as never} className={cls}>
+    <Link to={link.to} search={link.search as never} className={cls}>
       {underline}
     </Link>
   );
