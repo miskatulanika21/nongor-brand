@@ -152,7 +152,7 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
 
   // Contact/social values: admin-configured (DB) first, static brand as fallback.
   const WHATSAPP = settings?.whatsapp || BRAND.whatsapp || "";
-  const EMAIL = settings?.contact_email || BRAND.email || "hello@nongorr.com";
+  const EMAIL = settings?.contact_email || BRAND.email || "support@nongorr.com";
   const waLink = (msg: string) =>
     WHATSAPP ? `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(msg)}` : "#";
   const socials = [

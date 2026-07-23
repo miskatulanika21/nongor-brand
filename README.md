@@ -169,8 +169,13 @@ CI/CD & rollback, backup & DR, secrets & rotation, and observability guides.
 
 ---
 
+## Contact
+
+- **Customer support:** support@nongorr.com
+- **Website:** [nongorr.com](https://nongorr.com)
+
 ## License
 
 Copyright © 2026 Nongorr (Miskatul Afrin Anika). All rights reserved.
 Proprietary and confidential — see [`LICENSE`](./LICENSE).
-For inquiries: **nongorr.anika@gmail.com**
+For licensing / business inquiries: **support@nongorr.com**

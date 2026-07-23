@@ -8,7 +8,6 @@ import { cn } from "@/lib/utils";
 import {
   ZOOM_MIN as MIN_SCALE,
   ZOOM_MAX as MAX_SCALE,
-  clampNumber as clamp,
   clampPanBox,
   nextZoomStop,
   pinchScale,

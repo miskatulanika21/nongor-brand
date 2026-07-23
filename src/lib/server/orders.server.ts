@@ -391,6 +391,22 @@ function mapTransitionResult(r: RawTransitionResult): OrderTransitionResult {
   };
 }
 
+/**
+ * Best-effort: when a transition lands the order on `confirmed` (an admin
+ * approved it), send the customer the "order confirmed" email (#2 of 2). No-op for
+ * every other target status and for idempotent no-ops. Never throws — email must
+ * never break an admin action.
+ */
+async function notifyIfConfirmed(result: OrderTransitionResult): Promise<void> {
+  if (result.status !== "confirmed" || result.noop) return;
+  try {
+    const { sendOrderConfirmed } = await import("./notifications.server");
+    await sendOrderConfirmed(result.orderId);
+  } catch {
+    /* email is a non-critical enhancement */
+  }
+}
+
 export interface TransitionArgs {
   orderId: string;
   toStatus: OrderStatus;
@@ -411,7 +427,9 @@ export async function transitionOrder(args: TransitionArgs): Promise<OrderTransi
     p_restock: args.restock ?? false,
   });
   if (error) throwOrderError(error);
-  return mapTransitionResult(data as RawTransitionResult);
+  const result = mapTransitionResult(data as RawTransitionResult);
+  await notifyIfConfirmed(result);
+  return result;
 }
 
 export async function verifyPayment(
@@ -423,7 +441,9 @@ export async function verifyPayment(
     .schema("api")
     .rpc("verify_payment", { p_order_id: orderId, p_actor: actorId });
   if (error) throwOrderError(error);
-  return mapTransitionResult(data as RawTransitionResult);
+  const result = mapTransitionResult(data as RawTransitionResult);
+  await notifyIfConfirmed(result);
+  return result;
 }
 
 export async function rejectPayment(
@@ -436,7 +456,9 @@ export async function rejectPayment(
     .schema("api")
     .rpc("reject_payment", { p_order_id: orderId, p_reason: reason, p_actor: actorId });
   if (error) throwOrderError(error);
-  return mapTransitionResult(data as RawTransitionResult);
+  const result = mapTransitionResult(data as RawTransitionResult);
+  await notifyIfConfirmed(result);
+  return result;
 }
 
 export async function confirmCod(orderId: string, actorId: string): Promise<OrderTransitionResult> {
@@ -445,7 +467,9 @@ export async function confirmCod(orderId: string, actorId: string): Promise<Orde
     .schema("api")
     .rpc("confirm_cod", { p_order_id: orderId, p_actor: actorId });
   if (error) throwOrderError(error);
-  return mapTransitionResult(data as RawTransitionResult);
+  const result = mapTransitionResult(data as RawTransitionResult);
+  await notifyIfConfirmed(result);
+  return result;
 }
 
 export async function cancelOrder(
@@ -458,7 +482,9 @@ export async function cancelOrder(
     .schema("api")
     .rpc("cancel_order", { p_order_id: orderId, p_actor: actorId, p_reason: reason ?? null });
   if (error) throwOrderError(error);
-  return mapTransitionResult(data as RawTransitionResult);
+  const result = mapTransitionResult(data as RawTransitionResult);
+  await notifyIfConfirmed(result);
+  return result;
 }
 
 export async function returnOrder(
@@ -475,7 +501,9 @@ export async function returnOrder(
     p_reason: reason ?? null,
   });
   if (error) throwOrderError(error);
-  return mapTransitionResult(data as RawTransitionResult);
+  const result = mapTransitionResult(data as RawTransitionResult);
+  await notifyIfConfirmed(result);
+  return result;
 }
 
 // ── Customer-facing reads (owner-scoped / guest-token) ───────────────────────

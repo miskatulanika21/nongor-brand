@@ -22,11 +22,12 @@ export const BRAND = {
   name: "Nongorr",
   tagline: "Anchored in tradition, styled for you",
 
-  // Contact
+  // Contact — support@ is the monitored, two-way inbox (Cloudflare Email Routing
+  // forwards it to the team; hello@ is send-only for the newsletter).
   phone: "+880 1616-510037",
   whatsapp: "8801616510037",
-  email: "hello@nongorr.com",
-  bkashNumber: "01700-000000",
+  email: "support@nongorr.com",
+  bkashNumber: "01872-647323",
 
   // Non-physical location (online boutique — no fabricated street address)
   address: "Online boutique · Bangladesh",

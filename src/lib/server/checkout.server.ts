@@ -133,5 +133,16 @@ export async function placeOrder(args: PlaceOrderArgs): Promise<PlaceOrderResult
     }
   }
 
+  // Best-effort order-confirmation email. Never blocks or breaks the sale; skipped
+  // on an idempotent replay so a retried checkout can't double-send.
+  if (!result.replayed) {
+    try {
+      const { sendOrderReceived } = await import("./notifications.server");
+      await sendOrderReceived({ order: result, customer: args.customer, method: args.method });
+    } catch {
+      /* email is a non-critical enhancement — swallow */
+    }
+  }
+
   return result;
 }
