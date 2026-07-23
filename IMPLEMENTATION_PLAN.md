@@ -4,6 +4,23 @@ Stage-by-stage plan with exit criteria. Derived from
 `nongorr-phase-2-antigravity-prompt.md` (V3). Update after each stage; keep in
 sync with `CURRENT_STATUS.md`.
 
+> **2026-07-23 — Stage 6 P1/P2 closed + final-stage audit (PRs #44/#45, `main` @
+> `1323dab`; 750 Vitest; 92 migrations).** The two owner-deferred Stage-6 passes
+> shipped now that an email provider is connected (Resend + Cloudflare, domain
+> `nongorr.com` verified DKIM+SPF): **P1 — notification outbox sender** drains
+> `notification_events` and emails the customer on every shipment lifecycle event
+> (atomic `api.claim_notification_batch`, `FOR UPDATE SKIP LOCKED`, attempts cap
+> `< 5`, 15-min lease; best-effort inline drain at both courier webhooks +
+> `/api/cron/notifications` daily catch-up) plus two-stage order emails
+> (received → confirmed); **P2 — newsletter double opt-in** (footer subscribe
+> emails a confirmation link; consent trail; `List-Unsubscribe`; confirm and
+> unsubscribe routes under `/newsletter`). Migrations `20260723120000` (outbox
+> sender) and `20260723120100` (newsletter double opt-in), both applied to prod.
+> A **final-stage full-repo audit** then ran green (typecheck / lint / prettier /
+> 750 Vitest / build) with **one dead-code removal** (`c9e5dfc`: unreachable
+> footer `placeholder` link branch). Remaining launch work is unchanged and
+> owner/legal-gated — see `docs/stage-7-launch-cutover.md` §7.
+>
 > **2026-07-19 — Launch-prep batch (PRs #25–#36, `main` @ `befa617`, CI green;
 > 744 Vitest; 90 migrations).** Non-stage-opening work on top of the cut-over:
 > **#25/#26** DB-backed founder profile (`/founder` + `/admin/founder`, migration

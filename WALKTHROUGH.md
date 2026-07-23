@@ -1,9 +1,32 @@
 # WALKTHROUGH — actual data flows
 
-Reflects what the code does today (Stages 2–6 closed for their shipped scope;
-checkout + order management, customer accounts, courier & shipments, and the
-Stage-6 content/reports modules all live — 67 migrations). Updated each stage.
+Reflects what the code does today (Stage 6 closed in full — content/reports
+_and_ the P1/P2 email flows; checkout + order management, customer accounts,
+courier & shipments all live — 92 migrations). Updated each stage.
 
+> **2026-07-23 Transactional email + newsletter flows go live (PRs #44/#45,
+> `main` @ `1323dab`).** Every customer-facing email now flows through
+> `email.server.ts` → **Resend** (`sendEmail` posts to the Resend API with an
+> idempotency key; `renderBrandedEmail` builds the branded HTML + plain-text
+> parts, unit-tested for escaping), sent from `orders@nongorr.com` with Reply-To
+> `support@` (Cloudflare Email Routing forwards `support@` to the owner inbox).
+> **Two order lifecycle emails:** `sendOrderReceived` fires best-effort from
+> checkout right after `place_order` (skipped on idempotent replay so a retried
+> checkout can't double-send), and `sendOrderConfirmed` fires when an admin moves
+> the order to `confirmed`. **Shipment updates** ride the Stage-5 outbox:
+> `drainNotificationOutbox` calls `api.claim_notification_batch` (claims unsent
+> rows `FOR UPDATE SKIP LOCKED`, increments `attempts`, stamps a 15-min
+> `claimed_at` lease), renders per-event copy, and settles each row `sent`/
+> released-for-retry/`skipped` — driven both best-effort inline at the two
+> courier webhooks (`drainNotificationsBestEffort`) and by a daily
+> `/api/cron/notifications` catch-up (`CRON_SECRET`-gated); a row is dropped as
+> poison after 5 attempts. **Newsletter is now double opt-in:** the footer
+> subscribe records a pending row + emails a confirmation link; the address only
+> joins the list when `/newsletter/confirm` is hit, and every send carries
+> `List-Unsubscribe` → `/newsletter/unsubscribe`. All email sends are no-ops when
+> the provider isn't configured, so the flows are always safe to call.
+> **Supabase Auth SMTP** also routes signup-confirm/password-reset through Resend.
+>
 > **2026-07-18 Focal Studio + edge cache (PRs #14–#19, `d8120f7`).** Banner and
 > product-primary images now carry a normalized focal point (`focal_x`/`focal_y`,
 > 0..1, default 0.5, migration `20260717175716`). `get_active_banners` /
