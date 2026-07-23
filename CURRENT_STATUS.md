@@ -3,6 +3,23 @@
 Authoritative record of verified project state. Code and live-environment
 behavior are the source of truth; this file is updated after every stage.
 
+\_Last updated: 2026-07-23 (later) — **final-stage full-repo audit: GREEN.**
+Ran the complete quality gate on `main` after the email work: `tsc --noEmit`
+(0 errors), ESLint (0 warnings), Prettier (clean), **750 Vitest across 66 files**,
+and the production build (✓ 36.6 s). No debug leftovers (every `console.*` in
+`src/` routes through the sanitized `safeServerLog`; no `debugger`, no
+`@ts-ignore`/`@ts-expect-error`). Spot-reviewed the freshest code — the
+notification outbox sender — end to end: the claim RPC increments `attempts`,
+caps at `< 5`, and leases for 15 min under `FOR UPDATE SKIP LOCKED`, so failed
+sends can't double-send or retry forever. **One dead-code removal shipped**
+(`c9e5dfc`, pushed): the footer `FooterLinkItem` `placeholder` branch rendered a
+non-functional `<button>` for "unbuilt" policy links, but every footer link now
+resolves to a real route, so the branch was unreachable — removed it, its
+`placeholder?` type field, and a stale `TODO`. Remaining pre-launch items are
+unchanged and **owner/legal-gated** (legal-copy review, analytics wiring, and
+resetting the 6 leaked test-account passwords in Supabase) — no code work is
+blocking.\_
+
 \_Last updated: 2026-07-23 — **Stage 6 P1 + P2 shipped, plus a complete free-tier
 email stack (Resend + Cloudflare).** PR #44 merged to `main` (`61ca92a`); **750
 Vitest**; both prod migrations applied (`20260723120000` outbox sender,
