@@ -9,6 +9,7 @@ import {
   ZOOM_MIN as MIN_SCALE,
   ZOOM_MAX as MAX_SCALE,
   clampPanBox,
+  containBox,
   nextZoomStop,
   pinchScale,
   zoomAroundPoint,
@@ -90,15 +91,29 @@ export function ProductImageViewer({
     [multiImage, onIndexChange, index, images.length],
   );
 
-  // Clamp pan to the *rendered* image box (clientWidth/Height are layout sizes,
-  // unaffected by the CSS transform), so the image can't be dragged into the
-  // surrounding letterbox.
-  const clampPan = useCallback((x: number, y: number, s: number) => {
+  // The painted (letterboxed) image box inside the viewport. The <img> fills
+  // the viewport, so its own client size is the letterbox, not the picture —
+  // derive the real box from the natural ratio instead.
+  const paintedBox = useCallback(() => {
     const vp = viewportRef.current;
     const img = vp?.querySelector("img");
-    if (!vp || !img) return { x: 0, y: 0 };
-    return clampPanBox(x, y, s, img.clientWidth, img.clientHeight, vp.clientWidth, vp.clientHeight);
+    if (!vp || !img) return null;
+    return {
+      vp,
+      ...containBox(img.naturalWidth, img.naturalHeight, vp.clientWidth, vp.clientHeight),
+    };
   }, []);
+
+  // Clamp pan to the painted image box (layout sizes, unaffected by the CSS
+  // transform) so the image can't be dragged into the surrounding letterbox.
+  const clampPan = useCallback(
+    (x: number, y: number, s: number) => {
+      const box = paintedBox();
+      if (!box) return { x: 0, y: 0 };
+      return clampPanBox(x, y, s, box.width, box.height, box.vp.clientWidth, box.vp.clientHeight);
+    },
+    [paintedBox],
+  );
 
   // Zoom to `targetScale` keeping the given viewport point stationary.
   const zoomAround = useCallback(
@@ -187,13 +202,13 @@ export function ProductImageViewer({
     if (pointers.current.size === 2 && pinchStart.current) {
       moved.current = true;
       setAnimating(false);
-      const vp = viewportRef.current;
-      const img = vp?.querySelector("img");
+      const box = paintedBox();
       const [a, b] = [...pointers.current.values()];
       const mx = (a.x + b.x) / 2;
       const my = (a.y + b.y) / 2;
       const target = pinchScale(pinchStart.current.scale, pinchStart.current.dist, pdist(a, b));
-      if (vp && img) {
+      if (box) {
+        const vp = box.vp;
         const rect = vp.getBoundingClientRect();
         const fx = mx - rect.left - rect.width / 2;
         const fy = my - rect.top - rect.height / 2;
@@ -203,8 +218,8 @@ export function ProductImageViewer({
           scaled.tx + (mx - prevMid.x),
           scaled.ty + (my - prevMid.y),
           scaled.scale,
-          img.clientWidth,
-          img.clientHeight,
+          box.width,
+          box.height,
           vp.clientWidth,
           vp.clientHeight,
         );
@@ -342,8 +357,13 @@ export function ProductImageViewer({
             sizes="100vw"
             quality={HIGH_IMAGE_QUALITY}
             draggable={false}
+            // Sized to the viewport, NOT intrinsically. `w-auto` let the
+            // browser's density-corrected intrinsic size drive layout, so a
+            // source narrower than the chosen srcset candidate rendered as a
+            // postage stamp — a 950px photo picked the 1920w candidate at
+            // sizes=100vw and laid out at 950 ÷ (1920/390) ≈ 193px on a phone.
             className={cn(
-              "max-h-full w-auto max-w-full object-contain will-change-transform",
+              "h-full w-full object-contain will-change-transform",
               animating && "transition-transform duration-200 ease-out",
             )}
             style={{

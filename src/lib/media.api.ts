@@ -55,7 +55,9 @@ export const requestMediaUpload = createServerFn({ method: "POST" })
   .validator(uploadRequestSchema)
   .handler(async ({ data }) => {
     const { guardAdminWrite } = await import("@/lib/server/admin-guard.server");
-    const g = await guardAdminWrite("media.manage", "requestMediaUpload");
+    const g = await guardAdminWrite("media.manage", "requestMediaUpload", {
+      rateLimitAction: "mediaUpload",
+    });
     if (!g.ok) return { success: false as const, error: g.error };
 
     const { createUpload } = await import("@/lib/server/media.server");
@@ -70,7 +72,9 @@ export const registerMedia = createServerFn({ method: "POST" })
   .validator(registerSchema)
   .handler(async ({ data }) => {
     const { guardAdminWrite } = await import("@/lib/server/admin-guard.server");
-    const g = await guardAdminWrite("media.manage", "registerMedia");
+    const g = await guardAdminWrite("media.manage", "registerMedia", {
+      rateLimitAction: "mediaUpload",
+    });
     if (!g.ok) return { success: false as const, error: g.error };
 
     const { registerUploaded } = await import("@/lib/server/media.server");

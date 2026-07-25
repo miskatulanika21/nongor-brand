@@ -2,7 +2,12 @@ import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { AdminHeader, ViewToggle } from "@/components/admin/AdminUI";
 import { listMedia, requestMediaUpload, registerMedia, removeMedia } from "@/lib/media.api";
-import { validateMediaFile, MEDIA_BUCKET, type MediaAsset } from "@/lib/media.schema";
+import {
+  validateMediaFile,
+  MEDIA_BUCKET,
+  MAX_MEDIA_LABEL,
+  type MediaAsset,
+} from "@/lib/media.schema";
 import { convertImageToWebP } from "@/lib/image-convert";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -40,6 +45,16 @@ function formatSize(bytes: number): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
+/**
+ * How many uploads run at once. Each one decodes and re-encodes a full-size
+ * bitmap on the main thread, so a wide-open queue would jank the tab and can
+ * exhaust memory on a phone; three keeps the network busy without that.
+ */
+const UPLOAD_CONCURRENCY = 3;
+
+type UploadFailure = { name: string; error: string };
+type UploadProgress = { done: number; total: number };
+
 function MediaLibraryAdmin() {
   const res = Route.useLoaderData();
   const router = useRouter();
@@ -47,71 +62,108 @@ function MediaLibraryAdmin() {
 
   const [view, setView] = useState<"grid" | "list">("grid");
   const [q, setQ] = useState("");
-  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState<UploadProgress | null>(null);
+  const [failures, setFailures] = useState<UploadFailure[]>([]);
   const confirm = useConfirm();
 
+  const uploading = progress !== null;
   const visible = media.filter((a) => !q || a.fileName.toLowerCase().includes(q.toLowerCase()));
 
-  async function handleFile(original: File) {
+  /** Upload one file. Returns an error string instead of toasting, so the
+   *  caller can summarise a whole batch in a single message. */
+  async function uploadOne(original: File): Promise<string | null> {
     const precheck = validateMediaFile({
       name: original.name,
       type: original.type,
       size: original.size,
     });
-    if (!precheck.ok) {
-      toast.error(precheck.error);
-      return;
+    if (!precheck.ok) return precheck.error;
+
+    // JPEG/PNG are converted to WebP in the browser and oversized photos are
+    // downscaled (best-effort — falls back to the original) so the storefront
+    // always serves a small, modern file.
+    const file = await convertImageToWebP(original);
+    if (file !== original) {
+      const check = validateMediaFile({ name: file.name, type: file.type, size: file.size });
+      if (!check.ok) return check.error;
     }
-    setUploading(true);
-    try {
-      // JPEG/PNG are converted to WebP in the browser (best-effort — falls
-      // back to the original) so the storefront always serves the small format.
-      const file = await convertImageToWebP(original);
-      if (file !== original) {
-        const check = validateMediaFile({ name: file.name, type: file.type, size: file.size });
-        if (!check.ok) {
-          toast.error(check.error);
-          return;
+    const dims = await readDimensions(file);
+    const ticketRes = await requestMediaUpload({
+      data: { name: file.name, type: file.type, size: file.size },
+    });
+    if (!ticketRes.success) return ticketRes.error;
+    const { path, token, publicUrl } = ticketRes.ticket;
+
+    const sb = getSupabaseBrowserClient();
+    const { error: upErr } = await sb.storage
+      .from(MEDIA_BUCKET)
+      .uploadToSignedUrl(path, token, file, { contentType: file.type });
+    if (upErr) return "The upload could not be completed. Please try again.";
+
+    const reg = await registerMedia({
+      data: {
+        path,
+        publicUrl,
+        fileName: file.name,
+        contentType: file.type,
+        sizeBytes: file.size,
+        width: dims?.width ?? null,
+        height: dims?.height ?? null,
+      },
+    });
+    if (!reg.success) return reg.error;
+    return null;
+  }
+
+  /**
+   * Upload a whole selection through a small worker pool. Nothing is capped:
+   * the queue is drained UPLOAD_CONCURRENCY at a time until it is empty, one
+   * file failing never stops the rest, and the library is refreshed once at
+   * the end rather than per file.
+   */
+  async function handleFiles(files: File[]) {
+    if (files.length === 0 || uploading) return;
+    setFailures([]);
+    setProgress({ done: 0, total: files.length });
+
+    const queue = [...files];
+    const failed: UploadFailure[] = [];
+    let done = 0;
+
+    const worker = async () => {
+      for (;;) {
+        const next = queue.shift();
+        if (!next) return;
+        let error: string | null;
+        try {
+          error = await uploadOne(next);
+        } catch {
+          error = "The upload could not be completed. Please try again.";
         }
+        if (error) failed.push({ name: next.name, error });
+        done += 1;
+        setProgress({ done, total: files.length });
       }
-      const dims = await readDimensions(file);
-      const ticketRes = await requestMediaUpload({
-        data: { name: file.name, type: file.type, size: file.size },
-      });
-      if (!ticketRes.success) {
-        toast.error(ticketRes.error);
-        return;
-      }
-      const { path, token, publicUrl } = ticketRes.ticket;
+    };
 
-      const sb = getSupabaseBrowserClient();
-      const { error: upErr } = await sb.storage
-        .from(MEDIA_BUCKET)
-        .uploadToSignedUrl(path, token, file, { contentType: file.type });
-      if (upErr) {
-        toast.error("The upload could not be completed. Please try again.");
-        return;
-      }
-
-      const reg = await registerMedia({
-        data: {
-          path,
-          publicUrl,
-          fileName: file.name,
-          contentType: file.type,
-          sizeBytes: file.size,
-          width: dims?.width ?? null,
-          height: dims?.height ?? null,
-        },
-      });
-      if (!reg.success) {
-        toast.error(reg.error);
-        return;
-      }
-      toast.success("Image uploaded.");
-      router.invalidate();
+    try {
+      await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, files.length) }, worker));
     } finally {
-      setUploading(false);
+      setProgress(null);
+    }
+
+    const ok = files.length - failed.length;
+    setFailures(failed);
+    if (ok > 0) {
+      toast.success(ok === 1 ? "Image uploaded." : `${ok} images uploaded.`);
+      router.invalidate();
+    }
+    if (failed.length > 0) {
+      toast.error(
+        failed.length === 1
+          ? `${failed[0].name} failed: ${failed[0].error}`
+          : `${failed.length} of ${files.length} images could not be uploaded.`,
+      );
     }
   }
 
@@ -140,26 +192,43 @@ function MediaLibraryAdmin() {
     <div>
       <AdminHeader
         title="Media Library"
-        description="Upload and manage product images. JPEG/PNG uploads are converted to WebP automatically for faster loading."
+        description={`Upload and manage product images — select as many as you like at once. Uploads are converted to WebP and resized down for fast loading, so photos straight from a phone are fine (up to ${MAX_MEDIA_LABEL} each).`}
         action={
           <Button asChild disabled={uploading}>
             <label className="cursor-pointer">
-              <Upload className="h-4 w-4" /> {uploading ? "Uploading…" : "Upload image"}
+              <Upload className="h-4 w-4" />{" "}
+              {progress ? `Uploading ${progress.done} / ${progress.total}…` : "Upload images"}
               <input
                 type="file"
                 accept="image/*"
+                multiple
                 className="hidden"
                 disabled={uploading}
                 onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) handleFile(f);
+                  const files = Array.from(e.target.files ?? []);
                   e.target.value = "";
+                  void handleFiles(files);
                 }}
               />
             </label>
           </Button>
         }
       />
+
+      {failures.length > 0 && (
+        <div className="mb-4 rounded-xl border border-destructive/40 bg-destructive/5 p-3 text-sm">
+          <p className="font-medium text-foreground">
+            {failures.length} image{failures.length === 1 ? "" : "s"} could not be uploaded
+          </p>
+          <ul className="mt-1 space-y-0.5 text-muted-foreground">
+            {failures.map((f) => (
+              <li key={f.name}>
+                <span className="font-medium">{f.name}</span> — {f.error}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {!res.success && (
         <div className="mb-4 rounded-xl border border-destructive/40 bg-destructive/5 p-3 text-sm text-muted-foreground">

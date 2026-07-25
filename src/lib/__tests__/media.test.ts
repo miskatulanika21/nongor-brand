@@ -7,7 +7,25 @@ import {
   toMediaAsset,
   toMediaAssets,
   MAX_MEDIA_BYTES,
+  MAX_MEDIA_LABEL,
 } from "@/lib/media.schema";
+
+describe("MAX_MEDIA_BYTES", () => {
+  // The cap is enforced in THREE places: here, the zod validators in
+  // media.api.ts (which derive from this constant), and the product-media
+  // bucket's file_size_limit in Postgres. The first two can never drift; this
+  // pins the third, which lives in a migration and must be updated by hand.
+  it("matches the storage bucket's file_size_limit (15 MB)", () => {
+    expect(MAX_MEDIA_BYTES).toBe(15728640);
+  });
+
+  it("states the same number in the message the admin actually reads", () => {
+    expect(MAX_MEDIA_LABEL).toBe("15 MB");
+    const r = validateMediaFile({ name: "a.png", type: "image/png", size: MAX_MEDIA_BYTES + 1 });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain(MAX_MEDIA_LABEL);
+  });
+});
 
 describe("validateMediaFile", () => {
   it("accepts an allowed image within the size limit", () => {

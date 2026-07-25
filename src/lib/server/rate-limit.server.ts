@@ -52,6 +52,13 @@ export const RATE_LIMITS = {
   staffProvision: { limit: 10, windowSec: 60 * 10 },
   /** Catalog admin writes (products, categories) — higher volume than auth ops. */
   catalogWrite: { limit: 120, windowSec: 60 * 5 },
+  /**
+   * Media-library uploads. Isolated from catalogWrite because one image costs
+   * TWO writes (mint the signed URL, then register the object), so a bulk
+   * gallery upload would otherwise burn the shared catalog budget and stall
+   * ordinary product saves. 600 ≈ 300 images per 5 minutes.
+   */
+  mediaUpload: { limit: 600, windowSec: 60 * 5 },
   /** Customer review submission — limit spam from a single IP/account. */
   reviewSubmit: { limit: 5, windowSec: 60 * 10 },
   /** Checkout price quote — a cheap public read; generous but not unlimited. */
