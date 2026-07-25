@@ -335,8 +335,14 @@ function ProductPage() {
       </nav>
 
       <div className="grid gap-10 lg:grid-cols-2">
-        {/* Gallery */}
-        <div className="space-y-3">
+        {/* Gallery.
+            `min-w-0` is load-bearing: a grid item defaults to `min-width:auto`,
+            so the column cannot shrink below its content's min-content width.
+            The thumbnail rail is `overflow-x-auto`, but that only makes it
+            SCROLLABLE — a block-level scroll container still reports the full
+            width of its shrink-0 children as min-content (6 thumbs = 540px).
+            Without this the whole page laid out at 556px inside a 390px phone. */}
+        <div className="min-w-0 space-y-3">
           <button
             ref={viewerTriggerRef}
             type="button"

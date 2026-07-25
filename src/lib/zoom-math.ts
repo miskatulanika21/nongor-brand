@@ -40,6 +40,30 @@ export interface PanBox {
   y: number;
 }
 
+export interface Box {
+  width: number;
+  height: number;
+}
+
+/**
+ * The box an `object-fit: contain` image actually paints inside a viewport —
+ * i.e. the source aspect ratio letterboxed into `vpW`×`vpH`.
+ *
+ * The viewer sizes its <img> to the full viewport so its layout size is
+ * deterministic (measuring the element would otherwise return the letterbox,
+ * and intrinsic sizing is unreliable: a `w`-descriptor srcset reports a
+ * DENSITY-CORRECTED intrinsic size, which collapses to a fraction of the real
+ * pixels whenever the chosen candidate is wider than the source file). Pan
+ * clamping needs the painted box, so it is derived here from the ratio alone —
+ * which density correction preserves. Falls back to the full viewport before
+ * the image has loaded (natural dimensions still 0).
+ */
+export function containBox(natW: number, natH: number, vpW: number, vpH: number): Box {
+  if (natW <= 0 || natH <= 0 || vpW <= 0 || vpH <= 0) return { width: vpW, height: vpH };
+  const scale = Math.min(vpW / natW, vpH / natH);
+  return { width: natW * scale, height: natH * scale };
+}
+
 /**
  * Clamp a pan offset to the RENDERED image box so it can never be dragged into
  * the surrounding letterbox. Dimensions are the layout (untransformed) sizes;

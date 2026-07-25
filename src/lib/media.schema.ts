@@ -5,7 +5,9 @@
  */
 
 export const MEDIA_BUCKET = "product-media";
-export const MAX_MEDIA_BYTES = 5 * 1024 * 1024; // 5 MB — mirrors the bucket limit
+export const MAX_MEDIA_BYTES = 15 * 1024 * 1024; // 15 MB — mirrors the bucket limit
+/** Human-readable form of the cap, so the UI copy can never drift from it. */
+export const MAX_MEDIA_LABEL = `${Math.round(MAX_MEDIA_BYTES / 1024 / 1024)} MB`;
 export const ALLOWED_MEDIA_TYPES = [
   "image/png",
   "image/jpeg",
@@ -37,7 +39,9 @@ export function validateMediaFile(file: {
     return { ok: false, error: "Only PNG, JPEG, WebP, AVIF or GIF images are allowed." };
   }
   if (file.size <= 0) return { ok: false, error: "The file is empty." };
-  if (file.size > MAX_MEDIA_BYTES) return { ok: false, error: "Images must be 5 MB or smaller." };
+  if (file.size > MAX_MEDIA_BYTES) {
+    return { ok: false, error: `Images must be ${MAX_MEDIA_LABEL} or smaller.` };
+  }
   if (!file.name || file.name.length > 260) return { ok: false, error: "Invalid file name." };
   return { ok: true };
 }

@@ -12,8 +12,36 @@ import {
   nextZoomStop,
   pinchScale,
   clampPanBox,
+  containBox,
   zoomAroundPoint,
 } from "@/lib/zoom-math";
+
+describe("containBox — the painted box of an object-contain image", () => {
+  it("letterboxes a portrait source into a landscape viewport", () => {
+    // 3:4 image in a 1000×500 viewport → height-bound.
+    expect(containBox(900, 1200, 1000, 500)).toEqual({ width: 375, height: 500 });
+  });
+
+  it("pillarboxes a landscape source into a portrait viewport", () => {
+    // 4:3 image in a 400×800 viewport → width-bound.
+    expect(containBox(1200, 900, 400, 800)).toEqual({ width: 400, height: 300 });
+  });
+
+  it("fills exactly when the ratios match", () => {
+    expect(containBox(950, 1198, 475, 599)).toEqual({ width: 475, height: 599 });
+  });
+
+  it("upscales a source smaller than the viewport (contain scales both ways)", () => {
+    // The regression this replaced: a 950px source must still fill the phone
+    // viewport rather than laying out at its density-corrected intrinsic size.
+    expect(containBox(100, 100, 400, 800)).toEqual({ width: 400, height: 400 });
+  });
+
+  it("falls back to the full viewport before the image has loaded", () => {
+    expect(containBox(0, 0, 390, 692)).toEqual({ width: 390, height: 692 });
+    expect(containBox(950, 1198, 0, 0)).toEqual({ width: 0, height: 0 });
+  });
+});
 
 describe("nextZoomStop — single-tap cycle fit → 2× → 3× → fit", () => {
   it("advances through the stops and wraps", () => {
