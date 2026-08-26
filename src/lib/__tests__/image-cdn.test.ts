@@ -4,6 +4,7 @@ import {
   IMAGE_QUALITIES,
   DEFAULT_IMAGE_QUALITY,
   HIGH_IMAGE_QUALITY,
+  ZOOM_IMAGE_QUALITY,
   isOptimizable,
   vercelImageUrl,
   buildImageSrcSet,
@@ -21,6 +22,7 @@ describe("vercel.json ↔ image-cdn drift guard", () => {
   it("the component default qualities are allowed by the config", () => {
     expect(vercelJson.images.qualities).toContain(DEFAULT_IMAGE_QUALITY);
     expect(vercelJson.images.qualities).toContain(HIGH_IMAGE_QUALITY);
+    expect(vercelJson.images.qualities).toContain(ZOOM_IMAGE_QUALITY);
   });
 });
 
@@ -41,7 +43,11 @@ describe("isOptimizable", () => {
     expect(isOptimizable("blob:http://localhost/x")).toBe(false);
     expect(isOptimizable("/favicon.ico")).toBe(false); // outside /assets/
     expect(isOptimizable("/assets/icon.svg")).toBe(false);
+    expect(isOptimizable("/assets/animated.gif")).toBe(false);
     expect(isOptimizable("https://evil.example.com/pic.jpg")).toBe(false);
+    expect(
+      isOptimizable("https://another-project.supabase.co/storage/v1/object/public/a.jpg"),
+    ).toBe(false);
     expect(
       isOptimizable("http://xomjxtmhkglhuiccekld.supabase.co/storage/v1/object/public/a"),
     ).toBe(false); // http, not https

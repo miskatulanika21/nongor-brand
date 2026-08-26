@@ -442,7 +442,13 @@ function BannerDialog({
                           key={m.id}
                           type="button"
                           onClick={() => {
-                            set("image_url", m.publicUrl);
+                            setForm((current) => ({
+                              ...current,
+                              image_url: m.publicUrl,
+                              focal_x: m.suggestedFocalX ?? 0.5,
+                              focal_y: m.suggestedFocalY ?? 0.5,
+                              zoom: 1,
+                            }));
                             setPickerOpen(false);
                           }}
                           className={`relative aspect-square overflow-hidden rounded-md border ${

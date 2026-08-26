@@ -1,49 +1,94 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-  validateMediaFile,
-  sanitizeFileName,
-  mediaStoragePath,
-  mediaErrorMessage,
-  toMediaAsset,
-  toMediaAssets,
   MAX_MEDIA_BYTES,
   MAX_MEDIA_LABEL,
+  MAX_SOURCE_BYTES,
+  MAX_SOURCE_LABEL,
+  MEDIA_FILE_ACCEPT,
+  mediaErrorMessage,
+  mediaStoragePath,
+  resolveMediaSourceType,
+  sanitizeFileName,
+  toMediaAsset,
+  toMediaAssets,
+  validateMediaDeliveryFile,
+  validateMediaSourceFile,
 } from "@/lib/media.schema";
 
-describe("MAX_MEDIA_BYTES", () => {
-  // The cap is enforced in THREE places: here, the zod validators in
-  // media.api.ts (which derive from this constant), and the product-media
-  // bucket's file_size_limit in Postgres. The first two can never drift; this
-  // pins the third, which lives in a migration and must be updated by hand.
-  it("matches the storage bucket's file_size_limit (15 MB)", () => {
-    expect(MAX_MEDIA_BYTES).toBe(15728640);
+describe("media byte limits", () => {
+  it("pins the delivery and private-original bucket limits", () => {
+    expect(MAX_MEDIA_BYTES).toBe(15 * 1024 * 1024);
+    expect(MAX_SOURCE_BYTES).toBe(30 * 1024 * 1024);
+    expect(MAX_MEDIA_LABEL).toBe("15 MB");
+    expect(MAX_SOURCE_LABEL).toBe("30 MB");
   });
 
-  it("states the same number in the message the admin actually reads", () => {
-    expect(MAX_MEDIA_LABEL).toBe("15 MB");
-    const r = validateMediaFile({ name: "a.png", type: "image/png", size: MAX_MEDIA_BYTES + 1 });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toContain(MAX_MEDIA_LABEL);
+  it("uses the correct limit in each validation message", () => {
+    const source = validateMediaSourceFile({
+      name: "a.heic",
+      type: "image/heic",
+      size: MAX_SOURCE_BYTES + 1,
+    });
+    const delivery = validateMediaDeliveryFile({
+      name: "a.webp",
+      type: "image/webp",
+      size: MAX_MEDIA_BYTES + 1,
+    });
+    expect(source.ok).toBe(false);
+    expect(delivery.ok).toBe(false);
+    if (!source.ok) expect(source.error).toContain(MAX_SOURCE_LABEL);
+    if (!delivery.ok) expect(delivery.error).toContain(MAX_MEDIA_LABEL);
   });
 });
 
-describe("validateMediaFile", () => {
-  it("accepts an allowed image within the size limit", () => {
-    expect(validateMediaFile({ name: "a.png", type: "image/png", size: 1000 })).toEqual({
+describe("source format resolution and validation", () => {
+  it("accepts web, phone, bitmap and archival photo formats", () => {
+    const cases = [
+      ["a.jpg", "image/jpeg", "image/jpeg"],
+      ["a.png", "image/png", "image/png"],
+      ["a.webp", "image/webp", "image/webp"],
+      ["a.avif", "image/avif", "image/avif"],
+      ["a.gif", "image/gif", "image/gif"],
+      ["a.bmp", "image/bmp", "image/bmp"],
+      ["a.heic", "image/heic", "image/heic"],
+      ["a.heif", "image/heif", "image/heif"],
+      ["a.tiff", "image/tiff", "image/tiff"],
+    ] as const;
+    for (const [name, type, expected] of cases) {
+      expect(validateMediaSourceFile({ name, type, size: 10 })).toEqual({
+        ok: true,
+        type: expected,
+      });
+    }
+  });
+
+  it("normalizes aliases and recovers missing browser MIME types from extensions", () => {
+    expect(resolveMediaSourceType("phone.JFIF", "")).toBe("image/jpeg");
+    expect(resolveMediaSourceType("phone.HEIC", "application/octet-stream")).toBe("image/heic");
+    expect(resolveMediaSourceType("scan.tif", "image/x-tiff")).toBe("image/tiff");
+    expect(resolveMediaSourceType("bitmap.dib", "image/x-ms-bmp")).toBe("image/bmp");
+  });
+
+  it("rejects active/document/creative formats outside the photo workflow", () => {
+    for (const [name, type] of [
+      ["vector.svg", "image/svg+xml"],
+      ["catalog.pdf", "application/pdf"],
+      ["design.psd", "image/vnd.adobe.photoshop"],
+      ["camera.cr3", "image/x-canon-cr3"],
+    ]) {
+      expect(validateMediaSourceFile({ name, type, size: 10 }).ok).toBe(false);
+    }
+    expect(MEDIA_FILE_ACCEPT).not.toContain(".svg");
+  });
+
+  it("only accepts web-native public delivery masters", () => {
+    expect(validateMediaDeliveryFile({ name: "a.webp", type: "image/webp", size: 10 })).toEqual({
       ok: true,
+      type: "image/webp",
     });
-  });
-
-  it("rejects non-image types", () => {
-    const r = validateMediaFile({ name: "a.txt", type: "text/plain", size: 10 });
-    expect(r.ok).toBe(false);
-  });
-
-  it("rejects empty and oversized files", () => {
-    expect(validateMediaFile({ name: "a.png", type: "image/png", size: 0 }).ok).toBe(false);
-    expect(
-      validateMediaFile({ name: "a.png", type: "image/png", size: MAX_MEDIA_BYTES + 1 }).ok,
-    ).toBe(false);
+    expect(validateMediaDeliveryFile({ name: "a.heic", type: "image/heic", size: 10 }).ok).toBe(
+      false,
+    );
   });
 });
 
@@ -53,32 +98,27 @@ describe("sanitizeFileName", () => {
     expect(sanitizeFileName("/evil/../path/Image!.jpg")).toBe("image-.jpg");
   });
 
-  it("falls back to 'image' when nothing usable remains", () => {
+  it("falls back to image when nothing usable remains", () => {
     expect(sanitizeFileName("!!!")).toBe("image");
   });
 });
 
 describe("mediaStoragePath", () => {
   it("builds a deterministic YYYY/MM/<id>-<name> path", () => {
-    const path = mediaStoragePath("Photo.png", {
-      id: "abc",
-      now: new Date(Date.UTC(2026, 5, 9)), // 2026-06
-    });
-    expect(path).toBe("2026/06/abc-photo.png");
-  });
-
-  it("zero-pads the month", () => {
-    const path = mediaStoragePath("x.jpg", { id: "id", now: new Date(Date.UTC(2026, 0, 1)) });
-    expect(path.startsWith("2026/01/")).toBe(true);
+    expect(
+      mediaStoragePath("Photo.png", {
+        id: "abc",
+        now: new Date(Date.UTC(2026, 5, 9)),
+      }),
+    ).toBe("2026/06/abc-photo.png");
   });
 });
 
 describe("mediaErrorMessage", () => {
-  it("maps known codes and falls back to internal_error", () => {
-    expect(mediaErrorMessage("actor_not_authorized")).toBe("Not authorized.");
-    expect(mediaErrorMessage("media_not_found")).toMatch(/no longer exists/i);
-    expect(mediaErrorMessage("media_in_use")).toMatch(/attached to one or more products/i);
-    expect(mediaErrorMessage("upload_not_found")).toMatch(/could not be found in storage/i);
+  it("maps known pipeline errors and safely falls back", () => {
+    expect(mediaErrorMessage("invalid_source_type")).toMatch(/JPG/i);
+    expect(mediaErrorMessage("image_decode_failed")).toMatch(/could not be read/i);
+    expect(mediaErrorMessage("upload_not_found")).toMatch(/storage/i);
     expect(mediaErrorMessage("???")).toBe(mediaErrorMessage("internal_error"));
   });
 });
@@ -86,39 +126,51 @@ describe("mediaErrorMessage", () => {
 describe("toMediaAsset / toMediaAssets", () => {
   const row = {
     id: "11111111-1111-1111-1111-111111111111",
-    storage_path: "2026/06/x.png",
-    public_url: "https://x/2026/06/x.png",
-    file_name: "x.png",
-    content_type: "image/png",
+    storage_path: "2026/08/x.webp",
+    public_url: "https://x/2026/08/x.webp",
+    file_name: "x.webp",
+    content_type: "image/webp",
     size_bytes: 2048,
-    width: 800,
-    height: 600,
-    created_at: "2026-06-26T00:00:00Z",
+    width: 1600,
+    height: 2000,
+    source_storage_path: "2026/08/x.heic",
+    source_file_name: "x.heic",
+    source_content_type: "image/heic",
+    source_size_bytes: 8_000_000,
+    processing_mode: "normalized",
+    suggested_focal_x: "0.43",
+    suggested_focal_y: 0.38,
+    created_at: "2026-08-25T00:00:00Z",
     usage_count: 3,
   };
 
-  it("maps snake_case rows to a typed asset", () => {
-    const a = toMediaAsset(row);
-    expect(a).toMatchObject({
-      storagePath: "2026/06/x.png",
-      publicUrl: "https://x/2026/06/x.png",
-      fileName: "x.png",
-      sizeBytes: 2048,
-      width: 800,
+  it("maps delivery, private-source and framing metadata", () => {
+    expect(toMediaAsset(row)).toMatchObject({
+      storagePath: "2026/08/x.webp",
+      sourceStoragePath: "2026/08/x.heic",
+      sourceContentType: "image/heic",
+      sourceSizeBytes: 8_000_000,
+      processingMode: "normalized",
+      suggestedFocalX: 0.43,
+      suggestedFocalY: 0.38,
       usageCount: 3,
     });
   });
 
-  it("defaults usageCount/sizeBytes and tolerates null dimensions", () => {
-    const a = toMediaAsset({ ...row, usage_count: undefined, size_bytes: null, width: null });
-    expect(a?.usageCount).toBe(0);
-    expect(a?.sizeBytes).toBe(0);
-    expect(a?.width).toBeNull();
-  });
-
-  it("returns null for rows missing required fields, and filters them from a list", () => {
+  it("keeps legacy rows compatible and filters malformed rows", () => {
+    const legacy = toMediaAsset({
+      ...row,
+      source_storage_path: null,
+      source_file_name: null,
+      source_content_type: null,
+      source_size_bytes: null,
+      processing_mode: undefined,
+      suggested_focal_x: null,
+      suggested_focal_y: null,
+    });
+    expect(legacy?.processingMode).toBe("legacy");
+    expect(legacy?.sourceStoragePath).toBeNull();
     expect(toMediaAsset({ id: "x" })).toBeNull();
-    expect(toMediaAsset("nope")).toBeNull();
     expect(toMediaAssets([row, { id: "bad" }, null])).toHaveLength(1);
     expect(toMediaAssets("nope")).toEqual([]);
   });

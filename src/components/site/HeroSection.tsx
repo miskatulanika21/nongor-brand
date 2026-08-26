@@ -141,7 +141,7 @@ export function HeroSection({ banner }: { banner?: PublicBanner | null }) {
                 height={1000}
                 loading="eager"
                 fetchPriority="high"
-                widths={[640, 828, 1080]}
+                widths={[640, 828, 1080, 1200]}
                 sizes="(max-width: 1024px) 100vw, 600px"
                 quality={HIGH_IMAGE_QUALITY}
                 className="h-full w-full object-cover"

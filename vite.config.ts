@@ -28,6 +28,9 @@ export default defineConfig(({ command, mode }) => {
     },
     // Use Lightning CSS in dev AND build so the static output matches the preview.
     css: { transformer: "lightningcss" },
+    // Heavy HEIC/TIFF decoders are code-split inside a module worker; ES output
+    // is required for dynamic imports and keeps that payload off the UI thread.
+    worker: { format: "es" },
     // Target modern evergreen browsers so the build stops shipping legacy-JS
     // transpilation (async/spread/optional-chaining helpers) to browsers that
     // run it natively — smaller bundles + faster parse. Safe for the audience

@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, Minus, Plus, RotateCcw, X } from "lucide-rea
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { OptimizedImage } from "@/components/OptimizedImage";
-import { HIGH_IMAGE_QUALITY } from "@/lib/image-cdn";
+import { ZOOM_IMAGE_QUALITY } from "@/lib/image-cdn";
 import { cn } from "@/lib/utils";
 import {
   ZOOM_MIN as MIN_SCALE,
@@ -353,9 +353,9 @@ export function ProductImageViewer({
           <OptimizedImage
             src={images[index]}
             alt={`${name} — view ${index + 1}`}
-            widths={[1080, 1920]}
+            widths={[1200, 1920, 2560]}
             sizes="100vw"
-            quality={HIGH_IMAGE_QUALITY}
+            quality={ZOOM_IMAGE_QUALITY}
             draggable={false}
             // Sized to the viewport, NOT intrinsically. `w-auto` let the
             // browser's density-corrected intrinsic size drive layout, so a

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Search } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { OptimizedImage } from "@/components/OptimizedImage";
 import { PRODUCT_TYPE_LABEL, type Product } from "@/lib/products";
 import { DEFAULT_FOCAL, focalStyle } from "@/lib/image-focal";
 import { listProductCards } from "@/lib/catalog.api";
@@ -194,10 +195,12 @@ export function SearchDialog({ open, onOpenChange }: Props) {
                     isActive ? "bg-secondary" : "hover:bg-secondary",
                   )}
                 >
-                  <img
+                  <OptimizedImage
                     src={p.image}
                     alt={p.name}
                     loading="lazy"
+                    widths={[128, 256]}
+                    sizes="48px"
                     style={focalStyle(p.imageFocal ?? DEFAULT_FOCAL)}
                     className="h-12 w-12 shrink-0 rounded-lg object-cover"
                   />

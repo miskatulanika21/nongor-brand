@@ -894,13 +894,21 @@ function GallerySection({
     setLoadingLib(false);
   }
 
-  const add = (url: string) =>
+  const add = (asset: MediaAsset) =>
     setItems((prev) =>
-      prev.some((p) => p.url === url) || prev.length >= MAX_GALLERY_IMAGES
+      prev.some((p) => p.url === asset.publicUrl) || prev.length >= MAX_GALLERY_IMAGES
         ? prev
         : normalizeGallery([
             ...prev,
-            { url, alt: null, isPrimary: false, sortOrder: prev.length, ...DEFAULT_FOCAL_FIELDS },
+            {
+              url: asset.publicUrl,
+              alt: null,
+              isPrimary: false,
+              sortOrder: prev.length,
+              ...DEFAULT_FOCAL_FIELDS,
+              focalX: asset.suggestedFocalX ?? DEFAULT_FOCAL_FIELDS.focalX,
+              focalY: asset.suggestedFocalY ?? DEFAULT_FOCAL_FIELDS.focalY,
+            },
           ]),
     );
   const remove = (url: string) =>
@@ -1082,7 +1090,7 @@ function GallerySection({
                   <button
                     type="button"
                     key={m.id}
-                    onClick={() => add(m.publicUrl)}
+                    onClick={() => add(m)}
                     disabled={disabled}
                     className={cn(
                       "relative overflow-hidden rounded-md border",
