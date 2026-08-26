@@ -309,6 +309,14 @@ function MediaLibraryAdmin() {
                 alt={asset.fileName}
                 className="h-32 w-full object-cover"
               />
+              {asset.processingMode === "normalized" && (
+                <Badge
+                  variant="secondary"
+                  className="absolute right-2 top-2 z-10 gap-1 whitespace-nowrap text-[0.6rem] shadow-sm"
+                >
+                  <Sparkles className="h-2.5 w-2.5" /> Optimized
+                </Badge>
+              )}
               <div className="p-2">
                 <p className="truncate text-xs font-medium text-foreground" title={asset.fileName}>
                   {asset.fileName}
@@ -322,11 +330,6 @@ function MediaLibraryAdmin() {
                     <Badge variant="outline" className="text-[0.6rem]">
                       {asset.width && asset.height ? `${asset.width}×${asset.height}` : "Image"}
                     </Badge>
-                    {asset.processingMode === "normalized" && (
-                      <Badge variant="secondary" className="gap-1 text-[0.6rem]">
-                        <Sparkles className="h-2.5 w-2.5" /> Optimized
-                      </Badge>
-                    )}
                   </div>
                   <div className="flex items-center">
                     {asset.sourceStoragePath && (
