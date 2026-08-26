@@ -114,3 +114,17 @@ export async function suggestFocal(src: string): Promise<SuggestedFocal | null> 
   }
   return (await detectFaceFocal(img)) ?? saliencyFocal(img);
 }
+
+/**
+ * Analyze a freshly prepared delivery file before upload. The browser's native
+ * face detector is preferred where available, with the deterministic saliency
+ * engine as a private, dependency-free fallback.
+ */
+export async function suggestFocalFromFile(file: File): Promise<SuggestedFocal | null> {
+  const url = URL.createObjectURL(file);
+  try {
+    return await suggestFocal(url);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}

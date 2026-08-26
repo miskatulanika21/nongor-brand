@@ -72,6 +72,7 @@
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
     "embla-carousel-react": "^8.6.0",
+    "heic-to": "1.5.2",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.577.0",
     "react": "^19.2.0",
@@ -83,10 +84,19 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.1",
+    "tiff": "7.1.3",
     "tw-animate-css": "^1.3.4",
     "vaul": "^1.1.2",
     "vite-tsconfig-paths": "^6.0.2",
     "zod": "^3.24.2"
+  },
+  "overrides": {
+    "brace-expansion": "1.1.18",
+    "esbuild": "0.28.1",
+    "js-yaml": "4.3.1",
+    "nanoid": "3.3.18",
+    "postcss": "8.5.23",
+    "undici": "7.29.0"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",

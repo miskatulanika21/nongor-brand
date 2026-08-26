@@ -166,8 +166,10 @@ const CLASSIFICATION: Record<string, Classification> = {
 
   // media.api.ts
   listMedia: "rbac-read",
+  getMediaOriginal: "rbac-read",
   requestMediaUpload: "admin-guarded",
   registerMedia: "admin-guarded",
+  discardMediaUpload: "admin-guarded",
   removeMedia: "admin-guarded",
 
   // mfa.api.ts

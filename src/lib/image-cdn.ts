@@ -13,27 +13,31 @@
  */
 
 /** Must mirror vercel.json → images.sizes (drift-guarded by test). */
-export const IMAGE_SIZES = [256, 384, 640, 750, 828, 1080, 1200, 1920] as const;
+export const IMAGE_SIZES = [128, 256, 384, 640, 750, 828, 1080, 1200, 1440, 1920, 2560] as const;
 
 /** Must mirror vercel.json → images.qualities (drift-guarded by test). */
-export const IMAGE_QUALITIES = [50, 75, 80] as const;
+export const IMAGE_QUALITIES = [50, 75, 80, 85] as const;
 
 export const DEFAULT_IMAGE_QUALITY = 75;
 /** For hero/PDP imagery where fidelity matters most. */
 export const HIGH_IMAGE_QUALITY = 80;
+/** Fullscreen product zoom: maximum detail without using the private original. */
+export const ZOOM_IMAGE_QUALITY = 85;
 
 export const IMAGE_CDN_ENABLED: boolean = import.meta.env.VERCEL_IMAGES === "1";
 
 /** Can this src go through the optimizer at all (must match config patterns)? */
 export function isOptimizable(src: string): boolean {
   if (!src || src.startsWith("data:") || src.startsWith("blob:")) return false;
-  if (/\.svg($|[?#])/i.test(src)) return false;
+  // SVG is active document content; animated GIF must bypass a still-image
+  // optimizer so its frames are preserved exactly.
+  if (/\.(svg|gif)($|[?#])/i.test(src)) return false;
   if (src.startsWith("/")) return src.startsWith("/assets/");
   try {
     const u = new URL(src);
     return (
       u.protocol === "https:" &&
-      u.hostname.endsWith(".supabase.co") &&
+      u.hostname === "xomjxtmhkglhuiccekld.supabase.co" &&
       u.pathname.startsWith("/storage/v1/object/public/")
     );
   } catch {

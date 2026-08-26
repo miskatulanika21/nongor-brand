@@ -354,7 +354,7 @@ function ProductPage() {
               src={displayGallery[activeImg]}
               alt={`${product.name} — view ${activeImg + 1}`}
               fetchPriority="high"
-              widths={[640, 828, 1080]}
+              widths={[640, 828, 1080, 1200]}
               sizes="(max-width: 1024px) 100vw, 50vw"
               quality={HIGH_IMAGE_QUALITY}
               className="h-full w-full object-cover"
@@ -393,7 +393,7 @@ function ProductPage() {
                       src={g}
                       alt={`${product.name} — view ${i + 1}`}
                       loading="lazy"
-                      widths={[256]}
+                      widths={[128, 256]}
                       sizes="80px"
                       className="h-full w-full object-cover"
                     />

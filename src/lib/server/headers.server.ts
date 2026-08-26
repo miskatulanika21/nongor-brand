@@ -81,6 +81,7 @@ function buildCsp(): string {
     "form-action 'self'",
     // Hydration + ld+json inline scripts; Vercel analytics/speed-insights.
     `script-src 'self' 'unsafe-inline' ${vercelAnalytics}`,
+    "worker-src 'self'",
     // Tailwind inline styles + Google Fonts stylesheet.
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self'",
@@ -120,6 +121,7 @@ function buildStrictCsp(nonce: string, { reportOnly }: { reportOnly: boolean }):
     "frame-ancestors 'none'",
     "form-action 'self'",
     `script-src 'nonce-${nonce}' 'strict-dynamic' https: 'unsafe-inline'`,
+    "worker-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self'",
     "img-src 'self' data: blob: https:",
@@ -155,6 +157,7 @@ function buildHashCsp(scriptHashes: string[], { reportOnly }: { reportOnly: bool
     "frame-ancestors 'none'",
     "form-action 'self'",
     `script-src 'self' ${scriptHashes.join(" ")} ${VERCEL_ANALYTICS}`,
+    "worker-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self'",
     "img-src 'self' data: blob: https:",

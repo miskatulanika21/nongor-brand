@@ -30,6 +30,7 @@ describe("withSecurityHeaders", () => {
     expect(out.headers.get("Referrer-Policy")).toBe("strict-origin-when-cross-origin");
     expect(out.headers.get("Permissions-Policy")).toContain("camera=()");
     expect(out.headers.get("Content-Security-Policy")).toContain("default-src 'self'");
+    expect(out.headers.get("Content-Security-Policy")).toContain("worker-src 'self'");
   });
 
   it("adds CSP only to HTML, not to other content types", () => {
