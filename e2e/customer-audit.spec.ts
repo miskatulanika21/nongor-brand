@@ -146,7 +146,13 @@ for (const viewport of [
       });
       await page.getByRole("link", { name: "Checkout", exact: true }).click();
       await expect(page).toHaveURL(/\/checkout/);
-      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      await expect(
+        page.getByRole("heading", { level: 1, name: "Checkout", exact: true }),
+      ).toBeVisible();
+      await expect(page.getByRole("textbox", { name: "Full name *", exact: true })).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Place Order (Cash on Delivery)", exact: true }),
+      ).toBeEnabled();
       await page.screenshot({
         path: testInfo.outputPath(`${viewport.name}-checkout.png`),
         fullPage: true,
