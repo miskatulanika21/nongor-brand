@@ -113,18 +113,29 @@ export function getTrustedRequestOrigin(siteUrl: string): string | null {
  *     - This value is used ONLY as a rate-limit dimension, never for
  *       authorization, and the independent per-ACCOUNT bucket
  *       (checkIndependentRateLimit) is the backstop when the IP is unreliable.
- *     - Prefer the platform-authoritative source. We try, in order:
+ *     - Vercel uses x-vercel-forwarded-for, then its overwritten x-forwarded-for.
+ *       Other deployments retain the existing single-proxy order:
  *         cf-connecting-ip → Cloudflare sets this and strips client copies.
  *         x-forwarded-for  → trust ONLY the proxy-appended value; we read the
  *                            FIRST hop, correct for a single trusted proxy.
  *                            Behind multiple proxies, configure the platform
  *                            to expose its own authoritative header instead.
  *         x-real-ip        → common single-proxy (nginx) authoritative header.
- *   Operator note: on Vercel use x-vercel-forwarded-for / x-real-ip; on
+ *   Operator note: on Vercel use x-vercel-forwarded-for / x-forwarded-for; on
  *   Cloudflare cf-connecting-ip is authoritative. Do not deploy the Node
  *   server with a raw internet-facing port and trust x-forwarded-for.
  */
 export function getClientIp(): string | null {
+  // Vercel sets its own forwarded header. A caller can supply Cloudflare's
+  // header when reaching Vercel directly, so never prefer it on this platform.
+  // If platform headers are absent, share the anonymous bucket rather than
+  // trusting an arbitrary client-supplied alternative.
+  if (process.env.VERCEL === "1") {
+    const forwarded =
+      getRequestHeader("x-vercel-forwarded-for") || getRequestHeader("x-forwarded-for");
+    return forwarded?.split(",")[0]?.trim() || null;
+  }
+
   const cf = getRequestHeader("cf-connecting-ip");
   if (cf) return cf.trim();
 

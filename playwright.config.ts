@@ -10,7 +10,7 @@ import { defineConfig, devices } from "@playwright/test";
 //
 // Run: `bun run test:e2e` (headless) or `bunx playwright test --headed`.
 //
-// SAFETY: the committed .env targets PRODUCTION. Point E2E_BASE_URL at a dev
+// SAFETY: the local .env may target PRODUCTION. Point E2E_BASE_URL at a dev
 // server backed by a SAFE database (a Supabase branch or local stack) before
 // exercising any write flow. See e2e/README.md.
 export default defineConfig({
@@ -21,6 +21,9 @@ export default defineConfig({
   reporter: "html",
   use: {
     baseURL: process.env.E2E_BASE_URL ?? "http://localhost:8080",
+    // Self-signed local TLS is needed for Safari's upgrade-insecure-requests.
+    // Never bypass certificate validation on remote preview/production hosts.
+    ignoreHTTPSErrors: process.env.E2E_BASE_URL === "https://localhost:8443",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     // Vercel protects preview deployments behind SSO. When the automation-bypass
@@ -44,5 +47,6 @@ export default defineConfig({
     { name: "webkit", use: { ...devices["Desktop Safari"] } },
     { name: "firefox", use: { ...devices["Desktop Firefox"] } },
     { name: "mobile-safari", use: { ...devices["iPhone 13"] } },
+    { name: "ipad", use: { ...devices["iPad (gen 7)"] } },
   ],
 });

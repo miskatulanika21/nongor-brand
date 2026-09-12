@@ -249,7 +249,7 @@ function About() {
                 {founder.name}
               </Link>
             </h2>
-            <p className="text-sm font-medium uppercase tracking-[0.18em] text-gold">
+            <p className="text-sm font-medium uppercase tracking-[0.18em] text-gold-foreground">
               {founder.role}
             </p>
             {/* Teaser only — her full story, letter, journey and quote live on
@@ -468,7 +468,7 @@ function About() {
               >
                 {p}
                 {i !== 0 && (
-                  <span className="ml-2 text-[0.65rem] uppercase tracking-wide text-gold">
+                  <span className="ml-2 text-[0.65rem] uppercase tracking-wide text-gold-foreground">
                     soon
                   </span>
                 )}

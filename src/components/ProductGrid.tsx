@@ -5,7 +5,7 @@ import { ProductCard, type ProductCardView } from "@/components/ProductCard";
 import { OptimizedImage } from "@/components/OptimizedImage";
 import { cn } from "@/lib/utils";
 import { ProductGridSkeleton } from "@/components/skeletons";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StarRating } from "@/components/StarRating";
@@ -62,7 +62,9 @@ export function ProductGrid({
                 <Badge variant="outline" className="w-fit border-gold/60">
                   {quick.category}
                 </Badge>
-                <h3 className="font-display text-2xl text-foreground">{quick.name}</h3>
+                <DialogTitle className="font-display text-2xl text-foreground">
+                  {quick.name}
+                </DialogTitle>
                 <StarRating rating={quick.rating} count={quick.reviewCount} />
                 <div className="flex items-baseline gap-2">
                   <span className="text-xl font-semibold text-primary">
@@ -79,7 +81,9 @@ export function ProductGrid({
                     </>
                   )}
                 </div>
-                <p className="text-sm leading-relaxed text-muted-foreground">{quick.description}</p>
+                <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
+                  {quick.description}
+                </DialogDescription>
                 <div className="mt-auto flex flex-col gap-2 pt-3">
                   {requiresSelection(quick) ? (
                     <>

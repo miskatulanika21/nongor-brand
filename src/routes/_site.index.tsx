@@ -279,7 +279,12 @@ function Home() {
         {/* Reviews */}
         <section>
           <SectionHeading eyebrow="Kind Words" title="What our customers say" />
-          <div className="no-scrollbar -mx-4 flex snap-x gap-5 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0">
+          <div
+            role="region"
+            aria-label="Customer testimonials"
+            tabIndex={0}
+            className="no-scrollbar -mx-4 flex snap-x gap-5 overflow-x-auto px-4 pb-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0"
+          >
             {reviews.map((r) => (
               <figure
                 key={r.name}

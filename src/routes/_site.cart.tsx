@@ -489,6 +489,15 @@ function Cart() {
           <div className="site-sticky-with-gap h-fit space-y-4 rounded-xl border border-border bg-card p-6 lg:sticky">
             <h2 className="font-display text-2xl text-foreground">Order Summary</h2>
 
+            {quoteError && !reconciling && (
+              <div role="alert" className="space-y-2 rounded-lg border border-border p-3 text-sm">
+                <p>Prices could not be verified. These totals are estimates until checkout.</p>
+                <Button type="button" variant="outline" size="sm" onClick={reconcile}>
+                  Retry prices
+                </Button>
+              </div>
+            )}
+
             {/* Coupon (server-validated via the quote) */}
             <div className="space-y-2">
               {couponApplied ? (

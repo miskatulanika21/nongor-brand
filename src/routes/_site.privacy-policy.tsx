@@ -247,7 +247,7 @@ function PrivacyPolicy() {
                           : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
                       }`}
                     >
-                      <span className="tabular-nums opacity-60">{i + 1}.</span>
+                      <span className="tabular-nums">{i + 1}.</span>
                       <span>{s.title}</span>
                     </a>
                   </li>
@@ -269,7 +269,7 @@ function PrivacyPolicy() {
                     <Icon className="size-5" />
                   </span>
                   <h2 className="font-display text-2xl text-foreground">
-                    <span className="text-gold-foreground/60">{i + 1}.</span> {title}
+                    <span className="text-gold-foreground">{i + 1}.</span> {title}
                   </h2>
                 </div>
                 <p className="mt-4 text-sm leading-relaxed text-muted-foreground">{body}</p>
@@ -298,7 +298,7 @@ function PrivacyPolicy() {
                         <Icon className="size-4.5" />
                       </span>
                       <span className="font-display text-lg text-foreground">
-                        <span className="text-gold-foreground/60">{i + 1}.</span> {title}
+                        <span className="text-gold-foreground">{i + 1}.</span> {title}
                       </span>
                     </span>
                   </AccordionTrigger>

@@ -8,3 +8,6 @@ bun.lock
 routeTree.gen.ts
 supabase/.temp
 LICENSE
+docs/.visual-audit-assets
+test-results
+playwright-report

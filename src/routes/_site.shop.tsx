@@ -149,6 +149,7 @@ function Shop() {
   const [sort, setSort] = useState("featured");
   const [mobileFilters, setMobileFilters] = useState(false);
   const [view, setView] = useState<ProductCardView>("grid");
+  const submittedSearch = useRef<string | null>(null);
 
   // Sync local category selection with the URL search param.
   useEffect(() => {
@@ -161,6 +162,13 @@ function Shop() {
   // URL -> local search, only when the URL value genuinely changes.
   useEffect(() => {
     const next = q ?? "";
+    if (submittedSearch.current === next) {
+      // An earlier debounced navigation can finish after the buyer types again.
+      // Acknowledge our own URL update without overwriting their newer input.
+      submittedSearch.current = null;
+      setSearchInput((current) => (current.trim() === next ? next : current));
+      return;
+    }
     setSearchInput((current: string) => (current === next ? current : next));
   }, [q]);
 
@@ -171,6 +179,7 @@ function Shop() {
     const normalized = searchInput.trim();
     if (normalized === (q ?? "")) return;
     const t = setTimeout(() => {
+      submittedSearch.current = normalized;
       navRef.current({
         to: "/shop",
         replace: true,

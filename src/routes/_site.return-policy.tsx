@@ -458,7 +458,7 @@ function ReturnPolicy() {
                           : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
                       }`}
                     >
-                      <span className="tabular-nums opacity-60">{i + 1}.</span>
+                      <span className="tabular-nums">{i + 1}.</span>
                       <span>{s.title}</span>
                     </a>
                   </li>
@@ -480,7 +480,7 @@ function ReturnPolicy() {
                     <section.icon className="size-5" />
                   </span>
                   <h2 className="font-display text-2xl text-foreground">
-                    <span className="text-gold-foreground/60">{i + 1}.</span> {section.title}
+                    <span className="text-gold-foreground">{i + 1}.</span> {section.title}
                   </h2>
                 </div>
                 <SectionInner section={section} />
@@ -508,7 +508,7 @@ function ReturnPolicy() {
                         <section.icon className="size-4.5" />
                       </span>
                       <span className="font-display text-lg text-foreground">
-                        <span className="text-gold-foreground/60">{i + 1}.</span> {section.title}
+                        <span className="text-gold-foreground">{i + 1}.</span> {section.title}
                       </span>
                     </span>
                   </AccordionTrigger>

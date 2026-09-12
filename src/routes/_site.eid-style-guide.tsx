@@ -98,7 +98,7 @@ function EidGuide() {
           comfort with celebration — pieces that feel personal, are made to last, and carry the
           warmth of Bangladeshi craft. This guide walks you through the Eid 2026 trends we love and
           the{" "}
-          <Link to="/shop" className="text-primary underline-offset-4 hover:underline">
+          <Link to="/shop" className="text-primary underline-offset-4 underline underline-offset-2">
             handcrafted pieces
           </Link>{" "}
           ready to make them yours.
@@ -119,13 +119,16 @@ function EidGuide() {
             <li>Stick to a 2–3 colour palette across your Eid outfits for cohesive photos.</li>
             <li>
               Read our{" "}
-              <Link to="/size-guide" className="text-primary underline-offset-4 hover:underline">
+              <Link
+                to="/size-guide"
+                className="text-primary underline-offset-4 underline underline-offset-2"
+              >
                 size guide
               </Link>{" "}
               and{" "}
               <Link
                 to="/delivery-policy"
-                className="text-primary underline-offset-4 hover:underline"
+                className="text-primary underline-offset-4 underline underline-offset-2"
               >
                 delivery policy
               </Link>{" "}

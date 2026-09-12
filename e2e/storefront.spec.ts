@@ -26,14 +26,17 @@ test("shop renders DB-backed products and the filter sidebar", async ({ page }) 
 
   // The filter sidebar is driven by api.catalog_facets() — the Category group
   // is always rendered (it lists DB categories with counts).
-  await expect(page.getByText("Category", { exact: true }).first()).toBeVisible();
+  if ((page.viewportSize()?.width ?? 1440) < 1024) {
+    await expect(page.getByRole("button", { name: "Filters", exact: true })).toBeVisible();
+  } else await expect(page.getByText("Category", { exact: true }).first()).toBeVisible();
 
   // At least one product card links to a detail page (catalog read succeeded).
   await expect(page.locator('a[href^="/product/"]').first()).toBeVisible();
 });
 
 test("a product detail page loads from the shop", async ({ page }) => {
-  await page.goto("/shop");
+  await page.goto("/shop", { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => localStorage.getItem("nongorr_cart") !== null);
   await page.locator('a[href^="/product/"]').first().click();
   await expect(page).toHaveURL(/\/product\//);
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();

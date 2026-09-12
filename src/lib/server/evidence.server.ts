@@ -46,8 +46,26 @@ export async function uploadEvidence(
   orderId: string,
   bytes: Buffer,
   contentType: EvidenceContentType,
+  scope: string,
 ): Promise<string> {
   const admin = createAdminSupabaseClient();
+  // Storage uses the service role: authorize BEFORE writing any bytes. The RPC
+  // still checks ownership and status under its order lock when finalizing.
+  const { data: order, error: lookupError } = await admin
+    .from("orders")
+    .select("user_id, guest_token_hash, status")
+    .eq("id", orderId)
+    .maybeSingle();
+  if (lookupError) throw new EvidenceError("internal_error");
+  const owned =
+    order &&
+    (order.user_id
+      ? scope === order.user_id
+      : !!order.guest_token_hash && scope === `guest:${order.guest_token_hash}`);
+  if (!owned) throw new EvidenceError("order_not_owned");
+  if (!["pending_payment", "payment_rejected"].includes(order.status)) {
+    throw new EvidenceError("evidence_already_submitted");
+  }
   const path = `${orderId}/${randomUUID()}.${evidenceExt(contentType)}`;
   const { error } = await admin.storage
     .from(EVIDENCE_BUCKET)
