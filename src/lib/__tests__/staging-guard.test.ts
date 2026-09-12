@@ -90,4 +90,14 @@ describe("projectRefFromUrl", () => {
     expect(projectRefFromUrl("not a url")).toBeNull();
     expect(projectRefFromUrl(null)).toBeNull();
   });
+  it.each([
+    `https://${STAGING}.supabase.co.evil.example`,
+    `https://${STAGING}.supabase.co@evil.example`,
+    `http://${STAGING}.supabase.co`,
+    `https://user:password@${STAGING}.supabase.co`,
+    `https://${STAGING}.supabase.co:8443`,
+  ])("rejects unsafe credential destinations: %s", (url) => {
+    expect(projectRefFromUrl(url)).toBeNull();
+    expect(evaluateStagingGuard({ ...good, supabaseUrl: url }).ok).toBe(false);
+  });
 });

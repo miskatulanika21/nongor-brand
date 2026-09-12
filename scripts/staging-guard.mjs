@@ -43,8 +43,15 @@ export function isValidStagingRef(ref) {
 /** Extract the project ref from a Supabase URL (https://<ref>.supabase.co). */
 export function projectRefFromUrl(url) {
   if (typeof url !== "string") return null;
-  const m = url.trim().match(/^https?:\/\/([a-z0-9]{20})\.supabase\.[a-z.]+/i);
-  return m ? m[1].toLowerCase() : null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.port)
+      return null;
+    const match = parsed.hostname.match(/^([a-z0-9]{20})\.supabase\.(co|in)$/i);
+    return match ? match[1].toLowerCase() : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

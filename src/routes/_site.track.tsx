@@ -163,7 +163,7 @@ function Track() {
       <h1 className="mb-2 font-display text-4xl text-foreground">Track Your Order</h1>
       <p className="mb-8 text-sm text-muted-foreground">
         Enter your order number and the access code from your confirmation. Have an account?{" "}
-        <Link to="/orders" className="text-primary underline-offset-4 hover:underline">
+        <Link to="/orders" className="text-primary underline-offset-4 underline underline-offset-2">
           View all your orders
         </Link>
         .
@@ -345,7 +345,7 @@ function OrderTimeline({
                     <Link
                       to="/product/$slug"
                       params={{ slug: i.productSlug }}
-                      className="font-medium text-foreground underline-offset-2 hover:text-primary hover:underline"
+                      className="font-medium text-foreground underline-offset-2 hover:text-primary underline underline-offset-2"
                     >
                       {i.name}
                     </Link>

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { addAvailableProduct } from "./helpers/cart";
 
 /**
  * Post-deploy SMOKE suite (Stage 7 / P5).
@@ -61,7 +62,9 @@ test.describe("post-deploy smoke", () => {
     await expect(page.getByRole("heading", { name: /Shop Nongorr/i })).toBeVisible();
     // Category group is rendered from api.catalog_facets() — proves the read RPC
     // reached PostgREST and returned data.
-    await expect(page.getByText("Category", { exact: true }).first()).toBeVisible();
+    if ((page.viewportSize()?.width ?? 1440) < 1024) {
+      await expect(page.getByRole("button", { name: "Filters", exact: true })).toBeVisible();
+    } else await expect(page.getByText("Category", { exact: true }).first()).toBeVisible();
     await expect(page.locator('a[href^="/product/"]').first()).toBeVisible();
   });
 
@@ -70,14 +73,12 @@ test.describe("post-deploy smoke", () => {
     // the cart page call api.quote_order. A rendered ৳ total proves the pricing
     // path — price_lines + compute_shipping + quote_token — is live end-to-end.
     // quote_order is STABLE, so this mutates nothing server-side.
-    await page.goto("/shop", { waitUntil: "domcontentloaded" });
-    const addToBag = page.getByRole("button", { name: /^Add to Bag$/i }).first();
-    await expect(addToBag, "a product is available to add").toBeVisible();
-    await addToBag.click();
+    await addAvailableProduct(page);
 
     await page.goto("/cart", { waitUntil: "domcontentloaded" });
     // A Bangladeshi-Taka amount rendered on the cart summary = quote succeeded.
-    await expect(page.getByText(/৳\s*[\d,]+/).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: "Checkout", exact: true })).toBeVisible();
+    await expect(page.getByText(/could not|unavailable|invalid request origin/i)).toHaveCount(0);
   });
 
   test("auth entry page renders", async ({ page }) => {

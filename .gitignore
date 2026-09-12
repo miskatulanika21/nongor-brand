@@ -26,6 +26,7 @@ dist-ssr
 # tracked publicly (with LIVE prod accounts) and has been removed; this guard
 # stops it (or similar) coming back. Keep such files local-only.
 TEST_CREDENTIALS.md
+test_account.md
 *credentials*.md
 
 # Test / coverage / report artifacts
@@ -35,6 +36,7 @@ test-results
 blob-report
 # Playwright saved auth/storage state — contains session tokens, never commit
 e2e/.auth/
+playwright/.auth/
 
 # Wrangler / Cloudflare
 .wrangler/

@@ -242,7 +242,7 @@ export function ProductCard({
           />
         </Link>
 
-        <div className="absolute left-2.5 top-2.5 flex max-w-[calc(100%-3.25rem)] flex-col items-start gap-1.5">
+        <div className="pointer-events-none absolute left-2.5 top-2.5 flex max-w-[calc(100%-3.25rem)] flex-col items-start gap-1.5">
           {badges.map((b) => (
             <Badge
               key={b.key}

@@ -75,6 +75,7 @@ export const submitPaymentEvidenceFn = createServerFn({ method: "POST" })
           data.orderId,
           bytes,
           data.screenshot.contentType,
+          scope,
         );
       }
       const res = await repo.submitEvidence({
@@ -112,7 +113,10 @@ export const getEvidenceUrlFn = createServerFn({ method: "POST" })
 
     // The screenshot must live under this order's prefix — never let one order's
     // detail mint a URL into another order's evidence (or outside the order tree).
-    if (!data.path.startsWith(`${data.orderId}/`)) {
+    if (
+      !data.path.startsWith(`${data.orderId}/`) ||
+      !/^[0-9a-f-]{36}\/[0-9a-f-]{36}\.(png|jpg|webp)$/i.test(data.path)
+    ) {
       return { success: false as const, error: "Invalid screenshot reference." };
     }
 

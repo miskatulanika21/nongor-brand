@@ -277,7 +277,9 @@ function FounderPage() {
           </div>
           <figcaption className="mt-8 border-t border-gold/25 pt-6">
             <p className="font-display text-3xl italic text-primary">{c.name}</p>
-            <p className="mt-1 text-xs uppercase tracking-[0.18em] text-gold">{c.role}</p>
+            <p className="mt-1 text-xs uppercase tracking-[0.18em] text-gold-foreground">
+              {c.role}
+            </p>
           </figcaption>
         </figure>
       </section>
@@ -335,7 +337,7 @@ function FounderPage() {
                     <Icon className="h-4.5 w-4.5" />
                   </span>
                   <div className="rounded-3xl border border-border bg-card p-6 shadow-soft transition-all hover:border-gold/40 hover:shadow-card sm:p-7">
-                    <p className="text-[0.65rem] uppercase tracking-[0.2em] text-gold">
+                    <p className="text-[0.65rem] uppercase tracking-[0.2em] text-gold-foreground">
                       {j.chapter}
                     </p>
                     <h3 className="mt-2 font-display text-2xl text-foreground sm:text-3xl">
@@ -404,7 +406,9 @@ function FounderPage() {
         <blockquote className="mt-6 font-display text-3xl leading-snug text-primary sm:text-4xl text-balance">
           “{c.quote.text}”
         </blockquote>
-        <p className="mt-4 text-xs uppercase tracking-[0.2em] text-gold">— {c.quote.attribution}</p>
+        <p className="mt-4 text-xs uppercase tracking-[0.2em] text-gold-foreground">
+          — {c.quote.attribution}
+        </p>
       </section>
 
       {/* 7 — CONNECT */}

@@ -1,6 +1,6 @@
 # Visual / E2E tests (Playwright)
 
-These drive a real Chromium browser to visually verify UI flows (e.g. admin
+These drive Chromium, Firefox and WebKit browsers to verify UI flows (e.g. admin
 review moderation, inventory adjustments). They are **separate** from the Vitest
 unit suite (`bun run test`), which only includes `src/**/*.test.{ts,tsx}`.
 
@@ -8,23 +8,23 @@ unit suite (`bun run test`), which only includes `src/**/*.test.{ts,tsx}`.
 
 ```sh
 bun install                       # installs @playwright/test (committed dep)
-bunx playwright install chromium  # downloads the browser binary (NOT committed)
+bunx playwright install chromium firefox webkit  # binaries are NOT committed
 ```
 
 ## Running
 
 ```sh
-E2E_BASE_URL=http://localhost:3000 bun run test:e2e   # headless
+E2E_BASE_URL=http://localhost:8080 bun run test:e2e   # headless
 bunx playwright test --headed                          # watch in a visible window
 bunx playwright show-report                            # open the HTML report
 ```
 
-`E2E_BASE_URL` defaults to `http://localhost:3000`; set it to whatever host the
+`E2E_BASE_URL` defaults to `http://localhost:8080`; set it to whatever host the
 dev server is actually on.
 
 ## ⚠️ Use a SAFE backend for write flows
 
-The committed `.env` points at the **production** Supabase project. Never run
+The local `.env` may point at the **production** Supabase project. Never run
 write flows (approve a review, adjust stock, etc.) against prod. Instead:
 
 1. Create an isolated DB copy — a **Supabase branch** (via the Supabase MCP
@@ -51,11 +51,33 @@ Read-only flows (browsing the storefront) are safe against any backend.
   (a dedicated test customer). WRITES to that customer's own account rows and
   cleans up after itself; use a SAFE backend.
 
-All specs `test.skip` themselves when their env vars are unset, so
-`bun run test:e2e` stays green where nothing is wired up. (E2E is not run in CI.)
+The September audit additionally provides:
+
+- `customer-audit.spec.ts`: independent page/layout/image/axe checks at mobile,
+  tablet and desktop widths, plus a short custom-fit/lightbox/cart journey.
+- `catalog-regression.spec.ts`: Bengali search, empty states, sorting, product
+  badge clicks and accessible quick view, using `pages/CatalogPage.ts` and
+  `fixtures/storefront.ts`.
+- `cart-checkout.spec.ts`: totals, persistence, custom-item removal confirmation,
+  invalid coupons, empty checkout validation and simulated price-service failure.
+  It never submits a valid order.
+
+Projects are `chromium`, `firefox`, `webkit`, `mobile-safari`, and `ipad`.
+Production-mode local builds need `NODE_ENV=production` even when `.env` sets
+development mode. Safari needs an HTTPS preview because the production CSP
+upgrades insecure requests. Only the local `https://localhost:8443` test endpoint
+allows a self-signed certificate; remote certificate validation is retained.
+
+Tags such as `@smoke`, `@regression` and `@a11y` select the new checks. Use explicit
+spec filenames when running production-safe tests; the broad suite also contains
+credential-gated mutation tests.
+
+Specs skip themselves when their required env vars are unset, so
+`bun run test:e2e` stays green where nothing is wired up. A skipped test is not
+evidence that a workflow passed. See the workflows for deployed smoke execution.
 
 ## Layout
 
-- `playwright.config.ts` (repo root) — config: `testDir: ./e2e`, chromium project.
+- `playwright.config.ts` (repo root) — config and browser/device projects.
 - `e2e/*.spec.ts` — test specs (add as features land).
 - `e2e/.auth/` — saved login/storage state (gitignored; contains session tokens).
