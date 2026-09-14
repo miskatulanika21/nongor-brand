@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { previewAuthFile, previewOrigin } from "./e2e/helpers/preview-auth";
 
 // Playwright E2E / visual tests. SEPARATE from the Vitest unit suite — Vitest
 // only includes its src test files, while these live under e2e/.
@@ -15,6 +16,7 @@ import { defineConfig, devices } from "@playwright/test";
 // exercising any write flow. See e2e/README.md.
 export default defineConfig({
   testDir: "./e2e",
+  globalSetup: "./e2e/preview.setup.ts",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
@@ -24,17 +26,18 @@ export default defineConfig({
     // Self-signed local TLS is needed for Safari's upgrade-insecure-requests.
     // Never bypass certificate validation on remote preview/production hosts.
     ignoreHTTPSErrors: process.env.E2E_BASE_URL === "https://localhost:8443",
-    trace: "on-first-retry",
+    // Preview traces can contain the bypass cookie in network metadata.
+    // Keep authenticated preview sessions out of uploaded report artifacts.
+    trace:
+      process.env.VERCEL_AUTOMATION_BYPASS_SECRET && previewOrigin(process.env.E2E_BASE_URL)
+        ? "off"
+        : "on-first-retry",
     screenshot: "only-on-failure",
-    // Vercel protects preview deployments behind SSO. When the automation-bypass
-    // secret is present, send it on EVERY suite — this lived in smoke.spec.ts
-    // alone, so a11y runs could not reach a protected preview at all.
-    ...(process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+    // Exchange the secret once for a host-scoped cookie. Browser-wide headers
+    // would disclose it to third-party images, analytics and API requests.
+    ...(process.env.VERCEL_AUTOMATION_BYPASS_SECRET && previewOrigin(process.env.E2E_BASE_URL)
       ? {
-          extraHTTPHeaders: {
-            "x-vercel-protection-bypass": process.env.VERCEL_AUTOMATION_BYPASS_SECRET,
-            "x-vercel-set-bypass-cookie": "true",
-          },
+          storageState: previewAuthFile,
         }
       : {}),
   },
