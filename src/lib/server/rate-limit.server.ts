@@ -4,7 +4,8 @@
  * Pluggable store:
  *   - Default: in-memory fixed-window counter (correct within one instance).
  *   - Optional: Upstash Redis REST (shared across instances) when
- *     UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN are configured.
+ *     UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN are configured,
+ *     or Vercel's KV_REST_API_URL + KV_REST_API_TOKEN integration pair.
  *
  * Why an abstraction: the in-memory store is fine for single-instance / dev,
  * but a horizontally-scaled deployment (e.g. Cloudflare Workers isolates)
@@ -169,8 +170,10 @@ let store: RateLimitStore | undefined;
 
 function getStore(): RateLimitStore {
   if (store) return store;
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  // Select a complete pair so credentials from two stores are never mixed.
+  const direct = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN;
+  const url = direct ? process.env.UPSTASH_REDIS_REST_URL : process.env.KV_REST_API_URL;
+  const token = direct ? process.env.UPSTASH_REDIS_REST_TOKEN : process.env.KV_REST_API_TOKEN;
   if (url && token) {
     store = new UpstashStore(url, token);
     safeServerLog("info", "Rate limiter: using shared Upstash store");

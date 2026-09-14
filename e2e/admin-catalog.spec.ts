@@ -27,7 +27,9 @@ test.beforeEach(async ({ page }) => {
   await page.getByPlaceholder("you@email.com").first().fill(ADMIN_EMAIL!);
   await page.getByPlaceholder("••••••••").fill(ADMIN_PASSWORD!);
   await page.getByRole("button", { name: "Sign In", exact: true }).click();
-  await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 10_000 });
+  await page.waitForURL((url) => url.pathname === "/admin" || url.pathname === "/admin/", {
+    timeout: 10_000,
+  });
 });
 
 test("dashboard shows the live catalog widgets", async ({ page }) => {
@@ -37,8 +39,9 @@ test("dashboard shows the live catalog widgets", async ({ page }) => {
   // always present once the dashboard renders.
   await expect(page.getByRole("heading", { name: "Low Stock" })).toBeVisible();
   await expect(page.getByRole("heading", { name: /Best Sellers/ })).toBeVisible();
-  // The live-data framing replaced the old "seed demo data" copy.
-  await expect(page.getByText(/figures are live/i)).toBeVisible();
+  await expect(page.getByText("Live catalog and order health at a glance.")).toBeVisible();
+  await expect(page.getByText("Checking catalog…")).toHaveCount(0);
+  await expect(page.getByText("Couldn’t load products.")).toHaveCount(0);
 });
 
 test("products page renders the catalog table", async ({ page }) => {

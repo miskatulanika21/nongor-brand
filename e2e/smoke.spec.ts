@@ -28,8 +28,8 @@ const BASE = process.env.E2E_BASE_URL;
 
 test.skip(!BASE, "set E2E_BASE_URL to run the post-deploy smoke suite");
 
-// The Vercel Protection Bypass header now lives in playwright.config.ts so that
-// EVERY suite (smoke and a11y) can reach a protected preview, not just this one.
+// The shared preview setup supplies a host-scoped bypass cookie so every suite
+// can reach a protected preview without sending a secret to third-party hosts.
 // See docs/stage-7-cicd-and-rollback.md §2.
 
 // The smoke gates a deploy, so keep individual steps snappy but tolerant of a
