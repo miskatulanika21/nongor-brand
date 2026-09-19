@@ -47,9 +47,9 @@ for (const [label, direction] of [
   });
 }
 
-test("@regression HOME-003 product badge area opens detail", async ({ catalog, page }) => {
+test("@regression HOME-003 product image corner opens detail", async ({ catalog, page }) => {
   await catalog.goto();
-  // Regression: floating stock/size badges used to intercept this image click.
+  // Regression: stock/size badges previously obscured this part of the photo.
   const image = catalog.images.first();
   await image.click({ position: { x: 24, y: 25 } });
   await expect(page).toHaveURL(/\/product\//);
@@ -59,6 +59,8 @@ test("@regression PDP-008 A11Y-003 quick view has a name and opens full product"
   catalog,
   page,
 }) => {
+  // Includes a full axe scan and two catalog-backed page loads on mobile WebKit.
+  test.setTimeout(60_000);
   await catalog.goto();
   const name = await catalog.images.first().getAttribute("alt");
   await page.getByRole("button", { name: "Quick view", exact: true }).first().click();
