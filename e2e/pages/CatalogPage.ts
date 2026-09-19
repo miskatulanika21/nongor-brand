@@ -24,7 +24,7 @@ export class CatalogPage {
     return this.images.evaluateAll((images) =>
       images.map((image) => {
         const card = image.closest(".group");
-        const price = card?.querySelector(".font-semibold.text-primary")?.textContent ?? "";
+        const price = card?.querySelector('[data-testid="product-price"]')?.textContent ?? "";
         if (!price.includes("৳")) throw new Error("Missing product price");
         return Number(
           price
