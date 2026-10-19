@@ -13,7 +13,13 @@ import { HowToOrder } from "@/components/site/HowToOrder";
 import { Button } from "@/components/ui/button";
 import { StarRating } from "@/components/StarRating";
 import { BRAND } from "@/lib/brand";
-import { absUrl } from "@/lib/site-config";
+import {
+  absUrl,
+  SOCIAL_PREVIEW_IMAGE,
+  SOCIAL_PREVIEW_IMAGE_ALT,
+  SOCIAL_PREVIEW_IMAGE_HEIGHT,
+  SOCIAL_PREVIEW_IMAGE_WIDTH,
+} from "@/lib/site-config";
 import { Truck, ShieldCheck, Ruler, HandHeart, ArrowRight, Instagram, Quote } from "lucide-react";
 import founderPortrait from "@/assets/founder-portrait.webp";
 import founderLifestyle from "@/assets/founder-lifestyle.webp";
@@ -36,6 +42,17 @@ export const Route = createFileRoute("/_site/")({
       { property: "og:type", content: "website" },
       { name: "twitter:title", content: HOME_TITLE },
       { name: "twitter:description", content: HOME_DESCRIPTION },
+      // Explicit here (not only inherited from the root) so the dimensions
+      // below are only ever paired with THIS image. Pages that set their own
+      // og:image (products, about, founder) must not inherit 1200×630.
+      { property: "og:image", content: absUrl(SOCIAL_PREVIEW_IMAGE) },
+      { property: "og:image:secure_url", content: absUrl(SOCIAL_PREVIEW_IMAGE) },
+      { property: "og:image:type", content: "image/jpeg" },
+      { property: "og:image:width", content: String(SOCIAL_PREVIEW_IMAGE_WIDTH) },
+      { property: "og:image:height", content: String(SOCIAL_PREVIEW_IMAGE_HEIGHT) },
+      { property: "og:image:alt", content: SOCIAL_PREVIEW_IMAGE_ALT },
+      { name: "twitter:image", content: absUrl(SOCIAL_PREVIEW_IMAGE) },
+      { name: "twitter:image:alt", content: SOCIAL_PREVIEW_IMAGE_ALT },
     ],
     links: [{ rel: "canonical", href: absUrl("/") }],
     scripts: [
