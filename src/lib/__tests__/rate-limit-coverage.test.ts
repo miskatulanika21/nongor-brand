@@ -112,6 +112,8 @@ const CLASSIFICATION: Record<string, Classification> = {
   // catalog.api.ts
   listProductCards: "public-read",
   getCatalogFacets: "public-read",
+  getHomeCollections: "public-read",
+  getProductPage: "public-read",
   getProductDetail: "public-read",
   getProductCardsByCodes: "public-read",
 

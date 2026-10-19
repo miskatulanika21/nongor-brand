@@ -58,14 +58,18 @@ const ANNOUNCE_KEY = "nongorr.announce.dismissed";
 export function SiteHeader({
   sessionSummary,
   announcement,
+  freeDeliveryThreshold,
 }: {
   sessionSummary?: SessionSummary;
   announcement?: AnnouncementState;
+  /** Admin-configured threshold for the fallback announcement copy. */
+  freeDeliveryThreshold?: number;
 }) {
   const { cartCount, wishlist } = useStore();
   const [open, setOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [hidden, setHidden] = useState(false);
   const [announceOpen, setAnnounceOpen] = useState(true);
   const annState: AnnouncementState = announcement ?? { mode: "fallback" };
   const headerRef = useRef<HTMLElement | null>(null);
@@ -81,12 +85,58 @@ export function SiteHeader({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setAnnounceOpen(localStorage.getItem(ANNOUNCE_KEY) !== "1");
-    const onScroll = () => setScrolled(window.scrollY > 8);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    try {
+      setAnnounceOpen(localStorage.getItem(ANNOUNCE_KEY) !== "1");
+    } catch {
+      /* storage blocked — keep the bar */
+    }
   }, []);
+
+  // Partially-persistent header (NN/g): slides away while the shopper scrolls
+  // DOWN through products, and returns on a deliberate scroll UP — so the
+  // viewport goes to the merchandise, yet nav/cart are one flick away.
+  // rAF-throttled, passive, and frozen while any header surface is open.
+  const holdVisible = open || searchOpen;
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let lastY = window.scrollY;
+    let frame = 0;
+    const DELTA = 8; // ignore jitter / momentum noise
+    const update = () => {
+      frame = 0;
+      const y = Math.max(window.scrollY, 0);
+      const headerH = headerRef.current?.offsetHeight ?? 64;
+      setScrolled(y > 8);
+      const focusInside = headerRef.current?.contains(document.activeElement) ?? false;
+      if (holdVisible || focusInside || y <= headerH) {
+        setHidden(false);
+      } else if (y - lastY > DELTA) {
+        setHidden(true);
+      } else if (lastY - y > DELTA) {
+        setHidden(false);
+      } else {
+        return; // within the dead zone — keep lastY anchored
+      }
+      lastY = y;
+    };
+    const onScroll = () => {
+      if (!frame) frame = window.requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [holdVisible]);
+
+  // Sticky page elements (filters, PDP gallery) read --site-header-current, so
+  // they glide up into the freed space instead of leaving a gap.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.documentElement.toggleAttribute("data-header-hidden", hidden);
+    return () => document.documentElement.removeAttribute("data-header-hidden");
+  }, [hidden]);
 
   // Measure the actual rendered header height and publish it as a shared CSS
   // custom property so sticky elements never slide under the header — regardless
@@ -140,11 +190,13 @@ export function SiteHeader({
   return (
     <header
       ref={headerRef}
+      data-hidden={hidden || undefined}
       className={cn(
-        "sticky top-0 z-50 w-full border-b transition-[box-shadow,background-color,border-color] duration-300",
-        scrolled
-          ? "border-border bg-background/90 shadow-soft backdrop-blur-xl"
-          : "border-border/50 bg-background/70 backdrop-blur-md",
+        // Opaque on purpose: a translucent bar over product imagery hurts
+        // legibility of nav and badges (NN/g sticky-header guidance).
+        "sticky top-0 z-50 w-full border-b bg-background transition-[transform,box-shadow,border-color] duration-300 ease-out motion-reduce:transition-none",
+        scrolled ? "border-border shadow-soft" : "border-border/60",
+        hidden && "-translate-y-full shadow-none",
       )}
     >
       {announceOpen && annState.mode !== "hidden" && (
@@ -160,8 +212,8 @@ export function SiteHeader({
               )
             ) : (
               <>
-                ✦ Free delivery over {formatBDT(FREE_DELIVERY_THRESHOLD)} · Custom-size kurti
-                available ✦
+                ✦ Free delivery over {formatBDT(freeDeliveryThreshold ?? FREE_DELIVERY_THRESHOLD)} ·
+                Custom-size kurti available ✦
               </>
             )}
           </p>

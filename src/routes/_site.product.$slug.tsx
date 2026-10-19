@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import sizeChart from "@/assets/size-chart.webp";
 import { NotFoundPage } from "@/components/NotFoundPage";
 import { READY_SIZES, GIRLS_SIZES, type Product } from "@/lib/products";
-import { getProductDetail, listProductCards } from "@/lib/catalog.api";
+import { getProductCardsByCodes, getProductPage } from "@/lib/catalog.api";
 import { categoryLabel, categoryPath, isCategorySlug } from "@/lib/categories";
 import { submitReview } from "@/lib/reviews.api";
 import { formatBDT, discountPct, BRAND } from "@/lib/brand";
@@ -78,14 +78,11 @@ interface ReviewItem {
 
 export const Route = createFileRoute("/_site/product/$slug")({
   loader: async ({ params }) => {
-    // Lean cards power related products + recently-viewed resolution; fetched
-    // in parallel with the detail so the loader costs one round-trip, not two.
-    const [product, cards] = await Promise.all([
-      getProductDetail({ data: { slug: params.slug } }),
-      listProductCards(),
-    ]);
-    if (!product) throw notFound();
-    return { product, cards };
+    // One round-trip: the detail plus only the related cards the page shows.
+    // (It used to ship every card in the catalog to resolve 8 thumbnails.)
+    const page = await getProductPage({ data: { slug: params.slug } });
+    if (!page) throw notFound();
+    return page;
   },
   head: ({ loaderData, params }) => ({
     meta: loaderData
@@ -188,7 +185,7 @@ function isValidMeasure(v: string | undefined): boolean {
 }
 
 function ProductPage() {
-  const { product, cards } = Route.useLoaderData();
+  const { product, related } = Route.useLoaderData();
   const { addToCart, toggleWishlist, isWishlisted } = useStore();
   const [activeImg, setActiveImg] = useState(0);
   const [lightbox, setLightbox] = useState(false);
@@ -199,7 +196,7 @@ function ProductPage() {
   const [attemptedAdd, setAttemptedAdd] = useState(false);
   const [qty, setQty] = useState(1);
   const [localReviews, setLocalReviews] = useState<ReviewItem[]>([]);
-  const [recentIds, setRecentIds] = useState<string[]>([]);
+  const [recentProducts, setRecentProducts] = useState<Product[]>([]);
 
   // Presentation-only gallery: unique images from primary image + gallery.
   const displayGallery = useMemo(
@@ -234,7 +231,21 @@ function ProductPage() {
     } catch {
       prior = [];
     }
-    setRecentIds(prior.filter((id) => id !== product.id).slice(0, 4));
+    // Resolve the session's recently-viewed codes on demand — a few cards,
+    // fetched after paint, never part of the (edge-cached) page payload.
+    const recentCodes = prior.filter((id) => id !== product.id).slice(0, 4);
+    if (recentCodes.length > 0) {
+      void getProductCardsByCodes({ data: { codes: recentCodes } })
+        .then((cards) => {
+          const byId = new Map(cards.map((c) => [c.id, c]));
+          setRecentProducts(
+            recentCodes.map((id) => byId.get(id)).filter((p): p is Product => Boolean(p)),
+          );
+        })
+        .catch(() => setRecentProducts([]));
+    } else {
+      setRecentProducts([]);
+    }
     const next = [product.id, ...prior.filter((id) => id !== product.id)].slice(0, 8);
     try {
       sessionStorage.setItem(RECENT_KEY, JSON.stringify(next));
@@ -272,14 +283,6 @@ function ProductPage() {
     count: displayedReviews.filter((r) => Math.round(r.rating) === star).length,
   }));
   const distTotal = displayedReviews.length;
-
-  const recentProducts = recentIds
-    .map((id) => cards.find((p) => p.id === id))
-    .filter((p): p is Product => Boolean(p) && p!.id !== product.id)
-    .slice(0, 4);
-
-  // Related: other products of the same type (from lean cards).
-  const related = cards.filter((p) => p.type === product.type && p.id !== product.id).slice(0, 4);
 
   const shareUrl =
     typeof window !== "undefined" ? window.location.href : `/product/${product.slug}`;

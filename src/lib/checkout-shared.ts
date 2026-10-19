@@ -255,6 +255,8 @@ export const CHECKOUT_ERROR_MESSAGES: Record<string, string> = {
   coupon_min_not_met: "Your cart doesn't meet this coupon's minimum spend.",
   coupon_exhausted: "This coupon has reached its usage limit.",
   coupon_not_eligible: "This coupon isn't available for this order.",
+  busy_retry:
+    "We're receiving a lot of orders right now. Please tap Place Order again in a moment — you won't be charged twice.",
 };
 
 export const KNOWN_CHECKOUT_ERROR_CODES = new Set(Object.keys(CHECKOUT_ERROR_MESSAGES));

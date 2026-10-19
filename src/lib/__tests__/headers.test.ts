@@ -202,7 +202,7 @@ describe("withPublicCache", () => {
   it("promotes a plain 200 HTML response to a shared edge cache", () => {
     const out = withPublicCache(withSecurityHeaders(html(), true));
     expect(out.headers.get("Cache-Control")).toBe(
-      "public, s-maxage=60, stale-while-revalidate=86400",
+      "public, s-maxage=60, stale-while-revalidate=86400, stale-if-error=86400",
     );
     expect(out.headers.get("Pragma")).toBeNull();
     expect(out.headers.get("Expires")).toBeNull();

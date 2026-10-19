@@ -302,7 +302,13 @@ export function withPublicCache(response: Response): Response {
     return response;
   }
   const headers = new Headers(response.headers);
-  headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=86400");
+  // stale-if-error: if a background revalidation fails (origin or database
+  // down mid-sale), the edge keeps serving the last good page for a day
+  // instead of passing the error through to shoppers.
+  headers.set(
+    "Cache-Control",
+    "public, s-maxage=60, stale-while-revalidate=86400, stale-if-error=86400",
+  );
   headers.delete("Pragma");
   headers.delete("Expires");
   return new Response(response.body, {

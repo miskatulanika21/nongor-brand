@@ -28,10 +28,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
 
@@ -39,13 +39,19 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Advisory dependency vulnerability scan. Non-blocking on purpose:
-      # transitive advisories are common and often unreachable, so they must not
-      # wall the build — but the result is printed on every run, and Dependabot
-      # security updates (see .github/dependabot.yml) + the CodeQL workflow are
-      # the enforced layers. Review high/critical output here before merging.
-      - name: Dependency audit (advisory)
-        run: bun audit || true
+      # Dependency vulnerability scan, two tiers:
+      #   - CRITICAL advisories fail the build. Vercel already refuses to deploy
+      #     some known-vulnerable framework versions (it blocked a 2026-10 deploy
+      #     over a TanStack Start XSS CVE that Dependabot never flagged), so a
+      #     critical finding must surface here, at PR time, not at deploy time.
+      #   - Everything from HIGH down is printed but advisory: `bun audit` cannot
+      #     scope to production deps, and today's highs are all in dev/build
+      #     tooling (jsdom, eslint, vite/postcss). Review them before merging.
+      - name: Dependency audit (blocking on critical)
+        run: bun audit --audit-level=critical
+
+      - name: Dependency audit (advisory, high and below)
+        run: bun audit --audit-level=high || true
 
       # Core checks — all MANDATORY. Separate steps so a failure points at the
       # exact gate. No step is allowed to fail silently.
@@ -73,7 +79,7 @@ jobs:
 
       - name: Upload coverage report
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage
           path: coverage/
@@ -93,10 +99,10 @@ jobs:
     # pending local migrations.
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1.7.3
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
 
@@ -294,7 +300,7 @@ jobs:
     if: ${{ github.event_name == 'push' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # `db lint --linked` needs project access AND database connectivity, so it
       # requires the access token, project ref AND db password. When ANY is
@@ -317,7 +323,7 @@ jobs:
 
       - name: Setup Supabase CLI
         if: steps.creds.outputs.available == 'true'
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1.7.3
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
 

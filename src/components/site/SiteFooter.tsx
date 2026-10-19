@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { BRAND } from "@/lib/brand";
 import type { PublicSettings } from "@/lib/settings.schema";
+import { formatBDT } from "@/lib/brand";
 import { availableMethods } from "@/lib/checkout-shared";
 import { PRODUCT_CATEGORIES, categoryPath } from "@/lib/categories";
 import { subscribeNewsletterFn } from "@/lib/newsletter.api";
@@ -612,8 +613,10 @@ export function SiteFooter({ settings }: { settings?: PublicSettings | null }) {
             </span>
             <span className="hidden sm:inline text-gold/40">·</span>
             <span className="inline-flex items-center gap-1.5">
-              <Sparkles className="size-3.5 text-gold" /> Dhaka ৳80 · Major Cities ৳100 · Outside
-              Dhaka ৳130
+              <Sparkles className="size-3.5 text-gold" /> Dhaka{" "}
+              {formatBDT(settings?.delivery_fee_dhaka ?? 80)} · Major Cities{" "}
+              {formatBDT(settings?.delivery_fee_major ?? 100)} · Outside Dhaka{" "}
+              {formatBDT(settings?.delivery_fee_outside ?? 130)}
             </span>
           </div>
         </div>

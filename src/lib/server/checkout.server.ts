@@ -30,8 +30,16 @@ export class CheckoutError extends Error {
   }
 }
 
+/**
+ * Postgres contention errors under load: lock_not_available (place_order's
+ * lock_timeout) and query_canceled (statement_timeout). Both roll the whole
+ * transaction back, so a retry with the same idempotency key is safe.
+ */
+const RETRYABLE_PG_CODES = new Set(["55P03", "57014"]);
+
 /** Map a Postgres/PostgREST error to a stable code (unknowns → internal_error). */
-function throwCheckoutError(error: { message?: string }): never {
+function throwCheckoutError(error: { message?: string; code?: string }): never {
+  if (error.code && RETRYABLE_PG_CODES.has(error.code)) throw new CheckoutError("busy_retry");
   const raw = (error.message ?? "").trim();
   throw new CheckoutError(KNOWN_CHECKOUT_ERROR_CODES.has(raw) ? raw : "internal_error");
 }
@@ -133,14 +141,25 @@ export async function placeOrder(args: PlaceOrderArgs): Promise<PlaceOrderResult
     }
   }
 
-  // Best-effort order-confirmation email. Never blocks or breaks the sale; skipped
-  // on an idempotent replay so a retried checkout can't double-send.
+  // Best-effort order-confirmation email, sent AFTER the response: the shopper
+  // gets their confirmation page without waiting on the email provider (which
+  // is the slowest hop in a rush). `waitUntil` keeps the function alive until
+  // the send settles; outside Vercel it is a no-op and the promise simply runs.
+  // Skipped on an idempotent replay so a retried checkout can't double-send.
   if (!result.replayed) {
+    const send = (async () => {
+      try {
+        const { sendOrderReceived } = await import("./notifications.server");
+        await sendOrderReceived({ order: result, customer: args.customer, method: args.method });
+      } catch {
+        /* email is a non-critical enhancement — swallow */
+      }
+    })();
     try {
-      const { sendOrderReceived } = await import("./notifications.server");
-      await sendOrderReceived({ order: result, customer: args.customer, method: args.method });
+      const { waitUntil } = await import("@vercel/functions");
+      waitUntil(send);
     } catch {
-      /* email is a non-critical enhancement — swallow */
+      /* no request context — the send still runs */
     }
   }
 

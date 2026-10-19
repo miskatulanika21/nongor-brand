@@ -804,14 +804,30 @@ body:has([role="dialog"]) .size-guide-mobile-cta {
  * --site-header-offset is measured at runtime in SiteHeader.tsx so sticky
  * content always clears the real header height (announcement bar included).
  * ------------------------------------------------------------------------- */
+/* --site-header-current is the space the header occupies RIGHT NOW: the
+ * measured height while shown, 0 while it is slid away on scroll-down. */
+:root {
+  --site-header-current: var(--site-header-offset);
+}
+:root[data-header-hidden] {
+  --site-header-current: 0px;
+}
 .site-sticky-under-header {
-  top: var(--site-header-offset);
+  top: var(--site-header-current);
+  transition: top 300ms ease-out;
 }
 .site-sticky-with-gap {
-  top: calc(var(--site-header-offset) + 1.5rem);
+  top: calc(var(--site-header-current) + 1.5rem);
+  transition: top 300ms ease-out;
 }
 .site-sticky-max-height {
-  max-height: calc(100vh - var(--site-header-offset) - 2rem);
+  max-height: calc(100vh - var(--site-header-current) - 2rem);
+}
+@media (prefers-reduced-motion: reduce) {
+  .site-sticky-under-header,
+  .site-sticky-with-gap {
+    transition: none;
+  }
 }
 
 /* ---------------------------------------------------------------------------
