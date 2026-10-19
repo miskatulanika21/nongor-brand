@@ -10,6 +10,8 @@
  *   - getProductDetail     → product detail page (full record)
  *   - getProductCardsByCodes → wishlist resolution by legacy code
  *   - getCatalogFacets     → shop filter sidebar (DB-computed facets/counts)
+ *   - getHomeCollections   → homepage rails only (selected server-side)
+ *   - getProductPage       → PDP detail + its related cards (one round-trip)
  */
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
@@ -23,6 +25,18 @@ export const getCatalogFacets = createServerFn({ method: "GET" }).handler(async 
   const { fetchCatalogFacets } = await import("@/lib/server/catalog.server");
   return fetchCatalogFacets();
 });
+
+export const getHomeCollections = createServerFn({ method: "GET" }).handler(async () => {
+  const { fetchHomeCollections } = await import("@/lib/server/catalog.server");
+  return fetchHomeCollections();
+});
+
+export const getProductPage = createServerFn({ method: "GET" })
+  .validator(z.object({ slug: z.string().min(1).max(200) }))
+  .handler(async ({ data }) => {
+    const { fetchProductPage } = await import("@/lib/server/catalog.server");
+    return fetchProductPage(data.slug);
+  });
 
 export const getProductDetail = createServerFn({ method: "GET" })
   .validator(z.object({ slug: z.string().min(1).max(200) }))

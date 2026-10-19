@@ -1,4 +1,11 @@
-import { createFileRoute, Outlet, useRouterState, useRouteContext } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Outlet,
+  useRouter,
+  useRouterState,
+  useRouteContext,
+} from "@tanstack/react-router";
+import { useEffect } from "react";
 import { StoreProvider } from "@/lib/store";
 import { SiteHeader } from "@/components/site/SiteHeader";
 import { SiteFooter } from "@/components/site/SiteFooter";
@@ -71,16 +78,38 @@ function SiteLayout() {
   // in the payment section) — the same "reduce distraction near the pay action"
   // pattern top e-commerce checkouts use.
   const isCheckoutRoute = pathname === "/checkout";
-  const { sessionSummary, announcement, publicSettings } = useRouteContext({ from: "/_site" }) as {
-    sessionSummary: {
-      isAuthenticated: boolean;
-      designation: string;
-      hasAdminAccess: boolean;
-      userId: string | null;
+  const { sessionSummary, announcement, publicSettings } = useRouteContext({
+    from: "/_site",
+  }) as SiteContext;
+  const router = useRouter();
+
+  // Public pages (/, /shop, /product/*) are served from Vercel's shared edge
+  // cache, and the CDN answers a cache HIT without running our server code —
+  // so a signed-in visitor can receive the HTML rendered for an anonymous one
+  // (Vercel will not cache per-cookie: `Vary: Cookie` disables caching). The
+  // standard fix is "cached shell, personalised on the client": when the page
+  // arrived as anonymous, ask the server once who this really is, and if they
+  // are signed in, seed the client context cache and re-run the route context
+  // so the header, review form and checkout all flip to the real session.
+  useEffect(() => {
+    if (sessionSummary.isAuthenticated) return;
+    let cancelled = false;
+    getSessionSummary()
+      .then((fresh) => {
+        if (cancelled || !fresh.isAuthenticated) return;
+        setCachedSiteContext({ sessionSummary: fresh, announcement, publicSettings });
+        void router.invalidate();
+      })
+      .catch(() => {
+        /* the anonymous render stays valid; nothing to repair */
+      });
+    return () => {
+      cancelled = true;
     };
-    announcement: AnnouncementState;
-    publicSettings: PublicSettings | null;
-  };
+    // Mount-only: the layout stays mounted across in-site navigations, and
+    // later auth transitions already bust the context cache themselves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Prefer admin-configured contact values; fall back to the static brand default.
   const whatsappNumber = publicSettings?.whatsapp || BRAND.whatsapp;
   const showWhatsappFab = whatsappConfigured || Boolean(publicSettings?.whatsapp);
@@ -93,7 +122,11 @@ function SiteLayout() {
         {isAuthRoute ? (
           <AuthHeader />
         ) : (
-          <SiteHeader sessionSummary={sessionSummary} announcement={announcement} />
+          <SiteHeader
+            sessionSummary={sessionSummary}
+            announcement={announcement}
+            freeDeliveryThreshold={publicSettings?.free_delivery_threshold}
+          />
         )}
         <main className="flex-1">
           <Outlet />

@@ -64,6 +64,109 @@ async function loadProductCards(): Promise<Product[]> {
  */
 export const fetchProductCards = cachedPublic("product-cards", 60_000, loadProductCards);
 
+/** The homepage rails, selected on the server so the page ships ~22 cards
+ *  instead of serialising the entire catalog into the HTML. */
+export interface FeaturedReview {
+  id: string;
+  author: string;
+  rating: number;
+  body: string;
+  productName: string;
+  productSlug: string;
+}
+
+export interface HomeCollections {
+  reviews: FeaturedReview[];
+  newArrivals: Product[];
+  bestSellers: Product[];
+  customFit: Product[];
+  beauty: Product[];
+  social: Product[];
+}
+
+const BEAUTY_TYPES = new Set(["cosmetics", "makeup", "serum"]);
+
+export function selectHomeCollections(
+  cards: Product[],
+  reviews: FeaturedReview[] = [],
+): HomeCollections {
+  return {
+    reviews,
+    newArrivals: cards.filter((p) => p.isNew).slice(0, 4),
+    bestSellers: cards.filter((p) => p.isBestSeller).slice(0, 4),
+    customFit: cards.filter((p) => p.type === "kurti" && p.isHandmade).slice(0, 4),
+    beauty: cards.filter((p) => BEAUTY_TYPES.has(p.type)).slice(0, 4),
+    social: cards.slice(0, 6),
+  };
+}
+
+type FeaturedReviewRow = {
+  id: string;
+  author_name: string;
+  rating: number;
+  body: string | null;
+  product: { name: string; slug: string } | null;
+};
+
+/**
+ * Real, moderated customer reviews for the homepage — newest 4★+ approved
+ * reviews with a written body. Replaces hard-coded testimonials: showing
+ * invented quotes as customer reviews is deceptive (and, e.g., unlawful under
+ * the FTC's 2024 fake-review rule), and shoppers can tell.
+ */
+async function loadFeaturedReviews(): Promise<FeaturedReview[]> {
+  const sb = createServerSupabaseClient();
+  const { data, error } = await sb
+    .from("product_reviews")
+    .select("id, author_name, rating, body, product:products!inner ( name, slug )")
+    .eq("status", "approved")
+    .gte("rating", 4)
+    .not("body", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(12);
+  if (error) throw new CatalogQueryError("Failed to load featured reviews", error.message);
+  return ((data ?? []) as unknown as FeaturedReviewRow[])
+    .filter((r) => r.product && (r.body ?? "").trim().length >= 20)
+    .slice(0, 3)
+    .map((r) => ({
+      id: r.id,
+      author: r.author_name,
+      rating: r.rating,
+      body: (r.body ?? "").trim(),
+      productName: r.product!.name,
+      productSlug: r.product!.slug,
+    }));
+}
+
+export const fetchFeaturedReviews = cachedPublic(
+  "featured-reviews",
+  5 * 60_000,
+  loadFeaturedReviews,
+);
+
+export async function fetchHomeCollections(): Promise<HomeCollections> {
+  const [cards, reviews] = await Promise.all([
+    fetchProductCards(),
+    // Reviews are an enhancement: a failure hides the section, never the page.
+    fetchFeaturedReviews().catch(() => [] as FeaturedReview[]),
+  ]);
+  return selectHomeCollections(cards, reviews);
+}
+
+/** Same-type products for the PDP "You may also like" rail. */
+export function selectRelated(cards: Product[], product: Product, limit = 4): Product[] {
+  return cards.filter((p) => p.type === product.type && p.id !== product.id).slice(0, limit);
+}
+
+/** PDP payload: the full product plus only the related cards it renders. */
+export async function fetchProductPage(
+  slug: string,
+): Promise<{ product: Product; related: Product[] } | null> {
+  const [product, cards] = await Promise.all([fetchProductDetail(slug), fetchProductCards()]);
+  if (!product) return null;
+  return { product, related: selectRelated(cards, product) };
+}
+
 /** Cards for a specific set of legacy codes (wishlist resolution). */
 export async function fetchProductCardsByCodes(codes: string[]): Promise<Product[]> {
   if (!codes.length) return [];
