@@ -21,3 +21,16 @@ export function absUrl(path: string): string {
   const p = path.startsWith("/") ? path : `/${path}`;
   return new URL(p, SITE_URL + "/").toString();
 }
+
+/**
+ * Link-preview card image (Facebook, Messenger, WhatsApp, X). 1200×630 JPEG:
+ * the 1.91:1 size every platform renders without cropping, and JPEG because
+ * none of them reliably accept SVG and WhatsApp's WebP support is uneven.
+ * The centred layout also survives WhatsApp's square thumbnail crop. Bump the
+ * filename (v3, …) on any artwork change — platforms cache previews by URL.
+ * Design sources: docs/brand/social-preview/.
+ */
+export const SOCIAL_PREVIEW_IMAGE = "/og-image-v2.jpg";
+export const SOCIAL_PREVIEW_IMAGE_WIDTH = 1200;
+export const SOCIAL_PREVIEW_IMAGE_HEIGHT = 630;
+export const SOCIAL_PREVIEW_IMAGE_ALT = "Nongorr (নোঙর) — premium women's boutique, Bangladesh";

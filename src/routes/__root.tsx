@@ -15,7 +15,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 import { Analytics } from "@vercel/analytics/react";
-import { absUrl } from "@/lib/site-config";
+import { absUrl, SOCIAL_PREVIEW_IMAGE } from "@/lib/site-config";
 import { NotFoundPage } from "@/components/NotFoundPage";
 
 // Root not-found fallback: any URL outside the /_site shell (e.g. an
@@ -90,11 +90,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:card", content: "summary_large_image" },
       {
         property: "og:image",
-        content: absUrl("/og-image.jpg"),
+        content: absUrl(SOCIAL_PREVIEW_IMAGE),
       },
       {
         name: "twitter:image",
-        content: absUrl("/og-image.jpg"),
+        content: absUrl(SOCIAL_PREVIEW_IMAGE),
       },
     ],
     scripts: [
