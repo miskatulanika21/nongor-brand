@@ -38,6 +38,11 @@ export const subscribeNewsletterFn = createServerFn({ method: "POST" })
       return { success: false as const, error: "Invalid request origin." };
     }
 
+    const { isBlockedBot, botBlockedMessage } = await import("@/lib/server/bot-guard.server");
+    if (await isBlockedBot("newsletterSubscribe")) {
+      return { success: false as const, error: botBlockedMessage() };
+    }
+
     const ip = getClientIp();
     const rl = await checkIndependentRateLimit("newsletterSubscribe", { ip });
     if (!rl.allowed) return { success: false as const, error: rateLimitMessage() };

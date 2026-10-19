@@ -71,6 +71,11 @@ export const placeOrderFn = createServerFn({ method: "POST" })
       return { success: false as const, error: "Invalid request origin." };
     }
 
+    const { isBlockedBot, botBlockedMessage } = await import("@/lib/server/bot-guard.server");
+    if (await isBlockedBot("placeOrder")) {
+      return { success: false as const, error: botBlockedMessage() };
+    }
+
     // Optional identity — guest checkout is allowed. A verified user id becomes
     // p_actor (order owned by the account); otherwise null = guest order.
     const supabase = createServerSupabaseClient();

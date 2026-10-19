@@ -24,6 +24,11 @@ export const submitContactFn = createServerFn({ method: "POST" })
       return { success: false as const, error: "Invalid request origin." };
     }
 
+    const { isBlockedBot, botBlockedMessage } = await import("@/lib/server/bot-guard.server");
+    if (await isBlockedBot("contactSubmit")) {
+      return { success: false as const, error: botBlockedMessage() };
+    }
+
     const rl = await checkIndependentRateLimit("contactSubmit", { ip: getClientIp() });
     if (!rl.allowed) return { success: false as const, error: rateLimitMessage() };
 
