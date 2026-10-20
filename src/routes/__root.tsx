@@ -159,6 +159,17 @@ function RootComponent() {
     void initClientObservability();
   }, []);
 
+  // Vercel BotID: attach the browser-challenge headers to every server-function
+  // POST (TanStack Start serves them all under /_serverFn/). The server decides
+  // per endpoint whether to check them — see lib/server/bot-guard.server.ts.
+  useEffect(() => {
+    void import("botid/client/core")
+      .then(({ initBotId }) => initBotId({ protect: [{ path: "/_serverFn/*", method: "POST" }] }))
+      .catch(() => {
+        /* BotID unavailable: requests go through unclassified (server fails open) */
+      });
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}

@@ -299,6 +299,17 @@ export const trackOrderFn = createServerFn({ method: "POST" })
         result: null,
       };
     }
+    {
+      const { isBlockedBot, botBlockedMessage } = await import("@/lib/server/bot-guard.server");
+      if (await isBlockedBot("trackOrder")) {
+        return {
+          success: false as const,
+          reason: "rate_limited" as const,
+          error: botBlockedMessage(),
+          result: null,
+        };
+      }
+    }
     const rl = await checkIndependentRateLimit("trackOrder", { ip: getClientIp() });
     if (!rl.allowed) {
       return {

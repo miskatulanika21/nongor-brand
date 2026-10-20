@@ -37,6 +37,11 @@ export async function performEmailLogin(data: z.infer<typeof loginSchema>) {
     return { success: false as const, error: "Invalid request origin." };
   }
 
+  const { isBlockedBot, botBlockedMessage } = await import("./bot-guard.server");
+  if (await isBlockedBot("login")) {
+    return { success: false as const, error: botBlockedMessage() };
+  }
+
   const rl = await checkIndependentRateLimit("login", { ip: getClientIp(), account: data.email });
   if (!rl.allowed) {
     return { success: false as const, error: rateLimitMessage() };

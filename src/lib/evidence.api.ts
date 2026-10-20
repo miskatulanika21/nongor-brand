@@ -38,6 +38,11 @@ export const submitPaymentEvidenceFn = createServerFn({ method: "POST" })
       return { success: false as const, error: "Invalid request origin." };
     }
 
+    const { isBlockedBot, botBlockedMessage } = await import("@/lib/server/bot-guard.server");
+    if (await isBlockedBot("paymentEvidence")) {
+      return { success: false as const, error: botBlockedMessage() };
+    }
+
     // Optional identity — guest orders are allowed. A verified user becomes the
     // scope; otherwise the raw guest token (in-memory from placement) is hashed.
     const supabase = createServerSupabaseClient();

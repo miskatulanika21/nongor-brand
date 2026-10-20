@@ -26,6 +26,11 @@ export const submitReview = createServerFn({ method: "POST" })
       return { success: false as const, error: "Invalid request origin." };
     }
 
+    const { isBlockedBot, botBlockedMessage } = await import("@/lib/server/bot-guard.server");
+    if (await isBlockedBot("reviewSubmit")) {
+      return { success: false as const, error: botBlockedMessage() };
+    }
+
     // Must be signed in. (Both customers and staff have a userId.)
     const supabase = createServerSupabaseClient();
     const result = await getAuthenticatedIdentity({ strict: true, client: supabase });

@@ -60,6 +60,11 @@ export const registerWithEmail = createServerFn({ method: "POST" })
       return { success: false as const, error: "Invalid request origin." };
     }
 
+    const { isBlockedBot, botBlockedMessage } = await import("@/lib/server/bot-guard.server");
+    if (await isBlockedBot("register")) {
+      return { success: false as const, error: botBlockedMessage() };
+    }
+
     const rl = await checkIndependentRateLimit("register", {
       ip: getClientIp(),
       account: data.email,
@@ -130,6 +135,11 @@ export const requestPasswordReset = createServerFn({ method: "POST" })
     const env = getPublicSupabaseEnv();
     if (!checkCsrfOrigin(env.siteUrl)) {
       return { success: false as const, error: "Invalid request origin." };
+    }
+
+    const { isBlockedBot, botBlockedMessage } = await import("@/lib/server/bot-guard.server");
+    if (await isBlockedBot("passwordReset")) {
+      return { success: false as const, error: botBlockedMessage() };
     }
 
     const rl = await checkIndependentRateLimit("passwordReset", {
