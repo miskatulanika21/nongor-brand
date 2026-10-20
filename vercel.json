@@ -1,6 +1,18 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": ["bom1"],
+  "proxy": {
+    "entrypoint": "src/proxy.ts",
+    "matcher": [
+      "/",
+      "/shop",
+      "/shop/:path*",
+      "/product/:path*",
+      "/about",
+      "/size-guide",
+      "/new-arrivals"
+    ]
+  },
   "crons": [
     {
       "path": "/api/cron/notifications",
@@ -10,7 +22,12 @@
   "redirects": [
     {
       "source": "/(.*)",
-      "has": [{ "type": "host", "value": "nongor-brand\\.vercel\\.app" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "nongor-brand\\.vercel\\.app"
+        }
+      ],
       "destination": "https://nongorr.com/$1",
       "permanent": true
     }
@@ -21,7 +38,12 @@
     "formats": ["image/avif", "image/webp"],
     "minimumCacheTTL": 2678400,
     "dangerouslyAllowSVG": false,
-    "localPatterns": [{ "pathname": "^/assets/.*$", "search": "" }],
+    "localPatterns": [
+      {
+        "pathname": "^/assets/.*$",
+        "search": ""
+      }
+    ],
     "remotePatterns": [
       {
         "protocol": "https",
